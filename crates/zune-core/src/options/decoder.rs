@@ -12,6 +12,36 @@
 use crate::bit_depth::ByteEndian;
 use crate::colorspace::ColorSpace;
 
+/// JPEG input colorspace handling.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum InputColorspaceOverride {
+    /// Infer the JPEG input colorspace from markers and component layout.
+    Auto,
+    /// Force the JPEG input colorspace after marker parsing.
+    Force(ColorSpace)
+}
+
+/// JPEG output scaling.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum JpegScale {
+    Full,
+    Half,
+    Quarter,
+    Eighth
+}
+
+impl JpegScale {
+    /// Return the scale denominator.
+    pub const fn denominator(self) -> usize {
+        match self {
+            Self::Full => 1,
+            Self::Half => 2,
+            Self::Quarter => 4,
+            Self::Eighth => 8
+        }
+    }
+}
+
 /// A decoder that can handle errors
 fn decoder_error_tolerance_mode() -> DecoderFlags {
     // similar to fast options currently, so no need to write a new one
@@ -168,7 +198,14 @@ pub struct DecoderOptions {
     hevc_max_mdat_size: usize,
     /// Number of threads used for decoding
     ///
-    num_threads:        u8
+    num_threads:        u8,
+    /// JPEG input colorspace override.
+    ///
+    /// This is primarily useful for container formats that define the JPEG
+    /// colorspace out of band.
+    input_colorspace_override: InputColorspaceOverride,
+    /// JPEG output scale.
+    jpeg_scale: JpegScale
 }
 
 /// Initializers
@@ -454,6 +491,32 @@ impl DecoderOptions {
         self.out_colorspace = colorspace;
         self
     }
+
+    /// Get the JPEG input colorspace override.
+    pub const fn jpeg_get_input_colorspace_override(&self) -> InputColorspaceOverride {
+        self.input_colorspace_override
+    }
+
+    /// Set the JPEG input colorspace override.
+    #[must_use]
+    pub fn jpeg_set_input_colorspace_override(
+        mut self, override_: InputColorspaceOverride
+    ) -> Self {
+        self.input_colorspace_override = override_;
+        self
+    }
+
+    /// Get the JPEG output scale.
+    pub const fn jpeg_get_scale(&self) -> JpegScale {
+        self.jpeg_scale
+    }
+
+    /// Set the JPEG output scale.
+    #[must_use]
+    pub fn jpeg_set_scale(mut self, scale: JpegScale) -> Self {
+        self.jpeg_scale = scale;
+        self
+    }
 }
 
 /// Intrinsics support
@@ -726,7 +789,9 @@ impl Default for DecoderOptions {
             // 16 mb
             hevc_max_mdat_size: 1 << 24,
             num_threads:        4,
-            endianness:         ByteEndian::BE
+            endianness:         ByteEndian::BE,
+            input_colorspace_override: InputColorspaceOverride::Auto,
+            jpeg_scale:         JpegScale::Full
         }
     }
 }

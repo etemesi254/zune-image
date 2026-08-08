@@ -6,7 +6,7 @@
 //! All supported options are put into one _Options to allow for global configurations
 //! options e.g the same  `DecoderOption` can be reused for all other decoders
 //!
-pub use decoder::DecoderOptions;
+pub use decoder::{DecoderOptions, InputColorspaceOverride, JpegScale};
 pub use encoder::EncoderOptions;
 pub use encoder::PngCompression;
 mod decoder;

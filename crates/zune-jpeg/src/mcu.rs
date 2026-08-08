@@ -14,11 +14,13 @@ use zune_core::bytestream::ZByteReaderTrait;
 use zune_core::colorspace::ColorSpace;
 use zune_core::colorspace::ColorSpace::Luma;
 use zune_core::log::{error, trace, warn};
+use zune_core::options::JpegScale;
 
 use crate::bitstream::BitStream;
 use crate::components::SampleRatios;
-use crate::decoder::{HeaderAppendStateSnapshot, MAX_COMPONENTS};
+use crate::decoder::{DecodeRegion, HeaderAppendStateSnapshot, MAX_COMPONENTS};
 use crate::errors::DecodeErrors;
+use crate::idct::choose_scaled_idct_func;
 use crate::marker::Marker;
 use crate::mcu_prog::get_marker;
 use crate::misc::{calculate_padded_width, setup_component_params};
@@ -42,6 +44,36 @@ struct McuWidthContext<'a, B: BitStream> {
     stream: &'a mut B,
     // Full-image coefficient buffers for multi-SOS baseline scans.
     progressive: &'a mut [Vec<i16>; MAX_COMPONENTS],
+}
+
+struct RegionOutput<'a> {
+    region:     DecodeRegion,
+    out:        &'a mut [u8],
+    components: usize,
+    width:      usize,
+    written:    usize
+}
+
+impl RegionOutput<'_> {
+    /// Copy decoded rows from a full-width stripe into the requested region buffer.
+    fn copy_from_stripe(&mut self, stripe: &[u8], start_row: usize, rows: usize) {
+        let full_stride = self.width * self.components;
+        let region_stride = self.region.width * self.components;
+        let region_y_end = self.region.y + self.region.height;
+        let region_x = self.region.x * self.components;
+
+        for row in 0..rows {
+            let image_row = start_row + row;
+            if image_row < self.region.y || image_row >= region_y_end {
+                continue;
+            }
+            let src = row * full_stride + region_x;
+            let dst = (image_row - self.region.y) * region_stride;
+            self.out[dst..dst + region_stride]
+                .copy_from_slice(&stripe[src..src + region_stride]);
+        }
+        self.written = self.written.max(region_stride * self.region.height);
+    }
 }
 
 impl<T: ZByteReaderTrait> JpegDecoder<T> {
@@ -70,9 +102,211 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         // `decode_into` retries, which is what lets scan checkpoints stay
         // allocation-free.
         let mut progressive_mcus = core::mem::take(&mut self.progressive_mcus_buffer);
-        let result = self.decode_mcu_ycbcr_baseline_inner::<B>(pixels, &mut progressive_mcus);
+        let result =
+            self.decode_mcu_ycbcr_baseline_inner::<B>(pixels, &mut progressive_mcus, None);
         self.progressive_mcus_buffer = progressive_mcus;
         result
+    }
+
+    /// Decode a baseline image while writing only the requested region.
+    pub(crate) fn decode_mcu_ycbcr_baseline_region<B: BitStream>(
+        &mut self, region: DecodeRegion, out: &mut [u8],
+    ) -> Result<(), DecodeErrors> {
+        let mut progressive_mcus = core::mem::take(&mut self.progressive_mcus_buffer);
+        let components = self.options.jpeg_get_out_colorspace().num_components();
+        let width = usize::from(self.info.width);
+        let mut region_output = RegionOutput {
+            region,
+            out,
+            components,
+            width,
+            written: 0
+        };
+        let result = self.decode_mcu_ycbcr_baseline_inner::<B>(
+            &mut [],
+            &mut progressive_mcus,
+            Some(&mut region_output)
+        );
+        self.progressive_mcus_buffer = progressive_mcus;
+        result
+    }
+
+    /// Decode a single-scan baseline image directly into a reduced-scale output buffer.
+    pub(crate) fn decode_scaled_baseline_into<B: BitStream>(
+        &mut self, out: &mut [u8],
+    ) -> Result<(), DecodeErrors> {
+        setup_component_params(self)?;
+
+        let scale = self.options.jpeg_get_scale();
+        if scale == JpegScale::Full {
+            return Err(DecodeErrors::FormatStatic(
+                "Scaled baseline path requires a reduced JPEG scale"
+            ));
+        }
+        if self.restart_interval != 0 || usize::from(self.num_scans) != self.components.len() {
+            return Err(DecodeErrors::FormatStatic(
+                "Scaled baseline path only supports single-scan images without restarts"
+            ));
+        }
+        if !matches!(self.input_colorspace, ColorSpace::Luma | ColorSpace::YCbCr) {
+            return Err(DecodeErrors::FormatStatic(
+                "Scaled baseline path only supports Luma and YCbCr input"
+            ));
+        }
+        if self.input_colorspace.num_components() != self.components.len()
+        {
+            return Err(DecodeErrors::FormatStatic(
+                "Scaled baseline path requires the input colorspace component count to match the JPEG"
+            ));
+        }
+
+        self.check_tables::<B>()?;
+
+        let denominator = scale.denominator();
+        let block_output = 8 / denominator;
+        let scaled_width = usize::from(self.info.width).div_ceil(denominator);
+        let scaled_height = usize::from(self.info.height).div_ceil(denominator);
+        let out_components = self.options.jpeg_get_out_colorspace().num_components();
+        let expected_size = scaled_width
+            .checked_mul(scaled_height)
+            .and_then(|v| v.checked_mul(out_components))
+            .ok_or(DecodeErrors::FormatStatic(
+                "Scaled baseline output size overflows usize"
+            ))?;
+        if out.len() < expected_size {
+            return Err(DecodeErrors::TooSmallOutput(expected_size, out.len()));
+        }
+
+        let mcu_x = self.mcu_x;
+        let mcu_y = self.mcu_y;
+        let plane_shapes: Vec<(usize, usize)> = self
+            .components
+            .iter()
+            .map(|component| {
+                (
+                    mcu_x * component.horizontal_sample * block_output,
+                    mcu_y * component.vertical_sample * block_output,
+                )
+            })
+            .collect();
+        let mut planes: Vec<Vec<i16>> = plane_shapes
+            .iter()
+            .map(|(stride, rows)| vec![0; stride * rows])
+            .collect();
+        let mut stream = B::new();
+        let mut tmp = [0_i32; DCT_BLOCK];
+        let mut idct_out = [0_i16; DCT_BLOCK];
+        let idct = choose_scaled_idct_func(scale, &self.options);
+        let z_order = self.z_order;
+        let z_scans = &z_order[..usize::from(self.num_scans)];
+
+        for mcu_row in 0..mcu_y {
+            for mcu_col in 0..mcu_x {
+                for &component_index in z_scans {
+                    let (horizontal_sample, vertical_sample) = {
+                        let component = &self.components[component_index];
+                        (component.horizontal_sample, component.vertical_sample)
+                    };
+
+                    for v_samp in 0..vertical_sample {
+                        for h_samp in 0..horizontal_sample {
+                            tmp.fill(0);
+                            idct_out.fill(0);
+
+                            {
+                                let component = &mut self.components[component_index];
+                                let (dc_table, ac_table) = B::get_dc_ac_tables(
+                                    &mut self.entropy_tables,
+                                    component.dc_huff_table % MAX_COMPONENTS,
+                                    component.ac_huff_table % MAX_COMPONENTS,
+                                )?;
+                                stream.decode_mcu_block(
+                                    &mut self.stream,
+                                    dc_table,
+                                    ac_table,
+                                    &component.quantization_table,
+                                    &mut tmp,
+                                    &mut component.dc_pred,
+                                    &mut component.dc_diff,
+                                )?;
+                            }
+
+                            idct(&mut tmp, &mut idct_out, 8);
+
+                            let plane_stride = plane_shapes[component_index].0;
+                            let out_x =
+                                (mcu_col * horizontal_sample + h_samp) * block_output;
+                            let out_y =
+                                (mcu_row * vertical_sample + v_samp) * block_output;
+                            let plane = &mut planes[component_index];
+
+                            for y in 0..block_output {
+                                let dst_row = out_y + y;
+                                let dst = dst_row * plane_stride + out_x;
+                                plane[dst..dst + block_output]
+                                    .copy_from_slice(&idct_out[y * 8..y * 8 + block_output]);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        match self.check_stream_marker_after_mcu_width(&mut stream)? {
+            McuContinuation::Ok | McuContinuation::Terminate => {}
+            McuContinuation::DnlFound => {
+                return Err(DecodeErrors::FormatStatic(
+                    "DNL is not supported in scaled baseline fast path"
+                ))
+            }
+            McuContinuation::AnotherSos | McuContinuation::InterScanMarker(_) => {
+                return Err(DecodeErrors::FormatStatic(
+                    "Multiple scans are not supported in scaled baseline fast path"
+                ))
+            }
+        }
+
+        let y_stride = plane_shapes[0].0;
+        let y_rows = plane_shapes[0].1;
+        let mut expanded: [Vec<i16>; MAX_COMPONENTS] = core::array::from_fn(|_| Vec::new());
+        expanded[0] = planes[0].clone();
+
+        if self.input_colorspace == ColorSpace::YCbCr {
+            for component_index in 1..self.components.len().min(3) {
+                expanded[component_index].resize(y_stride * y_rows, 0);
+                let component = &self.components[component_index];
+                let src_stride = plane_shapes[component_index].0;
+                let src_rows = plane_shapes[component_index].1;
+                let h_scale = self.h_max / component.horizontal_sample;
+                let v_scale = self.v_max / component.vertical_sample;
+
+                for y in 0..y_rows {
+                    let src_y = (y / v_scale).min(src_rows.saturating_sub(1));
+                    for x in 0..y_stride {
+                        let src_x = (x / h_scale).min(src_stride.saturating_sub(1));
+                        expanded[component_index][y * y_stride + x] =
+                            planes[component_index][src_y * src_stride + src_x];
+                    }
+                }
+            }
+        }
+
+        let mut channels: [&[i16]; MAX_COMPONENTS] = [&[]; MAX_COMPONENTS];
+        for (index, channel) in channels.iter_mut().enumerate() {
+            *channel = &expanded[index];
+        }
+        color_convert(
+            &channels,
+            self.color_convert_16,
+            self.input_colorspace,
+            self.options.jpeg_get_out_colorspace(),
+            &mut out[..expected_size],
+            scaled_width,
+            y_stride,
+        )?;
+
+        self.pixels_decoded = expected_size;
+        Ok(())
     }
 
     /// Inner implementation of [`Self::decode_mcu_ycbcr_baseline`].
@@ -92,6 +326,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     #[inline(never)]
     fn decode_mcu_ycbcr_baseline_inner<B: BitStream>(
         &mut self, pixels: &mut [u8], progressive_mcus: &mut [Vec<i16>; MAX_COMPONENTS],
+        mut region_output: Option<&mut RegionOutput<'_>>,
     ) -> Result<(), DecodeErrors> {
         setup_component_params(self)?;
 
@@ -236,6 +471,19 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 .unwrap_or(0)
             * 8;
         let mut upsampler_scratch_space = vec![0; upsampler_scratch_size];
+        let row_stride = width * self.options.jpeg_get_out_colorspace().num_components();
+        let max_stripe_rows = (8 * self.v_max.max(1) * self.coeff.max(1))
+            .saturating_add(self.coeff.max(1) * self.v_max.max(1))
+            .max(16);
+        let mut region_stripe = if region_output.is_some() {
+            vec![0; row_stride * max_stripe_rows]
+        } else {
+            Vec::new()
+        };
+        let has_vertical_upsampling = self
+            .components
+            .iter()
+            .any(|c| c.sample_ratio == SampleRatios::HV || c.sample_ratio == SampleRatios::V);
 
         'sos: loop {
             trace!(
@@ -348,15 +596,49 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 // process that width up until it's impossible. This is faster than allocation the
                 // full components, which we skipped earlier.
                 if all_components_in_first_scan {
-                    self.post_process(
-                        pixels,
-                        i,
-                        mcu_height,
-                        width,
-                        padded_width,
-                        &mut pixels_written,
-                        &mut upsampler_scratch_space,
-                    )?;
+                    if let Some(region_output) = region_output.as_deref_mut() {
+                        let start_row = pixels_written / row_stride;
+                        let rows_without_vertical_state = if self.is_interleaved
+                            && self.options.jpeg_get_out_colorspace() != ColorSpace::Luma
+                        {
+                            8 * self.coeff * self.v_max
+                        } else if let SampleRatios::Generic(_, v) = self.info.sample_ratio {
+                            8 * v * self.coeff
+                        } else {
+                            8 * self.coeff
+                        };
+                        if !has_vertical_upsampling
+                            && (start_row + rows_without_vertical_state <= region_output.region.y
+                                || start_row >= region_output.region.y + region_output.region.height)
+                        {
+                            pixels_written += rows_without_vertical_state * row_stride;
+                        } else {
+                            region_stripe.fill(0);
+                            let mut stripe_written = 0;
+                            self.post_process(
+                                &mut region_stripe,
+                                i,
+                                mcu_height,
+                                width,
+                                padded_width,
+                                &mut stripe_written,
+                                &mut upsampler_scratch_space,
+                            )?;
+                            let rows = stripe_written / row_stride;
+                            region_output.copy_from_stripe(&region_stripe, start_row, rows);
+                            pixels_written += stripe_written;
+                        }
+                    } else {
+                        self.post_process(
+                            pixels,
+                            i,
+                            mcu_height,
+                            width,
+                            padded_width,
+                            &mut pixels_written,
+                            &mut upsampler_scratch_space,
+                        )?;
+                    }
                     self.pixels_decoded = pixels_written;
                     // This row's coefficient buffers can be reused next, so
                     // any checkpoint inside the row is no longer valid.
@@ -470,7 +752,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         }
 
         if !all_components_in_first_scan {
-            self.finish_baseline_decoding(progressive_mcus, mcu_width, pixels)?;
+            if let Some(region_output) = region_output.as_deref_mut() {
+                self.finish_baseline_decoding_region(progressive_mcus, region_output)?;
+            } else {
+                self.finish_baseline_decoding(progressive_mcus, mcu_width, pixels)?;
+            }
         }
 
         // it may happen that some images don't have the whole buffer
@@ -579,6 +865,96 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         }
 
         return Ok(());
+    }
+
+    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::cast_sign_loss)]
+    /// Finish baseline decoding by post-processing stripes and copying a region.
+    fn finish_baseline_decoding_region(
+        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], region_output: &mut RegionOutput<'_>,
+    ) -> Result<(), DecodeErrors> {
+        let mcu_height = self.mcu_y;
+        let is_hv = usize::from(self.is_interleaved);
+        let upsampler_scratch_size = is_hv
+            * self
+                .components
+                .iter()
+                .map(|x| x.width_stride)
+                .max()
+                .unwrap_or(0)
+            * 8;
+        let width = usize::from(self.info.width);
+        let padded_width = calculate_padded_width(width, self.info.sample_ratio);
+        let components = self.options.jpeg_get_out_colorspace().num_components();
+        let row_stride = width * components;
+
+        let mut upsampler_scratch_space = vec![0; upsampler_scratch_size];
+        let max_stripe_rows = (8 * self.v_max.max(1) * self.coeff.max(1))
+            .saturating_add(self.coeff.max(1) * self.v_max.max(1))
+            .max(16);
+        let mut stripe = vec![0; row_stride * max_stripe_rows];
+        let has_vertical_upsampling = self
+            .components
+            .iter()
+            .any(|c| c.sample_ratio == SampleRatios::HV || c.sample_ratio == SampleRatios::V);
+        let rows_without_vertical_state = if self.is_interleaved
+            && self.options.jpeg_get_out_colorspace() != ColorSpace::Luma
+        {
+            8 * self.coeff * self.v_max
+        } else if let SampleRatios::Generic(_, v) = self.info.sample_ratio {
+            8 * v * self.coeff
+        } else {
+            8 * self.coeff
+        };
+
+        for (pos, comp) in self.components.iter_mut().enumerate() {
+            comp.needed = min(
+                self.options.jpeg_get_out_colorspace().num_components() - 1,
+                pos,
+            ) == pos
+                || self.input_colorspace == ColorSpace::YCCK
+                || self.input_colorspace == ColorSpace::CMYK;
+        }
+
+        let mut pixels_written = 0;
+        for i in 0..mcu_height {
+            'component: for (position, component) in &mut self.components.iter_mut().enumerate() {
+                if !component.needed {
+                    continue 'component;
+                }
+
+                let step = block[position].len() / mcu_height;
+                let slice = &block[position][i * step..][..step];
+                let temp_channel = &mut component.raw_coeff;
+                temp_channel[..step].copy_from_slice(slice);
+            }
+
+            let start_row = pixels_written / row_stride;
+            if !has_vertical_upsampling
+                && (start_row + rows_without_vertical_state <= region_output.region.y
+                    || start_row >= region_output.region.y + region_output.region.height)
+            {
+                pixels_written += rows_without_vertical_state * row_stride;
+                continue;
+            }
+
+            stripe.fill(0);
+            let mut stripe_written = 0;
+            self.post_process(
+                &mut stripe,
+                i,
+                mcu_height,
+                width,
+                padded_width,
+                &mut stripe_written,
+                &mut upsampler_scratch_space,
+            )?;
+            let rows = stripe_written / row_stride;
+            region_output.copy_from_stripe(&stripe, start_row, rows);
+            pixels_written += stripe_written;
+        }
+
+        Ok(())
     }
 
     fn decode_mcu_width<const PROGRESSIVE: bool, B: BitStream>(

@@ -179,6 +179,155 @@ pub fn idct_int(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize
     }
 }
 
+/// Produce a reduced IDCT block by evaluating only the requested output samples.
+fn idct_int_scaled_sampled(
+    in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize, denominator: usize,
+) {
+    if &in_vector[1..] == &[0_i32; 63] {
+        let coeff = ((wa(wa(in_vector[0], 4), 1024) >> 3).clamp(0, 255)) as i16;
+        let reduced = 8 / denominator;
+        for y in 0..reduced {
+            out_vector[y * stride..y * stride + reduced].fill(coeff);
+        }
+        return;
+    }
+
+    // Vertical pass is identical to the full scalar IDCT. The scaled variants
+    // reduce work in the horizontal pass by evaluating only requested output
+    // rows and columns.
+    for ptr in 0..8 {
+        let p2 = in_vector[ptr + 16];
+        let p3 = in_vector[ptr + 48];
+
+        let p1 = wm(wa(p2, p3), 2217);
+
+        let t2 = wa(p1, wm(p3, -7567));
+        let t3 = wa(p1, wm(p2, 3135));
+
+        let p2 = in_vector[ptr];
+        let p3 = in_vector[32 + ptr];
+
+        let t0 = fsh(wa(p2, p3));
+        let t1 = fsh(ws(p2, p3));
+
+        let x0 = wa(wa(t0, t3), 512);
+        let x3 = wa(ws(t0, t3), 512);
+        let x1 = wa(wa(t1, t2), 512);
+        let x2 = wa(ws(t1, t2), 512);
+
+        let mut t0 = in_vector[ptr + 56];
+        let mut t1 = in_vector[ptr + 40];
+        let mut t2 = in_vector[ptr + 24];
+        let mut t3 = in_vector[ptr + 8];
+
+        let p3 = wa(t0, t2);
+        let p4 = wa(t1, t3);
+        let p1 = wa(t0, t3);
+        let p2 = wa(t1, t2);
+        let p5 = wm(wa(p3, p4), 4816);
+
+        t0 = wm(t0, 1223);
+        t1 = wm(t1, 8410);
+        t2 = wm(t2, 12586);
+        t3 = wm(t3, 6149);
+
+        let p1 = wa(p5, wm(p1, -3685));
+        let p2 = wa(p5, wm(p2, -10497));
+        let p3 = wm(p3, -8034);
+        let p4 = wm(p4, -1597);
+
+        t3 = wa(t3, wa(p1, p4));
+        t2 = wa(t2, wa(p2, p3));
+        t1 = wa(t1, wa(p2, p4));
+        t0 = wa(t0, wa(p1, p3));
+
+        in_vector[ptr] = ws(wa(x0, t3), 0) >> 10;
+        in_vector[ptr + 8] = ws(wa(x1, t2), 0) >> 10;
+        in_vector[ptr + 16] = ws(wa(x2, t1), 0) >> 10;
+        in_vector[ptr + 24] = ws(wa(x3, t0), 0) >> 10;
+        in_vector[ptr + 32] = ws(ws(x3, t0), 0) >> 10;
+        in_vector[ptr + 40] = ws(ws(x2, t1), 0) >> 10;
+        in_vector[ptr + 48] = ws(ws(x1, t2), 0) >> 10;
+        in_vector[ptr + 56] = ws(ws(x0, t3), 0) >> 10;
+    }
+
+    let reduced = 8 / denominator;
+
+    for y in 0..reduced {
+        let src_row = y * denominator * 8;
+
+        let p2 = in_vector[src_row + 2];
+        let p3 = in_vector[src_row + 6];
+
+        let p1 = wm(wa(p2, p3), 2217);
+        let t2 = wa(p1, wm(p3, -7567));
+        let t3 = wa(p1, wm(p2, 3135));
+
+        let p2 = in_vector[src_row];
+        let p3 = in_vector[src_row + 4];
+
+        let t0 = fsh(wa(p2, p3));
+        let t1 = fsh(ws(p2, p3));
+
+        let x0 = wa(wa(t0, t3), SCALE_BITS);
+        let x3 = wa(ws(t0, t3), SCALE_BITS);
+        let x1 = wa(wa(t1, t2), SCALE_BITS);
+        let x2 = wa(ws(t1, t2), SCALE_BITS);
+
+        let mut t0 = in_vector[src_row + 7];
+        let mut t1 = in_vector[src_row + 5];
+        let mut t2 = in_vector[src_row + 3];
+        let mut t3 = in_vector[src_row + 1];
+
+        let p3 = wa(t0, t2);
+        let p4 = wa(t1, t3);
+        let p1 = wa(t0, t3);
+        let p2 = wa(t1, t2);
+        let p5 = wm(wa(p3, p4), f2f(1.175875602));
+
+        t0 = wm(t0, 1223);
+        t1 = wm(t1, 8410);
+        t2 = wm(t2, 12586);
+        t3 = wm(t3, 6149);
+
+        let p1 = wa(p5, wm(p1, -3685));
+        let p2 = wa(p5, wm(p2, -10497));
+        let p3 = wm(p3, -8034);
+        let p4 = wm(p4, -1597);
+
+        t3 = wa(t3, wa(p1, p4));
+        t2 = wa(t2, wa(p2, p3));
+        t1 = wa(t1, wa(p2, p4));
+        t0 = wa(t0, wa(p1, p3));
+
+        let row = &mut out_vector[y * stride..];
+        for x in 0..reduced {
+            row[x] = match x * denominator {
+                0 => clamp(wa(x0, t3) >> 17),
+                2 => clamp(wa(x2, t1) >> 17),
+                4 => clamp(ws(x3, t0) >> 17),
+                6 => clamp(ws(x1, t2) >> 17),
+                _ => unreachable!("scaled IDCT only samples columns 0, 2, 4, and 6"),
+            };
+        }
+    }
+}
+
+/// Produce a 4x4 output block from one JPEG DCT block.
+pub fn idct_int_scaled_4x4(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize) {
+    idct_int_scaled_sampled(in_vector, out_vector, stride, 2);
+}
+
+/// Produce a 2x2 output block from one JPEG DCT block.
+pub fn idct_int_scaled_2x2(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize) {
+    idct_int_scaled_sampled(in_vector, out_vector, stride, 4);
+}
+
+/// Produce a 1x1 output block from one JPEG DCT block.
+pub fn idct_int_scaled_1x1(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize) {
+    idct_int_scaled_sampled(in_vector, out_vector, stride, 8);
+}
+
 #[inline]
 #[allow(clippy::cast_possible_truncation)]
 /// Multiply a number by 4096
