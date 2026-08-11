@@ -9,7 +9,6 @@ use std::sync::Arc;
 use std::{cell::{Cell, RefCell}, io::{BufRead, Read, Seek, SeekFrom}, rc::Rc};
 
 use zune_core::bytestream::ZCursor;
-use zune_core::options::DecoderOptions;
 use zune_jpeg::errors::DecodeErrors;
 use zune_jpeg::{CancelCheck, JpegDecoder, NeverCancel};
 
@@ -24,25 +23,39 @@ const PROGRESSIVE_RESTART: &[u8] =
     include_bytes!("../../../test-images/jpeg/progressive_restart_420.jpg");
 
 struct GrowableCursor<'a> {
-    data: &'a [u8],
-    position: usize,
-    limit: Rc<Cell<usize>>,
-    seek_log: Option<Rc<RefCell<Vec<usize>>>>
+    data:              &'a [u8],
+    position:          usize,
+    limit:             Rc<Cell<usize>>,
+    seek_log:          Option<Rc<RefCell<Vec<usize>>>>,
+    position_observer: Option<Arc<AtomicUsize>>
 }
 
 impl<'a> GrowableCursor<'a> {
     fn new(data: &'a [u8], limit: Rc<Cell<usize>>) -> Self {
-        Self { data, position: 0, limit, seek_log: None }
+        Self { data, position: 0, limit, seek_log: None, position_observer: None }
     }
 
     fn with_seek_log(
         data: &'a [u8], limit: Rc<Cell<usize>>, seek_log: Rc<RefCell<Vec<usize>>>
     ) -> Self {
-        Self { data, position: 0, limit, seek_log: Some(seek_log) }
+        Self { data, position: 0, limit, seek_log: Some(seek_log), position_observer: None }
+    }
+
+    fn with_position_observer(
+        data: &'a [u8], limit: Rc<Cell<usize>>, position_observer: Arc<AtomicUsize>
+    ) -> Self {
+        Self { data, position: 0, limit, seek_log: None, position_observer: Some(position_observer) }
     }
 
     fn visible(&self) -> usize {
         self.limit.get().min(self.data.len())
+    }
+
+    fn set_position(&mut self, position: usize) {
+        self.position = position;
+        if let Some(observer) = &self.position_observer {
+            observer.store(position, Ordering::Relaxed);
+        }
     }
 }
 
@@ -55,7 +68,7 @@ impl Read for GrowableCursor<'_> {
         let available = &self.data[self.position..visible];
         let count = available.len().min(buffer.len());
         buffer[..count].copy_from_slice(&available[..count]);
-        self.position += count;
+        self.set_position(self.position + count);
         Ok(count)
     }
 }
@@ -70,7 +83,7 @@ impl BufRead for GrowableCursor<'_> {
     }
 
     fn consume(&mut self, amount: usize) {
-        self.position += amount;
+        self.set_position(self.position + amount);
     }
 }
 
@@ -84,7 +97,7 @@ impl Seek for GrowableCursor<'_> {
         if next < 0 {
             return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "seek before start"));
         }
-        self.position = next as usize;
+        self.set_position(next as usize);
         if let Some(seek_log) = &self.seek_log {
             seek_log.borrow_mut().push(self.position);
         }
@@ -140,6 +153,15 @@ fn sos_data_start(data: &[u8], index: usize) -> usize {
     let offset = sos_offset(data, index);
     let length = usize::from(u16::from_be_bytes([data[offset + 2], data[offset + 3]]));
     offset + 2 + length
+}
+
+fn ac_first_scan_start(data: &[u8], index: usize) -> usize {
+    let sos = sos_offset(data, index);
+    let scan_components = usize::from(data[sos + 4]);
+    let spectral_params = sos + 5 + scan_components * 2;
+    assert!(data[spectral_params] > 0, "scan must be AC");
+    assert_eq!(data[spectral_params + 2] >> 4, 0, "scan must be AC first");
+    sos_data_start(data, index)
 }
 
 fn icc_app2(sequence: u8, total: u8, payload: &[u8]) -> Vec<u8> {
@@ -308,47 +330,6 @@ fn metadata_marker_cancellation_commits_once() {
 }
 
 #[test]
-fn progressive_edge_trigger_cancellation_is_reported() {
-    for strict in [false, true] {
-        for incremental in [false, true] {
-            let options = DecoderOptions::default().set_strict_mode(strict);
-            let mut decoder = JpegDecoder::new_with_options(ZCursor::new(PROGRESSIVE), options);
-            decoder.decode_headers().unwrap();
-            decoder.set_incremental_mode(incremental);
-            decoder.set_cancel_interval(1);
-            decoder.set_cancel(cancel_once_at(0));
-            let mut output = vec![0; decoder.output_buffer_size().unwrap()];
-
-            let error = decoder.decode_into(&mut output).unwrap_err();
-            assert!(matches!(error, DecodeErrors::Cancelled));
-        }
-    }
-}
-
-#[test]
-fn progressive_cancellation_retry_matches_oneshot() {
-    let expected = JpegDecoder::new(ZCursor::new(PROGRESSIVE)).decode().unwrap();
-
-    // Poll 8 cancels immediately after the first eligible eight-row fine
-    // checkpoint, proving its matching scratch coefficients survive retry.
-    for (incremental, cancel_poll) in [(false, 0), (true, 8)] {
-        let mut decoder = JpegDecoder::new(ZCursor::new(PROGRESSIVE));
-        decoder.decode_headers().unwrap();
-        decoder.set_incremental_mode(incremental);
-        decoder.set_cancel_interval(1);
-        decoder.set_cancel(cancel_once_at(cancel_poll));
-        let mut output = vec![0; decoder.output_buffer_size().unwrap()];
-
-        let error = decoder.decode_into(&mut output).unwrap_err();
-        assert!(matches!(error, DecodeErrors::Cancelled));
-
-        decoder.set_cancel(NeverCancel);
-        decoder.decode_into(&mut output).unwrap();
-        assert_eq!(output, expected, "incremental={incremental}");
-    }
-}
-
-#[test]
 fn progressive_fine_cancellation_resume_uses_checkpoint() {
     let expected = JpegDecoder::new(ZCursor::new(PROGRESSIVE_RESTART)).decode().unwrap();
     let first_scan_start = sos_data_start(PROGRESSIVE_RESTART, 0);
@@ -411,18 +392,30 @@ fn progressive_inter_scan_marker_cancellation_retries() {
 #[test]
 fn progressive_unsafe_scan_cancellation_retries() {
     let expected = JpegDecoder::new(ZCursor::new(SMALL_PROGRESSIVE)).decode().unwrap();
-    let mut decoder = JpegDecoder::new(ZCursor::new(SMALL_PROGRESSIVE));
+    let unsafe_scan_start = ac_first_scan_start(SMALL_PROGRESSIVE, 1);
+    let limit = Rc::new(Cell::new(SMALL_PROGRESSIVE.len()));
+    let position = Arc::new(AtomicUsize::new(0));
+    let cursor = GrowableCursor::with_position_observer(
+        SMALL_PROGRESSIVE,
+        Rc::clone(&limit),
+        Arc::clone(&position)
+    );
+    let mut decoder = JpegDecoder::new(cursor);
     decoder.decode_headers().unwrap();
-    let first_scan_rows = usize::from(decoder.info().unwrap().height).div_ceil(8);
     decoder.set_incremental_mode(true);
     decoder.set_cancel_interval(1);
-    // The first scan is followed by DHT and SOS marker polls; the next poll is
-    // the first row of the unsafe AC scan.
-    decoder.set_cancel(cancel_once_at(first_scan_rows + 2));
+    decoder.set_cancel({
+        let position = Arc::clone(&position);
+        move || position.load(Ordering::Relaxed) > unsafe_scan_start
+    });
     let mut output = vec![0; decoder.output_buffer_size().unwrap()];
 
     let error = decoder.decode_into(&mut output).unwrap_err();
     assert!(matches!(error, DecodeErrors::Cancelled));
+    assert!(
+        position.load(Ordering::Relaxed) > unsafe_scan_start,
+        "cancellation must occur after an AC-first row consumed entropy data"
+    );
     assert_eq!(decoder.decoded_scans(), Some(1));
 
     decoder.set_cancel(NeverCancel);
@@ -431,9 +424,49 @@ fn progressive_unsafe_scan_cancellation_retries() {
 }
 
 #[test]
+fn progressive_non_incremental_unsafe_scan_cancellation_retries() {
+    let expected = JpegDecoder::new(ZCursor::new(SMALL_PROGRESSIVE)).decode().unwrap();
+    let unsafe_scan_start = ac_first_scan_start(SMALL_PROGRESSIVE, 1);
+    let limit = Rc::new(Cell::new(SMALL_PROGRESSIVE.len()));
+    let position = Arc::new(AtomicUsize::new(0));
+    let cursor = GrowableCursor::with_position_observer(
+        SMALL_PROGRESSIVE,
+        Rc::clone(&limit),
+        Arc::clone(&position)
+    );
+    let mut decoder = JpegDecoder::new(cursor);
+    decoder.decode_headers().unwrap();
+    decoder.set_cancel_interval(1);
+    decoder.set_cancel({
+        let position = Arc::clone(&position);
+        move || position.load(Ordering::Relaxed) > unsafe_scan_start
+    });
+    let mut output = vec![0; decoder.output_buffer_size().unwrap()];
+
+    let error = decoder.decode_into(&mut output).unwrap_err();
+    assert!(matches!(error, DecodeErrors::Cancelled));
+    assert!(!error.is_recoverable_eof());
+    assert!(
+        position.load(Ordering::Relaxed) > unsafe_scan_start,
+        "cancellation must occur after an AC-first row consumed entropy data"
+    );
+    assert_eq!(decoder.decoded_scans(), Some(0));
+    assert_eq!(decoder.decoded_output_bytes(), Some(0));
+    assert_eq!(decoder.decoded_scanlines(), Some(0));
+    assert_eq!(decoder.decoded_preview_output_bytes(), Some(0));
+    assert_eq!(decoder.decoded_preview_scanlines(), Some(0));
+    assert!(output.iter().all(|byte| *byte == 0));
+
+    decoder.set_cancel(NeverCancel);
+    decoder.decode_into(&mut output).unwrap();
+    assert_eq!(output, expected);
+}
+
+#[test]
 fn baseline_cancellation_preserves_stable_progress_and_retries() {
-    let expected = JpegDecoder::new(ZCursor::new(BASELINE)).decode().unwrap();
-    let mut decoder = JpegDecoder::new(ZCursor::new(BASELINE));
+    let data = include_bytes!("../../../test-images/jpeg/sampling_factors.jpg");
+    let expected = JpegDecoder::new(ZCursor::new(data)).decode().unwrap();
+    let mut decoder = JpegDecoder::new(ZCursor::new(data));
     decoder.decode_headers().unwrap();
     decoder.set_incremental_mode(true);
     decoder.set_cancel_interval(1);

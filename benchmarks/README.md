@@ -136,28 +136,6 @@ Caches (sum of all):
 | **DRI / Restart markers** | one-shot           | 3.19 ms    | 6.47 ms    | 42.76 MiB/s | 21.08 MiB/s |
 |                           | incremental resume | 5.51 ms    | 11.74 ms   | 24.76 MiB/s | 11.62 MiB/s |
 
-### Incremental retry-cost benchmarks
-
-`decode_jpeg` includes `jpeg: Repeated incremental retry cost`, which times the
-whole operation across three recoverable EOF results and the final successful
-retry. Run it with:
-
-```shell
-cargo bench -p zune-benches --bench decode_jpeg -- "jpeg: Repeated incremental retry cost"
-```
-
-The cases identify their expected work bound:
-
-| Case | Expected retry behavior |
-|:-----|:------------------------|
-| Baseline row checkpoints | Resume from the latest completed MCU row |
-| Progressive first-DC fine checkpoints | Resume from an eligible fine row checkpoint; a repeated fine-resume EOF may fall back to the scan boundary |
-| Progressive refinement scan-boundary replay | Intentionally replay the active refinement scan from its boundary |
-
-Compare measurements only on the same machine and build. The benchmark measures
-total retry work rather than imposing a wall-clock threshold; correctness tests
-separately assert the checkpoint or fallback boundary used by each path.
-
 ---
 
 ## 4. PNG Decoding
