@@ -33,6 +33,7 @@ jobs:
       - name: Build wheels (fast)
         uses: PyO3/maturin-action@v1
         with:
+          working-directory: crates/zune-python
           target: ${{ matrix.target }}
           args: --release --out dist --find-interpreter
           sccache: "true"
@@ -54,6 +55,7 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
+          working-directory: crates/zune-python
           target: ${{ matrix.target }}
           args: --release --out dist --find-interpreter
           sccache: "true"
@@ -74,6 +76,7 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
+          working-directory: crates/zune-python
           target: ${{ matrix.target }}
           args: --release --out dist --find-interpreter
           sccache: "true"
@@ -104,6 +107,7 @@ jobs:
       - name: Build wheels (full matrix)
         uses: PyO3/maturin-action@v1
         with:
+          working-directory: crates/zune-python
           target: ${{ matrix.target }}
           args: --release --out dist --find-interpreter
           sccache: "true"

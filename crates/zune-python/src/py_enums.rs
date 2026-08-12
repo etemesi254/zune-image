@@ -196,15 +196,29 @@ impl ImageThresholdType {
 #[pyclass]
 #[derive(Copy, Clone)]
 pub enum ResizeMethod {
+    Lanczos3,
+    Lanczos2,
     Bilinear,
-    Bicubic
+    Bicubic,
+    CatmullRom,
+    Mitchell,
+    BSpline,
+    Hermite,
+    Sinc
 }
 
 impl ResizeMethod {
     pub(crate) fn to_resizemethod(self) -> ZResizeMethod {
         match self {
+            ResizeMethod::Lanczos3 => ZResizeMethod::Lanczos3,
+            ResizeMethod::Lanczos2 => ZResizeMethod::Lanczos2,
             ResizeMethod::Bilinear => ZResizeMethod::Bilinear,
-            ResizeMethod::Bicubic => ZResizeMethod::Bicubic
+            ResizeMethod::Bicubic => ZResizeMethod::Bicubic,
+            ResizeMethod::CatmullRom => ZResizeMethod::CatmullRom,
+            ResizeMethod::Mitchell => ZResizeMethod::Mitchell,
+            ResizeMethod::BSpline => ZResizeMethod::BSpline,
+            ResizeMethod::Hermite => ZResizeMethod::Hermite,
+            ResizeMethod::Sinc => ZResizeMethod::Sinc
         }
     }
 }
@@ -212,8 +226,15 @@ impl ResizeMethod {
 impl From<ZResizeMethod> for ResizeMethod {
     fn from(value: ZResizeMethod) -> Self {
         match value {
+            ZResizeMethod::Lanczos3 => ResizeMethod::Lanczos3,
+            ZResizeMethod::Lanczos2 => ResizeMethod::Lanczos2,
             ZResizeMethod::Bilinear => ResizeMethod::Bilinear,
-            ZResizeMethod::Bicubic => ResizeMethod::Bicubic
+            ZResizeMethod::Bicubic => ResizeMethod::Bicubic,
+            ZResizeMethod::CatmullRom => ResizeMethod::CatmullRom,
+            ZResizeMethod::Mitchell => ResizeMethod::Mitchell,
+            ZResizeMethod::BSpline => ResizeMethod::BSpline,
+            ZResizeMethod::Hermite => ResizeMethod::Hermite,
+            ZResizeMethod::Sinc => ResizeMethod::Sinc
         }
     }
 }

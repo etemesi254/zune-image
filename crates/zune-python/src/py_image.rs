@@ -10,7 +10,7 @@ mod numpy_bindings;
 use std::any::TypeId;
 
 use numpy::{
-    dtype_bound, Element, PyArray2, PyArray3, PyArrayDescrMethods, PyArrayMethods, PyUntypedArray,
+    dtype, Element, PyArray2, PyArray3, PyArrayDescrMethods, PyArrayMethods, PyUntypedArray,
     PyUntypedArrayMethods
 };
 use pyo3::exceptions::PyException;
@@ -27,16 +27,16 @@ use zune_image::traits::OperationsTrait;
 use zune_imageprocs::auto_orient::AutoOrient;
 use zune_imageprocs::bilateral_filter::BilateralFilter;
 use zune_imageprocs::blend::Blend;
+use zune_imageprocs::blur::Blur;
 use zune_imageprocs::box_blur::BoxBlur;
 use zune_imageprocs::crop::Crop;
 use zune_imageprocs::exposure::Exposure;
 use zune_imageprocs::flip::{Flip, FlipDirection};
 use zune_imageprocs::gamma::Gamma;
-use zune_imageprocs::gaussian_blur::GaussianBlur;
 use zune_imageprocs::hsv_adjust::HsvAdjust;
 use zune_imageprocs::invert::Invert;
-use zune_imageprocs::median::Median;
-use zune_imageprocs::resize::Resize;
+use zune_imageprocs::median::MedianBlur;
+use zune_imageprocs::resize::{Resize, ResizeDimensions};
 use zune_imageprocs::scharr::Scharr;
 use zune_imageprocs::sobel::Sobel;
 use zune_imageprocs::stretch_contrast::StretchContrast;
@@ -237,7 +237,10 @@ impl Image {
     ) -> PyResult<Option<Image>> {
         exec_filter(
             self,
-            Resize::new(new_width, new_height, method.to_resizemethod()),
+            Resize::new(
+                ResizeDimensions::Exact(new_width, new_height),
+                method.to_resizemethod()
+            ),
             in_place
         )
     }
@@ -428,7 +431,7 @@ impl Image {
     ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
     #[pyo3(signature = (sigma, in_place = false))]
     pub fn gaussian_blur(&mut self, sigma: f32, in_place: bool) -> PyResult<Option<Image>> {
-        exec_filter(self, GaussianBlur::new(sigma), in_place)
+        exec_filter(self, Blur::new(sigma), in_place)
     }
 
     /// Auto orient the image based on the exif metadata
@@ -616,8 +619,19 @@ impl Image {
     pub fn blend(
         &mut self, image: &Image, src_alpha: f32, in_place: bool
     ) -> PyResult<Option<Image>> {
-        let filter = Blend::new(&image.image, src_alpha);
-        exec_filter(self, filter, in_place)
+        let filter = Blend::new(src_alpha);
+        let mut images = vec![self.image.clone(), image.image.clone()];
+        filter
+            .execute_multiple(&mut images)
+            .map_err(|error| PyErr::new::<PyException, _>(format!("Error blending: {error:?}")))?;
+        let blended = images.pop().expect("blend keeps the destination image");
+
+        if in_place {
+            self.image = blended;
+            Ok(None)
+        } else {
+            Ok(Some(Image::new(blended)))
+        }
     }
 
     /// Adjust the hue saturation and lightness of an image
@@ -645,7 +659,7 @@ impl Image {
     /// - radius: Median filter radius
     #[pyo3(signature=(radius,in_place=false))]
     pub fn median_filter(&mut self, radius: usize, in_place: bool) -> PyResult<Option<Image>> {
-        let filter = Median::new(radius);
+        let filter = MedianBlur::new(radius);
         exec_filter(self, filter, in_place)
     }
 }
@@ -800,39 +814,39 @@ pub fn convert_3d<T: Element + 'static>(
 pub fn from_numpy(
     array: &Bound<'_, PyUntypedArray>, colorspace: Option<ColorSpace>
 ) -> PyResult<Image> {
-    return Python::with_gil::<_, PyResult<Image>>(|py| {
+    return Python::attach::<_, PyResult<Image>>(|py| {
         let d_type = array.dtype();
         let dims = array.ndim();
         if dims == 2 {
-            if d_type.is_equiv_to(&dtype_bound::<u8>(py)) {
+            if d_type.is_equiv_to(&dtype::<u8>(py)) {
                 let c: &Bound<'_, PyArray2<u8>> = array.downcast()?;
                 // single dimension
                 return Ok(Image {
                     image: convert_2d(c)?
                 });
             }
-            if d_type.is_equiv_to(&dtype_bound::<u16>(py)) {
+            if d_type.is_equiv_to(&dtype::<u16>(py)) {
                 let c: &Bound<'_, PyArray2<u16>> = array.downcast()?;
                 // single dimension
                 return Ok(Image {
                     image: convert_2d(c)?
                 });
             }
-            if d_type.is_equiv_to(&dtype_bound::<f32>(py)) {
+            if d_type.is_equiv_to(&dtype::<f32>(py)) {
                 let c: &Bound<'_, PyArray2<f32>> = array.downcast()?;
                 // single dimension
                 return Ok(Image {
                     image: convert_2d(c)?
                 });
             }
-            if d_type.is_equiv_to(&dtype_bound::<f64>(py)) {
+            if d_type.is_equiv_to(&dtype::<f64>(py)) {
                 let c: &Bound<'_, PyArray2<f64>> = array.downcast()?;
                 // single dimension
                 return Ok(Image {
                     image: convert_2d(c)?
                 });
             }
-            if d_type.is_equiv_to(&dtype_bound::<u32>(py)) {
+            if d_type.is_equiv_to(&dtype::<u32>(py)) {
                 let c: &Bound<'_, PyArray2<u32>> = array.downcast()?;
                 // single dimension
                 return Ok(Image {
@@ -842,35 +856,35 @@ pub fn from_numpy(
         }
 
         if dims == 3 {
-            if d_type.is_equiv_to(&dtype_bound::<u8>(py)) {
+            if d_type.is_equiv_to(&dtype::<u8>(py)) {
                 let c: &Bound<'_, PyArray3<u8>> = array.downcast()?;
                 // single dimension
                 return Ok(Image {
                     image: convert_3d(c, colorspace)?
                 });
             }
-            if d_type.is_equiv_to(&dtype_bound::<u16>(py)) {
+            if d_type.is_equiv_to(&dtype::<u16>(py)) {
                 let c: &Bound<'_, PyArray3<u16>> = array.downcast()?;
                 // single dimension
                 return Ok(Image {
                     image: convert_3d(c, colorspace)?
                 });
             }
-            if d_type.is_equiv_to(&dtype_bound::<f32>(py)) {
+            if d_type.is_equiv_to(&dtype::<f32>(py)) {
                 let c: &Bound<'_, PyArray3<f32>> = array.downcast()?;
                 // single dimension
                 return Ok(Image {
                     image: convert_3d(c, colorspace)?
                 });
             }
-            if d_type.is_equiv_to(&dtype_bound::<f64>(py)) {
+            if d_type.is_equiv_to(&dtype::<f64>(py)) {
                 let c: &Bound<'_, PyArray3<f64>> = array.downcast()?;
                 // single dimension
                 return Ok(Image {
                     image: convert_3d(c, colorspace)?
                 });
             }
-            if d_type.is_equiv_to(&dtype_bound::<u32>(py)) {
+            if d_type.is_equiv_to(&dtype::<u32>(py)) {
                 let c: &Bound<'_, PyArray3<u32>> = array.downcast()?;
                 // single dimension
                 return Ok(Image {
