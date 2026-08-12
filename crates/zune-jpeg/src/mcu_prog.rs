@@ -556,7 +556,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         .unwrap();
 
                     let ac_table = B::get_ac_table(&mut self.entropy_tables, ac_pos)?;
-                    stream.decode_mcu_ac_first(&mut self.stream, ac_table, data)?;
+                    if !stream.decode_mcu_ac_first(&mut self.stream, ac_table, data)? {
+                        // Arithmetic bad-code termination is scan-wide, matching
+                        // libjpeg's no-op handling for the remaining MCUs.
+                        return Ok(());
+                    }
                 }
 
                 self.todo -= 1;
@@ -989,8 +993,145 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::JpegDecoder;
     use zune_core::bytestream::ZCursor;
+    #[cfg(feature = "arith")]
+    use zune_core::options::DecoderOptions;
+
+    use crate::JpegDecoder;
+
+    #[cfg(feature = "arith")]
+    fn coefficient_hash(coefficients: &[i16]) -> u64 {
+        coefficients
+            .iter()
+            .flat_map(|coefficient| coefficient.to_le_bytes())
+            .fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+                (hash ^ u64::from(byte)).wrapping_mul(0x100_0000_01b3)
+            })
+    }
+
+    #[test]
+    #[cfg(feature = "arith")]
+    #[allow(clippy::too_many_lines)]
+    fn progressive_arithmetic_coefficients_match_libjpeg() {
+        use crate::misc::UN_ZIGZAG;
+
+        // CC0 JPEGs from robert-ancell/jpegsuite revision
+        // 8382e7831896cd1adf1cc61a1c9e565c4030aa43. The coefficient hash and
+        // spot values were generated with libjpeg-turbo 3.1.0 built with
+        // WITH_ARITH_DEC=1 using jpeg_read_coefficients().
+        const LIBJPEG_COEFFICIENT_HASH: u64 = 0xa2c3_e911_1129_f380;
+        for (name, data, reverse) in [
+            (
+                "ascending",
+                include_bytes!(
+                    "../../../test-images/jpeg/arith/progressive_parity/arith_spectral_all.jpg"
+                )
+                .as_slice(),
+                false
+            ),
+            (
+                "descending",
+                include_bytes!(
+                    "../../../test-images/jpeg/arith/progressive_parity/arith_spectral_all_reverse.jpg"
+                )
+                .as_slice(),
+                true
+            )
+        ] {
+            let sos_offsets: Vec<_> = data
+                .windows(2)
+                .enumerate()
+                .filter_map(|(offset, bytes)| (bytes == [0xFF, 0xDA]).then_some(offset))
+                .collect();
+            assert_eq!(sos_offsets.len(), 64);
+            for (scan_index, &sos) in sos_offsets.iter().enumerate() {
+                let component_count = usize::from(data[sos + 4]);
+                let params = sos + 5 + component_count * 2;
+                let expected_band = if scan_index == 0 {
+                    0
+                } else if reverse {
+                    64 - scan_index
+                } else {
+                    scan_index
+                };
+                assert_eq!(component_count, 1, "{name}: scan {scan_index}");
+                assert_eq!(usize::from(data[params]), expected_band, "{name}");
+                assert_eq!(usize::from(data[params + 1]), expected_band, "{name}");
+                assert_eq!(data[params + 2], 0, "{name}: Ah/Al must be zero");
+            }
+            for strict in [false, true] {
+                let options = DecoderOptions::default().set_strict_mode(strict);
+                let mut direct = JpegDecoder::new_with_options(ZCursor::new(data), options);
+                direct.decode().unwrap();
+                let reference = direct.progressive_mcus_buffer[0].clone();
+                assert_eq!(reference.len(), 16 * 64, "{name}");
+                assert_eq!(coefficient_hash(&reference), LIBJPEG_COEFFICIENT_HASH, "{name}");
+                for (block, natural_index, expected) in [
+                    (0, 0, 775),
+                    (0, 1, 224),
+                    (0, 8, 224),
+                    (0, 16, -18),
+                    (0, 61, 30),
+                    (0, 63, 24),
+                    (15, 63, 24)
+                ] {
+                    assert_eq!(reference[block * 64 + natural_index], expected, "{name}");
+                }
+
+                for (scan_index, next_sos) in sos_offsets
+                    .iter()
+                    .skip(1)
+                    .map(Some)
+                    .chain(core::iter::once(None))
+                    .enumerate()
+                {
+                    let scan_count = scan_index + 1;
+                    let visible = next_sos.map_or(data.len(), |offset| offset + 2);
+                    let options = DecoderOptions::default().set_strict_mode(strict);
+                    let mut decoder =
+                        JpegDecoder::new_with_options(ZCursor::new(&data[..visible]), options);
+                    decoder.set_incremental_mode(true);
+                    let result = decoder.decode();
+                    if scan_count == 64 {
+                        result.unwrap();
+                    } else {
+                        assert!(result.unwrap_err().is_recoverable_eof());
+                    }
+                    assert_eq!(decoder.decoded_scans(), Some(scan_count));
+                    let actual = &decoder.progressive_mcus_buffer[0];
+                    assert_eq!(actual.len(), reference.len());
+
+                    let mut known = [false; 64];
+                    known[0] = true;
+                    for offset in 1..scan_count {
+                        let zigzag = if reverse { 64 - offset } else { offset };
+                        known[UN_ZIGZAG[zigzag] & 63] = true;
+                    }
+
+                    for (flat_index, (&actual, &expected)) in
+                        actual.iter().zip(reference.iter()).enumerate()
+                    {
+                        let natural_index = flat_index % 64;
+                        let expected = if known[natural_index] { expected } else { 0 };
+                        assert_eq!(
+                            actual,
+                            expected,
+                            "{name}: strict={strict}, scan={scan_count}, band={}, block={}, natural_index={natural_index}",
+                            if scan_count == 1 {
+                                0
+                            } else if reverse {
+                                65 - scan_count
+                            } else {
+                                scan_count - 1
+                            },
+                            flat_index / 64
+                        );
+                    }
+                }
+
+            }
+        }
+    }
 
     #[test]
     fn test_progressive_dri_420_color() {
