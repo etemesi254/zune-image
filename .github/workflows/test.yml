@@ -96,6 +96,13 @@ jobs:
           RUSTC_WRAPPER: sccache
           RUSTFLAGS: "-C target-cpu=native"
 
+      - name: Test arithmetic JPEG decoding
+        if: matrix.os == 'ubuntu-latest' && matrix.toolchain == 'stable'
+        run: cargo test -p zune-jpeg --features arith
+        env:
+          RUSTC_WRAPPER: sccache
+          RUSTFLAGS: "-C target-cpu=native"
+
   ########################################
   # EXHAUSTIVE CI (big-endian + exotic)
   ########################################

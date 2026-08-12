@@ -27,6 +27,7 @@ jobs:
       - run: cargo build -p zune-core     --target x86_64-unknown-uefi --no-default-features
       - run: cargo build -p zune-inflate  --target x86_64-unknown-uefi --no-default-features
       - run: cargo build -p zune-jpeg     --target x86_64-unknown-uefi --no-default-features
+      - run: cargo build -p zune-jpeg     --target x86_64-unknown-uefi --no-default-features --features arith
       - run: cargo build -p zune-png      --target x86_64-unknown-uefi --no-default-features
       - run: cargo build -p zune-ppm      --target x86_64-unknown-uefi --no-default-features
       - run: cargo build -p zune-qoi      --target x86_64-unknown-uefi --no-default-features
