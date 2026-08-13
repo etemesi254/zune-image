@@ -728,7 +728,7 @@ where
     /// See DecodeErrors for an explanation
     pub fn decode(&mut self) -> Result<Vec<u8>, DecodeErrors> {
         self.decode_headers()?;
-        self.ensure_supported_sample_precision()?;
+        self.ensure_supported_encoding()?;
 
         if self.expects_dnl {
             // Height is unknown until DNL is encountered during entropy
@@ -1335,6 +1335,12 @@ where
                 parse_start_of_frame(marker, self)?;
                 self.is_progressive = is_progressive;
             }
+            Marker::SOF(3) => {
+                trace!("Image encoding scheme =`Lossless Huffman`");
+                parse_start_of_frame(SOFMarkers::LosslessHuffman, self)?;
+                self.is_progressive = false;
+                self.is_arithmetic = false;
+            }
             #[cfg(feature = "arith")]
             Marker::SOF(9..=10) => {
                 // choose marker
@@ -1607,7 +1613,12 @@ where
         };
     }
 
-    fn ensure_supported_sample_precision(&self) -> Result<(), DecodeErrors> {
+    fn ensure_supported_encoding(&self) -> Result<(), DecodeErrors> {
+        if self.info.sof == SOFMarkers::LosslessHuffman {
+            return Err(DecodeErrors::Unsupported(
+                UnsupportedSchemes::LosslessHuffman
+            ));
+        }
         if self.info.pixel_density == 12 {
             return Err(DecodeErrors::FormatStatic(
                 "12-bit JPEG pixel decoding is not supported"
@@ -1868,7 +1879,7 @@ where
             self.decode_headers_internal()?;
         }
 
-        self.ensure_supported_sample_precision()?;
+        self.ensure_supported_encoding()?;
 
         let expected_size = self.output_buffer_size().unwrap();
 
