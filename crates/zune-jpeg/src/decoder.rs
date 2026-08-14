@@ -120,7 +120,9 @@ pub(crate) struct SosParamsSnapshot {
     pub(crate) succ_high:       u8,
     pub(crate) succ_low:        u8,
     pub(crate) dc_huff_tables:  [usize; MAX_COMPONENTS],
-    pub(crate) ac_huff_tables:  [usize; MAX_COMPONENTS]
+    pub(crate) ac_huff_tables:  [usize; MAX_COMPONENTS],
+    pub(crate) scan_blocks:     [ScanBlock; 10],
+    pub(crate) num_scan_blocks: u8,
 }
 
 /// Marker-defined decode state restored for first-SOS replay.
@@ -416,7 +418,9 @@ where
                 self.components
                     .get(i)
                     .map_or(0, |component| component.ac_huff_table)
-            })
+            }),
+            scan_blocks:     self.scan_blocks,
+            num_scan_blocks: self.num_scan_blocks,
         }
     }
 
@@ -1654,6 +1658,8 @@ where
             self.spec_end = resume_sos_snapshot.spec_end;
             self.succ_high = resume_sos_snapshot.succ_high;
             self.succ_low = resume_sos_snapshot.succ_low;
+            self.scan_blocks = resume_sos_snapshot.scan_blocks;
+            self.num_scan_blocks = resume_sos_snapshot.num_scan_blocks;
             debug_assert!(
                 self.components.len() <= MAX_COMPONENTS,
                 "components vector exceeds MAX_COMPONENTS; SOS restore would index out of bounds"

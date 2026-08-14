@@ -32,6 +32,7 @@ pub type UpSampler = fn(
     output: &mut [i16]
 );
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScanBlock {
     pub(crate) component: usize,
     pub(crate) vertical: u8,

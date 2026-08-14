@@ -507,58 +507,6 @@ pub(crate) fn parse_sos<T: ZByteReaderTrait>(
             }
         }
 
-        // A.2.3 (Interleaved order).
-        //
-        // Scans of only one component are never interleaved. For all other scans the order of
-        // blocks within the MCU depends on the sample definitions from the header. There's as many
-        // vertical and horizontal samples in the scan as defined for the component.
-        //
-        // B.2.1 (High-level syntax)
-        //
-        // This clarifies that for progressive images only the first scan with DC components is
-        // allowed to be interleaved. All other scans with other components are not to be
-        // interleaved, implying those can not contain multiple subsampled components.
-        if scan_subsampled && ns > 1 {
-            let mut idx_block = 0;
-
-            for i in 0..ns {
-                let k = z_order[i as usize];
-                let component = &image.components[usize::from(k)];
-
-                for j in 0..component.vertical_sample {
-                    for i in 0..component.horizontal_sample {
-                        image.scan_blocks[idx_block] = ScanBlock {
-                            component: k,
-                            horizontal: i as u8,
-                            vertical: j as u8,
-                        };
-
-                        idx_block += 1;
-                    }
-                }
-            }
-
-            if idx_block > 10 {
-                return Err(DecodeErrors::SofError(format!(
-                    "Invalid scan with {:?} components, must be at most 10",
-                    idx_block,
-                )));
-            }
-
-            image.num_scan_blocks = idx_block as u8;
-        } else {
-            for i in 0..ns {
-                let component = z_order[usize::from(i)];
-                image.scan_blocks[usize::from(i)] = ScanBlock {
-                    component,
-                    horizontal: 0,
-                    vertical: 0,
-                };
-            }
-
-            image.num_scan_blocks = ns;
-        }
-
         // Spectral parameters.
         let spec_start = cursor.read_u8()?;
         let spec_end = cursor.read_u8()?;
@@ -608,6 +556,70 @@ pub(crate) fn parse_sos<T: ZByteReaderTrait>(
         image.succ_low = succ_low;
 
         trace!("Ss={spec_start}, Se={spec_end} Ah={succ_high} Al={succ_low}");
+
+        // A.2.3 (Interleaved order).
+        //
+        // Scans of only one component are never interleaved. For all other scans the order of
+        // blocks within the MCU depends on the sample definitions from the header. There's as many
+        // vertical and horizontal samples in the scan as defined for the component.
+        //
+        // B.2.1 (High-level syntax)
+        //
+        // This clarifies that for progressive images only the first scan with DC components is
+        // allowed to be interleaved. All other scans with other components are not to be
+        // interleaved, implying those can not contain multiple subsampled components.
+
+        // NOTE: not sure about comparing number of scans to components. It's an internal choice
+        // that we're using a different buffer in these cases but how would that influence the MCU
+        // order of scans that are present? It's not clear from the ITU T.81 specification.
+        let is_image_progressive =
+            usize::from(image.num_scans) != image.components.len();
+
+        if ns > 1 && !is_image_progressive {
+            let mut idx_block = 0;
+
+            for i in 0..ns {
+                let k = z_order[i as usize];
+                let component = &image.components[usize::from(k)];
+
+                for j in 0..component.vertical_sample {
+                    for i in 0..component.horizontal_sample {
+                        image.scan_blocks[idx_block] = ScanBlock {
+                            component: k,
+                            horizontal: i as u8,
+                            vertical: j as u8,
+                        };
+
+                        idx_block += 1;
+                    }
+                }
+            }
+
+            if idx_block > 10 {
+                return Err(DecodeErrors::SofError(format!(
+                    "Invalid scan with {:?} components, must be at most 10",
+                    idx_block,
+                )));
+            }
+
+            image.num_scan_blocks = idx_block as u8;
+        } else {
+            for i in 0..ns {
+                let component = z_order[usize::from(i)];
+                image.scan_blocks[usize::from(i)] = ScanBlock {
+                    component,
+                    horizontal: 0,
+                    vertical: 0,
+                };
+            }
+
+            image.num_scan_blocks = ns;
+        }
+
+        trace!(
+            "Blocks per MCU: {:?}",
+            &image.scan_blocks[..image.num_scan_blocks as usize]
+        );
 
         Ok(())
     })
