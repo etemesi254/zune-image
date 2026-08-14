@@ -372,9 +372,10 @@ pub struct JpegDecoder<T> {
     /// Whether row checkpoints should also be recorded on the first scan
     /// decode attempt.
     ///
-    /// Disabled by default to keep one-shot decode free of checkpoint work;
-    /// streaming callers can opt in before `decode_into` to avoid replaying
-    /// from scan start after the first recoverable scan EOF.
+    /// Disabled by default to preserve best-effort output on scan EOF in
+    /// non-strict mode and keep one-shot decode free of checkpoint work.
+    /// Streaming callers opt in before `decode_into` to receive recoverable
+    /// scan EOF and avoid replaying from scan start.
     incremental_mode: bool,
     /// Whether this decoder has already attempted scan decoding.
     ///
@@ -883,9 +884,10 @@ where
 
     /// Return whether incremental mode is enabled.
     ///
-    /// Incremental mode records per-row checkpoints during the first scan
-    /// decode attempt, allowing a later retry after recoverable EOF to resume
-    /// from the latest stable row instead of replaying from scan start.
+    /// Incremental mode makes scan EOF recoverable in non-strict mode and
+    /// records per-row checkpoints during the first scan decode attempt,
+    /// allowing a later retry to resume from the latest stable row instead of
+    /// replaying from scan start.
     ///
     /// It is disabled by default so one-shot decoding keeps the lowest
     /// overhead path.
@@ -896,19 +898,19 @@ where
 
     /// Enable or disable incremental mode.
     ///
-    /// Call this before the first `decode_into` scan attempt when the caller
-    /// expects input to arrive incrementally. For baseline images, Huffman scans
-    /// save row checkpoints on the first attempt. For progressive images, the
-    /// active scan decodes through scratch coefficient storage so completed
-    /// scans can be rendered as previews if that first attempt reaches EOF.
-    ///
-    /// The default is `false`. A first-attempt one-shot progressive decode then
-    /// updates its existing coefficient buffers directly and does not clone them.
-    /// Incremental mode clones only the coefficient buffers touched by the active
-    /// progressive scan. After any previous scan decode attempt, later attempts
-    /// enable the same preservation automatically so retries remain idempotent.
+    /// Call this before the first `decode_into` scan attempt. When enabled,
+    /// scan EOF is recoverable and decoding can be retried with more input.
+    /// Otherwise, non-strict decoding returns best-effort output on scan EOF.
+    /// Strict mode always treats scan EOF as an error. The default is `false`.
     pub fn set_incremental_mode(&mut self, enabled: bool) {
         self.incremental_mode = enabled;
+    }
+
+    /// Whether scan EOF must be returned as an error.
+    /// Strict mode rejects truncated scans, while incremental mode uses the
+    /// error to signal that the caller should provide more input.
+    pub(crate) fn scan_eof_is_error(&self) -> bool {
+        self.options.strict_mode() || self.incremental_mode
     }
 
     /// Return the number of output scanlines known to be stable after the
@@ -1627,11 +1629,11 @@ where
     /// from hard failures: `Err(e)` where `e.is_recoverable_eof()` means feed
     /// more input and retry, while any other `Err` is non-recoverable.
     ///
-    /// By default, row checkpoints are enabled after a previous scan decode
-    /// attempt, so the first one-shot decode avoids checkpoint overhead. Call
-    /// [`set_incremental_mode`](Self::set_incremental_mode) before the first
-    /// scan attempt to record row checkpoints immediately when input is
-    /// expected to arrive incrementally.
+    /// Call [`set_incremental_mode`](Self::set_incremental_mode) before the
+    /// first scan attempt when input is expected to arrive incrementally. This
+    /// makes scan EOF recoverable in non-strict mode and records row
+    /// checkpoints immediately. Without incremental mode, non-strict scan EOF
+    /// completes with best-effort output for compatibility with truncated JPEGs.
     ///
     /// On success the decoder keeps scan-start replay state, so a later
     /// `decode_into` call is well-defined and produces bit-identical pixels.

@@ -143,6 +143,12 @@ fn assert_pixels_match(actual: &[u8], expected: &[u8], name: &str, available: us
     }
 }
 
+fn fnv1a(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x0100_0000_01b3)
+    })
+}
+
 fn assert_incremental_decode_matches_oneshot(name: &str, data: &[u8], step: usize) {
     assert!(step > 0, "incremental step must be non-zero");
 
@@ -150,6 +156,7 @@ fn assert_incremental_decode_matches_oneshot(name: &str, data: &[u8], step: usiz
     let limit = Rc::new(Cell::new(0_usize));
     let cursor = GrowableCursor::new(data, Rc::clone(&limit));
     let mut decoder = JpegDecoder::new(cursor);
+    decoder.set_incremental_mode(true);
 
     let mut header_done = false;
     let mut out: Vec<u8> = Vec::new();
@@ -672,6 +679,7 @@ fn scan_resume_two_step() {
     let limit = Rc::new(Cell::new(0_usize));
     let cursor = GrowableCursor::new(data, Rc::clone(&limit));
     let mut decoder = JpegDecoder::new(cursor);
+    decoder.set_incremental_mode(true);
 
     // Expose 80% of data — headers should complete, scan should fail
     let partial = data.len() * 80 / 100;
@@ -705,6 +713,7 @@ fn scan_resume_small_chunks() {
     let limit = Rc::new(Cell::new(0_usize));
     let cursor = GrowableCursor::new(data, Rc::clone(&limit));
     let mut decoder = JpegDecoder::new(cursor);
+    decoder.set_incremental_mode(true);
 
     let mut out: Vec<u8> = Vec::new();
     let chunk = 10;
@@ -938,41 +947,69 @@ fn progressive_completed_dc_scan_is_displayable() {
 }
 
 #[test]
-fn progressive_preview_first_attempt_is_incremental_opt_in() {
-    let name = "down_sampled_grayscale_prog_first_attempt_preview_opt_in";
+fn progressive_scan_eof_respects_lenient_and_incremental_modes() {
     let data = include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg");
-    let expected = decode_oneshot(data);
     let scans = progressive_sos_scans(data);
     assert!(scans.len() > 1, "fixture must contain multiple scans");
+    let truncated = &data[..scans[1].data_start + 1];
 
-    let cutoff = scans[1].data_start + 1;
-    let limit = Rc::new(Cell::new(cutoff));
-    let cursor = GrowableCursor::new(data, Rc::clone(&limit));
-    let mut decoder = JpegDecoder::new(cursor);
-
-    decoder
-        .decode_headers()
-        .expect("headers should be visible at cutoff");
-    let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
-    let err = decoder
-        .decode_into(&mut out)
-        .expect_err("truncated second progressive scan should be recoverable");
-    assert!(err.is_recoverable_eof(), "got {err:?}");
-    assert_eq!(decoder.decoded_scans(), Some(0));
-    assert_eq!(decoder.decoded_output_bytes(), Some(0));
-    assert_eq!(decoder.decoded_scanlines(), Some(0));
-    assert_eq!(decoder.decoded_preview_output_bytes(), Some(0));
-    assert_eq!(decoder.decoded_preview_scanlines(), Some(0));
+    let lenient = decode_with_mode(truncated, false, false)
+        .expect("non-strict one-shot decode should accept a truncated scan");
     assert!(
-        out.iter().all(|byte| *byte == 0),
-        "first non-incremental attempt should not render a progressive preview"
+        lenient.iter().any(|byte| *byte != 0),
+        "lenient truncated decode should produce best-effort pixels"
     );
 
-    limit.set(data.len());
-    decoder
-        .decode_into(&mut out)
-        .expect("full input should finish progressive decode");
-    assert_pixels_match(&out, &expected, name, data.len());
+    let strict_error = decode_with_mode(truncated, false, true)
+        .expect_err("strict decode should reject a truncated scan");
+    assert!(strict_error.is_recoverable_eof());
+
+    let incremental_error = decode_with_mode(truncated, true, false)
+        .expect_err("incremental decode should report recoverable scan EOF");
+    assert!(incremental_error.is_recoverable_eof());
+}
+
+#[test]
+fn baseline_scan_eof_respects_lenient_and_incremental_modes() {
+    let data = include_bytes!("../../../test-images/jpeg/sampling_factors.jpg");
+    let entropy_start = entropy_start(data);
+    let cutoff = entropy_start + (data.len() - entropy_start) * 60 / 100;
+    let truncated = &data[..cutoff];
+
+    let lenient = decode_with_mode(truncated, false, false)
+        .expect("non-strict one-shot decode should accept a truncated scan");
+    assert!(
+        lenient.iter().any(|byte| *byte != 0),
+        "lenient truncated decode should produce best-effort pixels"
+    );
+    assert_eq!(
+        fnv1a(&lenient),
+        0x1eab_e750_2dcb_ddc3,
+        "lenient output should match the legacy decoded pixels"
+    );
+
+    let strict_error = decode_with_mode(truncated, false, true)
+        .expect_err("strict decode should reject a truncated scan");
+    assert!(strict_error.is_recoverable_eof());
+
+    let incremental_error = decode_with_mode(truncated, true, false)
+        .expect_err("incremental decode should report recoverable scan EOF");
+    assert!(incremental_error.is_recoverable_eof());
+}
+
+#[test]
+fn baseline_multi_sos_lenient_eof_preserves_neutral_output() {
+    let data = include_bytes!("../../../test-images/jpeg/tiny_non_interleaved_444.jpg");
+    let cutoffs = [sos_data_start(data, 0) + 4, sos_data_start(data, 2) + 3];
+
+    for cutoff in cutoffs {
+        let pixels = decode_with_mode(&data[..cutoff], false, false)
+            .expect("non-strict one-shot decode should accept a truncated component scan");
+        assert!(
+            pixels.iter().all(|byte| *byte == 128),
+            "cutoff {cutoff}: incomplete component scans should produce neutral output"
+        );
+    }
 }
 
 #[test]
@@ -1573,6 +1610,7 @@ fn arithmetic_restart_resume_uses_rst_checkpoint() {
     let seek_log = Rc::new(RefCell::new(Vec::new()));
     let cursor = GrowableCursor::with_seek_log(data, Rc::clone(&limit), Rc::clone(&seek_log));
     let mut decoder = JpegDecoder::new(cursor);
+    decoder.set_incremental_mode(true);
 
     decoder
         .decode_headers()
@@ -1612,6 +1650,7 @@ fn inplace_byte_by_byte_full_decode() {
     let limit = Rc::new(Cell::new(0_usize));
     let cursor = GrowableCursor::new(data, Rc::clone(&limit));
     let mut decoder = JpegDecoder::new(cursor);
+    decoder.set_incremental_mode(true);
 
     let mut out: Vec<u8> = Vec::new();
     for avail in 1..=data.len() {
@@ -1675,6 +1714,7 @@ fn inline_marker_in_scan_does_not_duplicate_icc() {
     let limit = Rc::new(Cell::new(0_usize));
     let cursor = GrowableCursor::new(&data, Rc::clone(&limit));
     let mut decoder = JpegDecoder::new(cursor);
+    decoder.set_incremental_mode(true);
 
     let mut out: Vec<u8> = Vec::new();
     for avail in 1..=data.len() {
@@ -2033,7 +2073,7 @@ fn multi_sos_first_scan_cutoff(data: &[u8]) -> usize {
     second_sos_offset - 1
 }
 
-fn first_retry_seek_after_scan_eof(data: &[u8], incremental_mode: bool) -> usize {
+fn first_retry_seek_after_scan_eof(data: &[u8]) -> usize {
     let expected = decode_oneshot(data);
     let entropy_start = entropy_start(data);
     let cutoff = entropy_start + (data.len() - entropy_start) * 60 / 100;
@@ -2042,12 +2082,12 @@ fn first_retry_seek_after_scan_eof(data: &[u8], incremental_mode: bool) -> usize
     let seek_log = Rc::new(RefCell::new(Vec::new()));
     let cursor = GrowableCursor::with_seek_log(data, Rc::clone(&limit), Rc::clone(&seek_log));
     let mut decoder = JpegDecoder::new(cursor);
-    decoder.set_incremental_mode(incremental_mode);
+    decoder.set_incremental_mode(true);
 
     decoder
         .decode_headers()
         .expect("headers should be fully visible at cutoff");
-    assert_eq!(decoder.incremental_mode(), incremental_mode);
+    assert!(decoder.incremental_mode());
     let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
 
     let err = decoder
@@ -2076,13 +2116,7 @@ fn incremental_mode_records_checkpoint_on_first_scan_attempt() {
     let data = include_bytes!("../../../test-images/jpeg/sampling_factors.jpg");
     let entropy_start = entropy_start(data);
 
-    let default_seek = first_retry_seek_after_scan_eof(data, false);
-    assert_eq!(
-        default_seek, entropy_start,
-        "default mode should replay from scan start on the first retry"
-    );
-
-    let incremental_seek = first_retry_seek_after_scan_eof(data, true);
+    let incremental_seek = first_retry_seek_after_scan_eof(data);
     assert!(
         incremental_seek > entropy_start,
         "incremental mode should resume from an entropy-data row checkpoint; \
@@ -2214,6 +2248,7 @@ fn baseline_huffman_restart_resume_uses_rst_checkpoint() {
     let seek_log = Rc::new(RefCell::new(Vec::new()));
     let cursor = GrowableCursor::with_seek_log(data, Rc::clone(&limit), Rc::clone(&seek_log));
     let mut decoder = JpegDecoder::new(cursor);
+    decoder.set_incremental_mode(true);
 
     decoder.decode_headers().expect("headers should be visible at cutoff");
     let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
@@ -2240,14 +2275,8 @@ fn baseline_huffman_restart_resume_uses_rst_checkpoint() {
     );
 }
 
-/// Per-row checkpoint: truncating a non-RST image mid-scan and retrying
-/// must eventually resume from a row checkpoint rather than replaying
-/// from scan start. In default mode, per-row checkpointing is only enabled
-/// after a previous scan decode attempt has run, so the sequence is:
-///   1. First call: partial data → ExhaustedData (no checkpoints saved)
-///   2. Second call (retry, checkpoints now enabled): still partial → ExhaustedData
-///      (per-row checkpoints ARE saved this time)
-///   3. Third call: full data → resumes from per-row checkpoint
+/// Per-row checkpoint: truncating a non-RST image mid-scan in incremental
+/// mode must resume from a row checkpoint rather than replaying from scan start.
 #[test]
 fn per_row_checkpoint_avoids_full_scan_replay() {
     // sampling_factors.jpg is baseline with NO RST markers — perfect for testing per-row.
@@ -2263,6 +2292,7 @@ fn per_row_checkpoint_avoids_full_scan_replay() {
     let seek_log = Rc::new(RefCell::new(Vec::new()));
     let cursor = GrowableCursor::with_seek_log(data, Rc::clone(&limit), Rc::clone(&seek_log));
     let mut decoder = JpegDecoder::new(cursor);
+    decoder.set_incremental_mode(true);
 
     decoder
         .decode_headers()
@@ -2271,8 +2301,7 @@ fn per_row_checkpoint_avoids_full_scan_replay() {
     assert_eq!(decoder.decoded_scanlines(), Some(0));
     let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
 
-    // First decode attempt — should fail with recoverable EOF.
-    // Per-row checkpoints are NOT saved on the first call (one-shot fast path).
+    // First decode attempt records row checkpoints and returns recoverable EOF.
     let err = decoder
         .decode_into(&mut out)
         .expect_err("truncated scan should give recoverable EOF");
@@ -2293,9 +2322,7 @@ fn per_row_checkpoint_avoids_full_scan_replay() {
         "expected a stable partial prefix, got {first_scanlines} scanlines"
     );
 
-    // Second attempt — still truncated. Now a previous scan decode attempt
-    // has run, so this replays from scan start and saves per-row checkpoints
-    // as it decodes.
+    // A retry with the same truncated input remains recoverable and idempotent.
     let err = decoder
         .decode_into(&mut out)
         .expect_err("still truncated, should give recoverable EOF again");
@@ -2351,6 +2378,7 @@ fn per_row_checkpoint_preserves_vertical_upsampling_state() {
     let seek_log = Rc::new(RefCell::new(Vec::new()));
     let cursor = GrowableCursor::with_seek_log(data, Rc::clone(&limit), Rc::clone(&seek_log));
     let mut decoder = JpegDecoder::new(cursor);
+    decoder.set_incremental_mode(true);
 
     decoder
         .decode_headers()
