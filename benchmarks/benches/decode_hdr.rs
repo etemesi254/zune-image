@@ -11,7 +11,7 @@ use std::hint::black_box;
 use std::io::{BufReader, Cursor};
 use std::time::Duration;
 
-use criterion::{ criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use image::ImageFormat;
 use zune_benches::sample_path;
 use zune_hdr::zune_core::bytestream::ZCursor;
@@ -51,7 +51,10 @@ fn bench_decode_memorial(c: &mut Criterion) {
 fn bench_decode_hdr_file_io(c: &mut Criterion) {
     let path = sample_path().join("test-images/hdr/memorial.hdr");
 
+    let input_len = path.metadata().unwrap().len();
+
     let mut fun = c.benchmark_group("hdr: io");
+    fun.throughput(Throughput::Bytes(input_len));
     fun.bench_function("hdr: file io", |b| {
         b.iter(|| {
             let file = File::open(&path).unwrap();

@@ -1,6 +1,6 @@
 use std::hint::black_box;
 
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use heic::{DecoderConfig, PixelLayout};
 use zune_core::bytestream::ZCursor;
 use zune_core::options::DecoderOptions;
@@ -13,13 +13,14 @@ fn bench_heif_decoding(c: &mut Criterion) {
         .expect("Failed to read test.heic. Please ensure the file exists.");
 
     let mut group = c.benchmark_group("HEIF Decoding");
+    group.throughput(Throughput::Bytes(image_bytes.len() as u64));
 
     // -- zune-heif Benchmark --
     group.bench_function("zune-heif (software decoder)", |b| {
         b.iter(|| {
             let data = ZCursor::new(black_box(image_bytes.as_slice()));
             let options = DecoderOptions::new_fast().hvec_set_use_videotoolbox(false);
-            let mut decoder = HeifDecoder::new_with_options(data,options);
+            let mut decoder = HeifDecoder::new_with_options(data, options);
 
             decoder.decode_headers().unwrap();
             let _colorspace = decoder.colorspace().unwrap();
@@ -36,7 +37,7 @@ fn bench_heif_decoding(c: &mut Criterion) {
                 let data = ZCursor::new(black_box(image_bytes.as_slice()));
                 let options = DecoderOptions::new_fast().hvec_set_use_videotoolbox(true);
 
-                let mut decoder = HeifDecoder::new_with_options(data,options);
+                let mut decoder = HeifDecoder::new_with_options(data, options);
 
                 decoder.decode_headers().unwrap();
                 let _colorspace = decoder.colorspace().unwrap();
@@ -51,8 +52,9 @@ fn bench_heif_decoding(c: &mut Criterion) {
     // -- libheif-rs Benchmark --
     group.bench_function("heic", |b| {
         b.iter(|| {
-            let output = DecoderConfig::new().decode(&image_bytes, PixelLayout::Rgb8).unwrap();
-
+            let output = DecoderConfig::new()
+                .decode(&image_bytes, PixelLayout::Rgb8)
+                .unwrap();
 
             black_box(output.data);
         });

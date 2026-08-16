@@ -488,6 +488,8 @@ fn bench_transpose(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("imageprocs: transpose");
 
+    group.throughput(Throughput::Bytes(data.len() as u64));
+
     group.bench_function("zune-image", |b| {
         b.iter(|| {
             zune_image_transpose(&zune_im);
@@ -507,6 +509,8 @@ fn blur_gaussian_blur_bench(c: &mut Criterion) {
     let (w, h) = zune_im.dimensions();
 
     let mut group = c.benchmark_group("imageprocs: gaussian blur - fast approximation");
+
+    group.throughput(Throughput::Bytes(data.len() as u64));
 
     group.bench_function("zune-image", |b| {
         b.iter(|| {
@@ -561,6 +565,8 @@ fn blur_median_blur_bench(c: &mut Criterion) {
     let (w, h) = zune_im.dimensions();
     let src_image = BlurImage::borrow(&raw_pix[0], w as u32, h as u32, FastBlurChannels::Channels3);
     let mut group = c.benchmark_group("imageprocs: median blur");
+
+    group.throughput(Throughput::Bytes(data.len() as u64));
 
     group.bench_function("zune-image", |b| {
         b.iter(|| {

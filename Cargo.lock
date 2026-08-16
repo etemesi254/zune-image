@@ -2329,7 +2329,7 @@ dependencies = [
  "zune-image",
  "zune-imageprocs",
  "zune-inflate 0.2.0",
- "zune-jpeg 0.5.15",
+ "zune-jpeg 0.5.16-rc1",
  "zune-png",
  "zune-qoi",
 ]
@@ -2345,7 +2345,7 @@ dependencies = [
  "serde_json",
  "simple_logger",
  "ureq",
- "zune-core 0.5.1",
+ "zune-core 0.5.3",
  "zune-image",
  "zune-imageprocs",
 ]
@@ -2354,7 +2354,7 @@ dependencies = [
 name = "zune-bmp"
 version = "0.5.2"
 dependencies = [
- "zune-core 0.5.1",
+ "zune-core 0.5.3",
 ]
 
 [[package]]
@@ -2362,7 +2362,7 @@ name = "zune-capi"
 version = "0.5.0"
 dependencies = [
  "libc",
- "zune-core 0.5.1",
+ "zune-core 0.5.3",
  "zune-image",
  "zune-imageprocs",
 ]
@@ -2375,7 +2375,7 @@ checksum = "111f7d9820f05fd715df3144e254d6fc02ee4088b0644c0ffd0efc9e6d9d2773"
 
 [[package]]
 name = "zune-core"
-version = "0.5.1"
+version = "0.5.3"
 dependencies = [
  "log",
  "serde",
@@ -2385,21 +2385,21 @@ dependencies = [
 name = "zune-farbfeld"
 version = "0.5.2"
 dependencies = [
- "zune-core 0.5.1",
+ "zune-core 0.5.3",
 ]
 
 [[package]]
 name = "zune-gif"
 version = "0.5.0-rc0"
 dependencies = [
- "zune-core 0.5.1",
+ "zune-core 0.5.3",
 ]
 
 [[package]]
 name = "zune-hdr"
 version = "0.5.2"
 dependencies = [
- "zune-core 0.5.1",
+ "zune-core 0.5.3",
 ]
 
 [[package]]
@@ -2408,7 +2408,7 @@ version = "0.5.0"
 dependencies = [
  "criterion",
  "heic",
- "zune-core 0.5.1",
+ "zune-core 0.5.3",
  "zune-isobmff",
 ]
 
@@ -2431,11 +2431,11 @@ dependencies = [
  "serde",
  "ureq",
  "zune-bmp",
- "zune-core 0.5.1",
+ "zune-core 0.5.3",
  "zune-farbfeld",
  "zune-hdr",
  "zune-heic",
- "zune-jpeg 0.5.15",
+ "zune-jpeg 0.5.16-rc1",
  "zune-jpegxl",
  "zune-png",
  "zune-ppm",
@@ -2452,7 +2452,7 @@ dependencies = [
  "moxcms",
  "nanorand",
  "rayon",
- "zune-core 0.5.1",
+ "zune-core 0.5.3",
  "zune-image",
 ]
 
@@ -2478,7 +2478,7 @@ dependencies = [
 name = "zune-isobmff"
 version = "0.5.0"
 dependencies = [
- "zune-core 0.5.1",
+ "zune-core 0.5.3",
 ]
 
 [[package]]
@@ -2492,16 +2492,16 @@ dependencies = [
 
 [[package]]
 name = "zune-jpeg"
-version = "0.5.15"
+version = "0.5.16-rc1"
 dependencies = [
- "zune-core 0.5.1",
+ "zune-core 0.5.3",
 ]
 
 [[package]]
 name = "zune-jpegxl"
 version = "0.5.2"
 dependencies = [
- "zune-core 0.5.1",
+ "zune-core 0.5.3",
 ]
 
 [[package]]
@@ -2510,7 +2510,7 @@ version = "0.5.2"
 dependencies = [
  "nanorand",
  "png",
- "zune-core 0.5.1",
+ "zune-core 0.5.3",
  "zune-inflate 0.2.0",
 ]
 
@@ -2518,21 +2518,21 @@ dependencies = [
 name = "zune-ppm"
 version = "0.5.1"
 dependencies = [
- "zune-core 0.5.1",
+ "zune-core 0.5.3",
 ]
 
 [[package]]
 name = "zune-psd"
 version = "0.5.1"
 dependencies = [
- "zune-core 0.5.1",
+ "zune-core 0.5.3",
 ]
 
 [[package]]
 name = "zune-qoi"
 version = "0.5.2"
 dependencies = [
- "zune-core 0.5.1",
+ "zune-core 0.5.3",
 ]
 
 [[package]]
@@ -2543,9 +2543,9 @@ dependencies = [
  "serde_json",
  "xxhash-rust",
  "zune-bmp",
- "zune-core 0.5.1",
+ "zune-core 0.5.3",
  "zune-inflate 0.2.0",
- "zune-jpeg 0.5.15",
+ "zune-jpeg 0.5.16-rc1",
  "zune-png",
  "zune-psd",
 ]
@@ -2558,7 +2558,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-logger",
  "web-time",
- "zune-core 0.5.1",
+ "zune-core 0.5.3",
  "zune-image",
  "zune-imageprocs",
 ]
