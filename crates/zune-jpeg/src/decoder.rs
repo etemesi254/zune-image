@@ -652,6 +652,7 @@ where
     /// See DecodeErrors for an explanation
     pub fn decode(&mut self) -> Result<Vec<u8>, DecodeErrors> {
         self.decode_headers()?;
+        self.ensure_supported_sample_precision()?;
 
         if self.expects_dnl {
             // Height is unknown until DNL is encountered during entropy
@@ -724,7 +725,7 @@ where
     ///
     /// # Returns
     ///  - `Some(usize)`: Minimum size for a buffer needed to decode the image
-    ///  - `None`: Indicates the image was not decoded, or image dimensions would overflow a usize
+    ///  - `None`: Indicates headers are unavailable or image dimensions overflow `usize`
     ///
     #[must_use]
     pub fn output_buffer_size(&self) -> Option<usize> {
@@ -1224,8 +1225,9 @@ where
                 // choose marker
                 let (marker, is_progressive) =
                     match m {
-                        Marker::SOF(0 | 1) =>
-                            (SOFMarkers::BaselineDct, false),
+                        Marker::SOF(0) => (SOFMarkers::BaselineDct, false),
+                        Marker::SOF(1) =>
+                            (SOFMarkers::ExtendedSequentialHuffman, false),
                         Marker::SOF(2) =>
                             (SOFMarkers::ProgressiveDctHuffman, true),
                         _ => unreachable!(),
@@ -1508,6 +1510,15 @@ where
         };
     }
 
+    fn ensure_supported_sample_precision(&self) -> Result<(), DecodeErrors> {
+        if self.info.pixel_density == 12 {
+            return Err(DecodeErrors::FormatStatic(
+                "12-bit JPEG pixel decoding is not supported"
+            ));
+        }
+        Ok(())
+    }
+
     /// Decode into a pre-allocated buffer
     ///
     /// It is an error if the buffer size is smaller than
@@ -1705,6 +1716,8 @@ where
         } else {
             self.decode_headers_internal()?;
         }
+
+        self.ensure_supported_sample_precision()?;
 
         let expected_size = self.output_buffer_size().unwrap();
 
@@ -1912,7 +1925,7 @@ pub struct ImageInfo {
     pub width: u16,
     /// Height of image
     pub height: u16,
-    /// PixelDensity
+    /// Sample precision in bits.
     pub pixel_density: u8,
     /// Start of frame markers
     pub sof: SOFMarkers,

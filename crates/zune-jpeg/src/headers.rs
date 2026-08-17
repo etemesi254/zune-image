@@ -332,13 +332,20 @@ pub(crate) fn parse_start_of_frame<T: ZByteReaderTrait>(
         // Body length came from a u16 length field minus 2; +2 round-trips it.
         #[allow(clippy::cast_possible_truncation)]
         let length = (cursor.body().len() + 2) as u16;
-        // usually 8, but can be 12 and 16, we currently support only 8
-        // so sorry about that 12 bit images
+        // Pixel decoding remains 8-bit only, but Huffman-coded 12-bit frame
+        // headers are useful to callers that inspect image metadata.
         let dt_precision = cursor.read_u8()?;
 
-        if dt_precision != 8 {
+        let supported_header_precision = dt_precision == 8
+            || (dt_precision == 12
+                && matches!(
+                    sof,
+                    SOFMarkers::ExtendedSequentialHuffman
+                        | SOFMarkers::ProgressiveDctHuffman
+                ));
+        if !supported_header_precision {
             return Err(DecodeErrors::SofError(format!(
-                "The library can only parse 8-bit images, the image has {dt_precision} bits of precision"
+                "Unsupported {dt_precision}-bit sample precision for {sof:?}"
             )));
         }
 
