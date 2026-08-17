@@ -1335,11 +1335,17 @@ where
                 parse_start_of_frame(marker, self)?;
                 self.is_progressive = is_progressive;
             }
-            Marker::SOF(3) => {
-                trace!("Image encoding scheme =`Lossless Huffman`");
-                parse_start_of_frame(SOFMarkers::LosslessHuffman, self)?;
+            Marker::SOF(3 | 11) => {
+                let (marker, is_arithmetic) = match m {
+                    Marker::SOF(3) => (SOFMarkers::LosslessHuffman, false),
+                    Marker::SOF(11) => (SOFMarkers::LosslessArithmetic, true),
+                    _ => unreachable!()
+                };
+
+                trace!("Image encoding scheme =`{marker:?}`");
+                parse_start_of_frame(marker, self)?;
                 self.is_progressive = false;
-                self.is_arithmetic = false;
+                self.is_arithmetic = is_arithmetic;
             }
             #[cfg(feature = "arith")]
             Marker::SOF(9..=10) => {
@@ -1614,10 +1620,13 @@ where
     }
 
     fn ensure_supported_encoding(&self) -> Result<(), DecodeErrors> {
-        if self.info.sof == SOFMarkers::LosslessHuffman {
-            return Err(DecodeErrors::Unsupported(
-                UnsupportedSchemes::LosslessHuffman
-            ));
+        let unsupported = match self.info.sof {
+            SOFMarkers::LosslessHuffman => Some(UnsupportedSchemes::LosslessHuffman),
+            SOFMarkers::LosslessArithmetic => Some(UnsupportedSchemes::LosslessArithmetic),
+            _ => None
+        };
+        if let Some(unsupported) = unsupported {
+            return Err(DecodeErrors::Unsupported(unsupported));
         }
         if self.info.pixel_density == 12 {
             return Err(DecodeErrors::FormatStatic(
