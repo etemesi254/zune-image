@@ -14,7 +14,7 @@
 use zune_core::bytestream::{ZByteReaderTrait, ZCursor};
 use zune_core::options::DecoderOptions;
 use zune_jpeg::errors::DecodeErrors;
-use zune_jpeg::JpegDecoder;
+use zune_jpeg::{JpegDecoder, RawDecodeSession};
 
 use std::cell::{Cell, RefCell};
 use std::io::{BufRead, Read, Seek, SeekFrom};
@@ -220,33 +220,33 @@ fn assert_decode_into_replay_matches_oneshot(name: &str, data: &[u8]) {
     assert_pixels_match(&replay, &expected, name, data.len());
 }
 
-fn allocate_raw_planes<T>(decoder: &JpegDecoder<T>) -> Vec<Vec<u8>>
+fn allocate_raw_planes<T>(raw: &RawDecodeSession<'_, T>) -> Vec<Vec<u8>>
 where
     T: ZByteReaderTrait
 {
-    let layout = decoder.planar_layout().unwrap();
-    let n_components = decoder.num_components().unwrap();
+    let layout = raw.layout().unwrap();
+    let n_components = raw.num_components().unwrap();
     (0..n_components)
         .map(|index| vec![0u8; layout[index].byte_size])
         .collect()
 }
 
 fn decode_raw_into_existing<T>(
-    decoder: &mut JpegDecoder<T>, planes: &mut [Vec<u8>]
+    raw: &mut RawDecodeSession<'_, T>, planes: &mut [Vec<u8>]
 ) -> Result<(), zune_jpeg::errors::DecodeErrors>
 where
     T: ZByteReaderTrait
 {
     let mut plane_refs: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
-    decoder.decode_raw(&mut plane_refs)
+    raw.decode_into(&mut plane_refs)
 }
 
-fn allocate_raw_strided_planes<T>(decoder: &JpegDecoder<T>) -> (Vec<Vec<u8>>, Vec<usize>)
+fn allocate_raw_strided_planes<T>(raw: &RawDecodeSession<'_, T>) -> (Vec<Vec<u8>>, Vec<usize>)
 where
     T: ZByteReaderTrait
 {
-    let layout = decoder.planar_layout().unwrap();
-    let n_components = decoder.num_components().unwrap();
+    let layout = raw.layout().unwrap();
+    let n_components = raw.num_components().unwrap();
     let strides: Vec<usize> = (0..n_components)
         .map(|index| layout[index].width + 5)
         .collect();
@@ -257,35 +257,34 @@ where
 }
 
 fn decode_raw_strided_into_existing<T>(
-    decoder: &mut JpegDecoder<T>, planes: &mut [Vec<u8>], strides: &[usize]
+    raw: &mut RawDecodeSession<'_, T>, planes: &mut [Vec<u8>], strides: &[usize]
 ) -> Result<(), zune_jpeg::errors::DecodeErrors>
 where
     T: ZByteReaderTrait
 {
     let mut plane_refs: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
-    decoder.decode_raw_strided(&mut plane_refs, strides)
+    raw.decode_into_strided(&mut plane_refs, strides)
 }
 
 fn decode_raw_oneshot(data: &[u8]) -> Vec<Vec<u8>> {
     let mut decoder = JpegDecoder::new(ZCursor::new(data));
-    decoder.decode_headers().expect("one-shot raw headers failed");
-    let mut planes = allocate_raw_planes(&decoder);
-    decode_raw_into_existing(&mut decoder, &mut planes).expect("one-shot raw decode failed");
+    decoder
+        .decode_headers()
+        .expect("one-shot raw headers failed");
+    let mut raw = decoder.raw_output();
+    let mut planes = allocate_raw_planes(&raw);
+    decode_raw_into_existing(&mut raw, &mut planes).expect("one-shot raw decode failed");
     planes
 }
 
-fn assert_raw_planes_match(
-    actual: &[Vec<u8>], expected: &[Vec<u8>], name: &str, available: usize
-) {
+fn assert_raw_planes_match(actual: &[Vec<u8>], expected: &[Vec<u8>], name: &str, available: usize) {
     assert_eq!(
         actual.len(),
         expected.len(),
         "{name}: incremental and one-shot raw plane counts differ"
     );
 
-    for (plane_index, (actual_plane, expected_plane)) in
-        actual.iter().zip(expected).enumerate()
-    {
+    for (plane_index, (actual_plane, expected_plane)) in actual.iter().zip(expected).enumerate() {
         assert_eq!(
             actual_plane.len(),
             expected_plane.len(),
@@ -310,17 +309,26 @@ fn assert_raw_planes_match(
 }
 
 fn assert_raw_strided_planes_match_padded(
-    actual: &[Vec<u8>], strides: &[usize], expected: &[Vec<u8>], name: &str,
-    data: &[u8], available: usize
+    actual: &[Vec<u8>], strides: &[usize], expected: &[Vec<u8>], name: &str, data: &[u8],
+    available: usize
 ) {
     let mut decoder = JpegDecoder::new(ZCursor::new(data));
     decoder.decode_headers().unwrap();
-    let layout = decoder.planar_layout().unwrap();
-    let n_components = decoder.num_components().unwrap();
+    let raw = decoder.raw_output();
+    let layout = raw.layout().unwrap();
+    let n_components = raw.num_components().unwrap();
 
-    assert_eq!(actual.len(), n_components, "{name}: strided plane count differs");
+    assert_eq!(
+        actual.len(),
+        n_components,
+        "{name}: strided plane count differs"
+    );
     assert_eq!(strides.len(), n_components, "{name}: stride count differs");
-    assert_eq!(expected.len(), n_components, "{name}: padded plane count differs");
+    assert_eq!(
+        expected.len(),
+        n_components,
+        "{name}: padded plane count differs"
+    );
 
     for index in 0..n_components {
         let plane = layout[index];
@@ -357,32 +365,29 @@ fn assert_incremental_raw_decode_matches_oneshot(name: &str, data: &[u8], step: 
     let cursor = GrowableCursor::new(data, Rc::clone(&limit));
     let mut decoder = JpegDecoder::new(cursor);
 
-    let mut header_done = false;
-    let mut planes: Vec<Vec<u8>> = Vec::new();
     let mut available = 0_usize;
 
     loop {
         available = (available + step).min(data.len());
         limit.set(available);
 
-        if !header_done {
-            match decoder.decode_headers() {
-                Ok(()) => {
-                    header_done = true;
-                    planes = allocate_raw_planes(&decoder);
-                }
-                Err(ref err) if err.is_recoverable_eof() => {
-                    assert!(
-                        available < data.len(),
-                        "raw headers still need more data with the full input visible"
-                    );
-                    continue;
-                }
-                Err(err) => panic!("unexpected raw header error at byte {available}: {err:?}")
+        match decoder.decode_headers() {
+            Ok(()) => break,
+            Err(ref err) if err.is_recoverable_eof() => {
+                assert!(
+                    available < data.len(),
+                    "raw headers still need more data with the full input visible"
+                );
             }
+            Err(err) => panic!("unexpected raw header error at byte {available}: {err:?}")
         }
+    }
 
-        match decode_raw_into_existing(&mut decoder, &mut planes) {
+    let mut raw = decoder.raw_output();
+    let mut planes = allocate_raw_planes(&raw);
+
+    loop {
+        match decode_raw_into_existing(&mut raw, &mut planes) {
             Ok(()) => {
                 assert_raw_planes_match(&planes, &expected, name, available);
                 return;
@@ -392,15 +397,15 @@ fn assert_incremental_raw_decode_matches_oneshot(name: &str, data: &[u8], step: 
                     available < data.len(),
                     "raw scan still needs more data with the full input visible"
                 );
+                available = (available + step).min(data.len());
+                limit.set(available);
             }
             Err(err) => panic!("unexpected raw scan error at byte {available}: {err:?}")
         }
     }
 }
 
-fn assert_incremental_raw_strided_decode_matches_oneshot(
-    name: &str, data: &[u8], step: usize
-) {
+fn assert_incremental_raw_strided_decode_matches_oneshot(name: &str, data: &[u8], step: usize) {
     assert!(step > 0, "incremental step must be non-zero");
 
     let expected = decode_raw_oneshot(data);
@@ -408,35 +413,31 @@ fn assert_incremental_raw_strided_decode_matches_oneshot(
     let cursor = GrowableCursor::new(data, Rc::clone(&limit));
     let mut decoder = JpegDecoder::new(cursor);
 
-    let mut header_done = false;
-    let mut planes: Vec<Vec<u8>> = Vec::new();
-    let mut strides: Vec<usize> = Vec::new();
     let mut available = 0_usize;
 
     loop {
         available = (available + step).min(data.len());
         limit.set(available);
 
-        if !header_done {
-            match decoder.decode_headers() {
-                Ok(()) => {
-                    header_done = true;
-                    (planes, strides) = allocate_raw_strided_planes(&decoder);
-                }
-                Err(ref err) if err.is_recoverable_eof() => {
-                    assert!(
-                        available < data.len(),
-                        "raw strided headers still need more data with the full input visible"
-                    );
-                    continue;
-                }
-                Err(err) => {
-                    panic!("unexpected raw strided header error at byte {available}: {err:?}")
-                }
+        match decoder.decode_headers() {
+            Ok(()) => break,
+            Err(ref err) if err.is_recoverable_eof() => {
+                assert!(
+                    available < data.len(),
+                    "raw strided headers still need more data with the full input visible"
+                );
+            }
+            Err(err) => {
+                panic!("unexpected raw strided header error at byte {available}: {err:?}")
             }
         }
+    }
 
-        match decode_raw_strided_into_existing(&mut decoder, &mut planes, &strides) {
+    let mut raw = decoder.raw_output();
+    let (mut planes, strides) = allocate_raw_strided_planes(&raw);
+
+    loop {
+        match decode_raw_strided_into_existing(&mut raw, &mut planes, &strides) {
             Ok(()) => {
                 assert_raw_strided_planes_match_padded(
                     &planes, &strides, &expected, name, data, available
@@ -448,6 +449,8 @@ fn assert_incremental_raw_strided_decode_matches_oneshot(
                     available < data.len(),
                     "raw strided scan still needs more data with the full input visible"
                 );
+                available = (available + step).min(data.len());
+                limit.set(available);
             }
             Err(err) => panic!("unexpected raw strided scan error at byte {available}: {err:?}")
         }
@@ -459,12 +462,13 @@ fn assert_decode_raw_replay_matches_oneshot(name: &str, data: &[u8]) {
 
     let mut decoder = JpegDecoder::new(ZCursor::new(data));
     decoder.decode_headers().unwrap();
-    let mut first = allocate_raw_planes(&decoder);
-    decode_raw_into_existing(&mut decoder, &mut first).unwrap();
+    let mut raw = decoder.raw_output();
+    let mut first = allocate_raw_planes(&raw);
+    decode_raw_into_existing(&mut raw, &mut first).unwrap();
     assert_raw_planes_match(&first, &expected, name, data.len());
 
-    let mut replay = allocate_raw_planes(&decoder);
-    decode_raw_into_existing(&mut decoder, &mut replay).unwrap();
+    let mut replay = allocate_raw_planes(&raw);
+    decode_raw_into_existing(&mut raw, &mut replay).unwrap();
     assert_raw_planes_match(&replay, &expected, name, data.len());
 }
 
@@ -473,13 +477,14 @@ fn assert_decode_raw_strided_replay_matches_oneshot(name: &str, data: &[u8]) {
 
     let mut decoder = JpegDecoder::new(ZCursor::new(data));
     decoder.decode_headers().unwrap();
-    let (mut first, strides) = allocate_raw_strided_planes(&decoder);
-    decode_raw_strided_into_existing(&mut decoder, &mut first, &strides).unwrap();
+    let mut raw = decoder.raw_output();
+    let (mut first, strides) = allocate_raw_strided_planes(&raw);
+    decode_raw_strided_into_existing(&mut raw, &mut first, &strides).unwrap();
     assert_raw_strided_planes_match_padded(&first, &strides, &expected, name, data, data.len());
 
-    let (mut replay, replay_strides) = allocate_raw_strided_planes(&decoder);
+    let (mut replay, replay_strides) = allocate_raw_strided_planes(&raw);
     assert_eq!(replay_strides, strides);
-    decode_raw_strided_into_existing(&mut decoder, &mut replay, &replay_strides).unwrap();
+    decode_raw_strided_into_existing(&mut raw, &mut replay, &replay_strides).unwrap();
     assert_raw_strided_planes_match_padded(
         &replay,
         &replay_strides,
@@ -1973,8 +1978,9 @@ fn arithmetic_restart_raw_resume_uses_rst_checkpoint() {
     decoder
         .decode_headers()
         .expect("headers should be visible before first raw RST retry");
-    let mut planes = allocate_raw_planes(&decoder);
-    let err = decode_raw_into_existing(&mut decoder, &mut planes)
+    let mut raw = decoder.raw_output();
+    let mut planes = allocate_raw_planes(&raw);
+    let err = decode_raw_into_existing(&mut raw, &mut planes)
         .expect_err("truncated raw scan after first RST should be recoverable");
     assert!(
         err.is_recoverable_eof(),
@@ -1983,7 +1989,7 @@ fn arithmetic_restart_raw_resume_uses_rst_checkpoint() {
 
     seek_log.borrow_mut().clear();
     limit.set(data.len());
-    decode_raw_into_existing(&mut decoder, &mut planes)
+    decode_raw_into_existing(&mut raw, &mut planes)
         .expect("full input should resume raw decode from RST checkpoint");
 
     let seeks = seek_log.borrow();
