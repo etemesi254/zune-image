@@ -6,7 +6,7 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-//! Tests for `JpegDecoder::planar_layout()` and `num_components()`.
+//! Tests for raw output session layout and component metadata.
 //!
 //! These verify the per-component plane geometry exposed for raw planar
 //! output, against fixture images with known dimensions and sampling
@@ -20,16 +20,31 @@ use zune_jpeg::JpegDecoder;
 fn layout_for(bytes: &[u8]) -> ([zune_jpeg::PlaneInfo; 4], usize) {
     let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
     decoder.decode_headers().expect("decode_headers failed");
-    let n = decoder.num_components().expect("num_components");
-    let layout = decoder.planar_layout().expect("planar_layout");
+    let raw = decoder.raw_output();
+    let n = raw.num_components().expect("num_components");
+    let layout = raw.layout().expect("raw layout");
     (layout, n)
+}
+
+fn assert_sampling_factors(layout: &[zune_jpeg::PlaneInfo], expected: &[(usize, usize)]) {
+    let actual: Vec<(usize, usize)> = layout
+        .iter()
+        .map(|plane| {
+            (
+                plane.horizontal_sampling_factor,
+                plane.vertical_sampling_factor
+            )
+        })
+        .collect();
+    assert_eq!(actual, expected);
 }
 
 #[test]
 fn planar_layout_unavailable_before_headers() {
-    let decoder = JpegDecoder::new(ZCursor::new(&[][..]));
-    assert!(decoder.num_components().is_none());
-    assert!(decoder.planar_layout().is_none());
+    let mut decoder = JpegDecoder::new(ZCursor::new(&[][..]));
+    let raw = decoder.raw_output();
+    assert!(raw.num_components().is_none());
+    assert!(raw.layout().is_none());
 }
 
 #[test]
@@ -37,6 +52,7 @@ fn planar_layout_444_64x64_aligned() {
     let bytes = include_bytes!("../../../test-images/jpeg/non_interleaved_444_64x64.jpg");
     let (layout, n) = layout_for(bytes);
     assert_eq!(n, 3, "expected 3 components for YCbCr 4:4:4");
+    assert_sampling_factors(&layout[..n], &[(1, 1), (1, 1), (1, 1)]);
     for plane in &layout[..3] {
         assert_eq!(plane.width, 64);
         assert_eq!(plane.height, 64);
@@ -53,6 +69,7 @@ fn planar_layout_422_64x64_aligned() {
     let bytes = include_bytes!("../../../test-images/jpeg/non_interleaved_422_64x64.jpg");
     let (layout, n) = layout_for(bytes);
     assert_eq!(n, 3);
+    assert_sampling_factors(&layout[..n], &[(2, 1), (1, 1), (1, 1)]);
     // Y: full resolution.
     assert_eq!(layout[0].width, 64);
     assert_eq!(layout[0].height, 64);
@@ -73,6 +90,7 @@ fn planar_layout_420_64x64_aligned() {
     let bytes = include_bytes!("../../../test-images/jpeg/non_interleaved_420_64x64.jpg");
     let (layout, n) = layout_for(bytes);
     assert_eq!(n, 3);
+    assert_sampling_factors(&layout[..n], &[(2, 2), (1, 1), (1, 1)]);
     assert_eq!(layout[0].width, 64);
     assert_eq!(layout[0].height, 64);
     assert_eq!(layout[0].stride, 64);
@@ -91,6 +109,7 @@ fn planar_layout_440_64x64_aligned() {
     let bytes = include_bytes!("../../../test-images/jpeg/non_interleaved_440_64x64.jpg");
     let (layout, n) = layout_for(bytes);
     assert_eq!(n, 3);
+    assert_sampling_factors(&layout[..n], &[(1, 2), (1, 1), (1, 1)]);
     // Y: full resolution.
     assert_eq!(layout[0].width, 64);
     assert_eq!(layout[0].height, 64);
@@ -122,4 +141,27 @@ fn planar_layout_422_65x65_unaligned_pads_to_dct_block() {
         assert_eq!(plane.allocated_height, 72);
         assert_eq!(plane.byte_size, 40 * 72);
     }
+}
+
+#[test]
+fn planar_layout_exposes_411_sampling_factors() {
+    let mut bytes =
+        include_bytes!("../../../test-images/jpeg/non_interleaved_444_64x64.jpg").to_vec();
+    let sof = bytes
+        .windows(2)
+        .position(|marker| marker == [0xff, 0xc0])
+        .expect("SOF0 marker");
+    bytes[sof + 11] = 0x41;
+
+    let (layout, n) = layout_for(&bytes);
+    assert_eq!(n, 3);
+    assert_sampling_factors(&layout[..n], &[(4, 1), (1, 1), (1, 1)]);
+}
+
+#[test]
+fn planar_layout_exposes_410_sampling_factors() {
+    let bytes = include_bytes!("../../../test-images/jpeg/fox410.jpg");
+    let (layout, n) = layout_for(bytes);
+    assert_eq!(n, 3);
+    assert_sampling_factors(&layout[..n], &[(4, 2), (1, 1), (1, 1)]);
 }
