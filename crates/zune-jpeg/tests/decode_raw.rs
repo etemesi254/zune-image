@@ -6,7 +6,7 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-//! Tests for `JpegDecoder::decode_raw()`.
+//! Tests for `JpegDecoder::raw_output()`.
 //!
 //! Mirrors libjpeg-turbo's `jpeg_read_raw_data` semantics: each component's
 //! post-IDCT samples are written directly into a caller-provided plane,
@@ -16,18 +16,49 @@ use zune_core::bytestream::ZCursor;
 use zune_jpeg::errors::DecodeErrors;
 use zune_jpeg::JpegDecoder;
 
+fn with_component_ids(data: &[u8], ids: &[u8]) -> Vec<u8> {
+    let mut result = data.to_vec();
+    let sof = result
+        .windows(2)
+        .position(|bytes| bytes[0] == 0xff && (0xc0..=0xc2).contains(&bytes[1]))
+        .expect("fixture must contain a supported SOF marker");
+    assert_eq!(usize::from(result[sof + 9]), ids.len());
+    let old_ids: Vec<_> = (0..ids.len())
+        .map(|index| result[sof + 10 + 3 * index])
+        .collect();
+
+    for (index, id) in ids.iter().enumerate() {
+        result[sof + 10 + 3 * index] = *id;
+    }
+    for sos in result
+        .windows(2)
+        .enumerate()
+        .filter_map(|(offset, bytes)| (bytes == [0xff, 0xda]).then_some(offset))
+        .collect::<Vec<_>>()
+    {
+        for index in 0..usize::from(result[sos + 4]) {
+            let selector = &mut result[sos + 5 + 2 * index];
+            if let Some(id_index) = old_ids.iter().position(|id| id == selector) {
+                *selector = ids[id_index];
+            }
+        }
+    }
+    result
+}
+
 /// Allocate per-plane buffers sized to the layout reported by
-/// `planar_layout()`, then run `decode_raw` and return the populated planes.
+/// `RawDecodeSession::layout()`, then decode and return the populated planes.
 fn decode_raw_into_owned(bytes: &[u8]) -> Vec<Vec<u8>> {
     let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
     decoder.decode_headers().expect("decode_headers");
-    let n = decoder.num_components().expect("num_components");
-    let layout = decoder.planar_layout().expect("planar_layout");
+    let mut raw = decoder.raw_output();
+    let n = raw.num_components().expect("num_components");
+    let layout = raw.layout().expect("raw layout");
 
     let mut planes: Vec<Vec<u8>> = (0..n).map(|i| vec![0u8; layout[i].byte_size]).collect();
     {
         let mut refs: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
-        decoder.decode_raw(&mut refs).expect("decode_raw");
+        raw.decode_into(&mut refs).expect("raw decode");
     }
     planes
 }
@@ -37,12 +68,13 @@ fn decode_raw_rejects_wrong_plane_count() {
     let bytes = include_bytes!("../../../test-images/jpeg/2029.jpg");
     let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
     decoder.decode_headers().unwrap();
-    let layout = decoder.planar_layout().unwrap();
+    let mut raw = decoder.raw_output();
+    let layout = raw.layout().unwrap();
     // 3-component image, pass 2 planes.
     let mut p0 = vec![0u8; layout[0].byte_size];
     let mut p1 = vec![0u8; layout[1].byte_size];
     let mut refs: [&mut [u8]; 2] = [&mut p0, &mut p1];
-    let err = decoder.decode_raw(&mut refs).unwrap_err();
+    let err = raw.decode_into(&mut refs).unwrap_err();
     match err {
         DecodeErrors::Format(_) => {}
         other => panic!("expected Format error, got {other:?}")
@@ -54,12 +86,13 @@ fn decode_raw_rejects_too_small_plane() {
     let bytes = include_bytes!("../../../test-images/jpeg/2029.jpg");
     let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
     decoder.decode_headers().unwrap();
-    let layout = decoder.planar_layout().unwrap();
+    let mut raw = decoder.raw_output();
+    let layout = raw.layout().unwrap();
     let mut p0 = vec![0u8; layout[0].byte_size - 1]; // one byte short
     let mut p1 = vec![0u8; layout[1].byte_size];
     let mut p2 = vec![0u8; layout[2].byte_size];
     let mut refs: [&mut [u8]; 3] = [&mut p0, &mut p1, &mut p2];
-    let err = decoder.decode_raw(&mut refs).unwrap_err();
+    let err = raw.decode_into(&mut refs).unwrap_err();
     match err {
         DecodeErrors::TooSmallOutput(need, got) => {
             assert_eq!(need, layout[0].byte_size);
@@ -79,11 +112,7 @@ fn decode_raw_rejects_more_than_four_sof_components() {
         0x00, 0x01, // height
         0x00, 0x01, // width
         0x05, // components
-        1, 0x11, 0,
-        2, 0x11, 0,
-        3, 0x11, 0,
-        4, 0x11, 0,
-        5, 0x11, 0
+        1, 0x11, 0, 2, 0x11, 0, 3, 0x11, 0, 4, 0x11, 0, 5, 0x11, 0
     ];
 
     let mut decoder = JpegDecoder::new(ZCursor::new(FIVE_COMPONENTS));
@@ -151,15 +180,14 @@ fn decode_raw_grayscale_progressive_single_plane() {
     let bytes = include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg");
     let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
     decoder.decode_headers().unwrap();
-    let n = decoder.num_components().unwrap();
+    let mut raw = decoder.raw_output();
+    let n = raw.num_components().unwrap();
     assert_eq!(n, 1, "expected grayscale (1 component)");
-    let layout = decoder.planar_layout().unwrap();
+    let layout = raw.layout().unwrap();
     let mut p = vec![0u8; layout[0].byte_size];
     {
         let mut refs: [&mut [u8]; 1] = [&mut p];
-        decoder
-            .decode_raw(&mut refs)
-            .expect("decode_raw progressive");
+        raw.decode_into(&mut refs).expect("raw progressive decode");
     }
     let min = *p.iter().min().unwrap();
     let max = *p.iter().max().unwrap();
@@ -172,13 +200,14 @@ fn decode_raw_progressive_four_component() {
         include_bytes!("../../../test-images/jpeg/Kiara_limited_progressive_four_components.jpg");
     let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
     decoder.decode_headers().unwrap();
-    let n = decoder.num_components().unwrap();
+    let mut raw = decoder.raw_output();
+    let n = raw.num_components().unwrap();
     assert_eq!(n, 4, "expected 4-component CMYK/YCCK image");
-    let layout = decoder.planar_layout().unwrap();
+    let layout = raw.layout().unwrap();
     let mut planes: Vec<Vec<u8>> = (0..n).map(|i| vec![0u8; layout[i].byte_size]).collect();
     {
         let mut refs: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
-        decoder.decode_raw(&mut refs).expect("decode_raw");
+        raw.decode_into(&mut refs).expect("raw decode");
     }
     for (i, plane) in planes.iter().enumerate() {
         assert_eq!(plane.len(), layout[i].byte_size);
@@ -193,11 +222,12 @@ fn decode_raw_works_after_explicit_decode_headers() {
     let bytes = include_bytes!("../../../test-images/jpeg/fox410.jpg");
     let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
     decoder.decode_headers().unwrap();
-    let layout = decoder.planar_layout().unwrap();
-    let n = decoder.num_components().unwrap();
+    let mut raw = decoder.raw_output();
+    let layout = raw.layout().unwrap();
+    let n = raw.num_components().unwrap();
     let mut planes: Vec<Vec<u8>> = (0..n).map(|i| vec![0u8; layout[i].byte_size]).collect();
     let mut refs: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
-    decoder.decode_raw(&mut refs).unwrap();
+    raw.decode_into(&mut refs).unwrap();
 }
 
 #[test]
@@ -216,14 +246,14 @@ fn decode_raw_ignores_out_colorspace_setting() {
     let opts = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::Luma);
     let mut decoder = JpegDecoder::new_with_options(ZCursor::new(bytes), opts);
     decoder.decode_headers().unwrap();
-    let n = decoder.num_components().unwrap();
+    let mut raw = decoder.raw_output();
+    let n = raw.num_components().unwrap();
     assert_eq!(n, 3, "fixture is 3-component");
-    let layout = decoder.planar_layout().unwrap();
+    let layout = raw.layout().unwrap();
     let mut planes: Vec<Vec<u8>> = (0..n).map(|i| vec![0u8; layout[i].byte_size]).collect();
     {
         let mut refs: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
-        decoder
-            .decode_raw(&mut refs)
+        raw.decode_into(&mut refs)
             .expect("decode_raw should succeed regardless of out_colorspace");
     }
     // All three planes must contain real decoded data, not zeros.
@@ -246,17 +276,18 @@ fn decode_raw_unaligned_dimensions_decode_succeeds() {
     let bytes = include_bytes!("../../../test-images/jpeg/fox410.jpg");
     let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
     decoder.decode_headers().unwrap();
-    let layout = decoder.planar_layout().unwrap();
+    let mut raw = decoder.raw_output();
+    let layout = raw.layout().unwrap();
     assert_eq!(layout[0].width, 605);
     assert_eq!(layout[0].height, 806);
     assert_eq!(layout[0].stride, 608);
     assert_eq!(layout[0].allocated_height, 808);
 
-    let n = decoder.num_components().unwrap();
+    let n = raw.num_components().unwrap();
     let mut planes: Vec<Vec<u8>> = (0..n).map(|i| vec![0u8; layout[i].byte_size]).collect();
     {
         let mut refs: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
-        decoder.decode_raw(&mut refs).unwrap();
+        raw.decode_into(&mut refs).unwrap();
     }
     // Spot-check: meaningful Y region (rows 0..806, cols 0..605) has data.
     let y = &planes[0];
@@ -313,13 +344,14 @@ fn assert_raw_content_matches_decode_within_upsample_tolerance(
     let mut raw_decoder = JpegDecoder::new(ZCursor::new(bytes));
     raw_decoder.decode_headers().unwrap();
     let (w, h) = raw_decoder.dimensions().unwrap();
-    let layout = raw_decoder.planar_layout().unwrap();
-    let n = raw_decoder.num_components().unwrap();
+    let mut raw = raw_decoder.raw_output();
+    let layout = raw.layout().unwrap();
+    let n = raw.num_components().unwrap();
     assert_eq!(n, 3, "{name}: expected YCbCr fixture");
     let mut planes: Vec<Vec<u8>> = (0..n).map(|i| vec![0u8; layout[i].byte_size]).collect();
     {
         let mut refs: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
-        raw_decoder.decode_raw(&mut refs).unwrap();
+        raw.decode_into(&mut refs).unwrap();
     }
 
     let y_up = nearest_upsample(
@@ -429,8 +461,9 @@ fn decode_raw_strided_logical_size_matches_padded_decode() {
     // Logical-sized via decode_raw_strided.
     let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
     decoder.decode_headers().unwrap();
-    let layout = decoder.planar_layout().unwrap();
-    let n = decoder.num_components().unwrap();
+    let mut raw = decoder.raw_output();
+    let layout = raw.layout().unwrap();
+    let n = raw.num_components().unwrap();
 
     let strides: Vec<usize> = (0..n).map(|i| layout[i].width).collect();
     let mut logical: Vec<Vec<u8>> = (0..n)
@@ -438,7 +471,7 @@ fn decode_raw_strided_logical_size_matches_padded_decode() {
         .collect();
     {
         let mut refs: Vec<&mut [u8]> = logical.iter_mut().map(Vec::as_mut_slice).collect();
-        decoder.decode_raw_strided(&mut refs, &strides).unwrap();
+        raw.decode_into_strided(&mut refs, &strides).unwrap();
     }
 
     for i in 0..n {
@@ -468,8 +501,9 @@ fn decode_raw_strided_accepts_oversized_stride() {
 
     let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
     decoder.decode_headers().unwrap();
-    let layout = decoder.planar_layout().unwrap();
-    let n = decoder.num_components().unwrap();
+    let mut raw = decoder.raw_output();
+    let layout = raw.layout().unwrap();
+    let n = raw.num_components().unwrap();
 
     // Round each width up to the next multiple of 64.
     let strides: Vec<usize> = (0..n).map(|i| (layout[i].width + 63) & !63).collect();
@@ -478,7 +512,7 @@ fn decode_raw_strided_accepts_oversized_stride() {
         .collect();
     {
         let mut refs: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
-        decoder.decode_raw_strided(&mut refs, &strides).unwrap();
+        raw.decode_into_strided(&mut refs, &strides).unwrap();
     }
 
     for i in 0..n {
@@ -513,8 +547,9 @@ fn decode_raw_strided_rejects_too_small_stride() {
     let bytes = include_bytes!("../../../test-images/jpeg/2029.jpg");
     let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
     decoder.decode_headers().unwrap();
-    let layout = decoder.planar_layout().unwrap();
-    let n = decoder.num_components().unwrap();
+    let mut raw = decoder.raw_output();
+    let layout = raw.layout().unwrap();
+    let n = raw.num_components().unwrap();
 
     // Stride for component 0 is one less than the logical width.
     let strides: Vec<usize> = (0..n)
@@ -524,7 +559,7 @@ fn decode_raw_strided_rejects_too_small_stride() {
         .map(|i| vec![0u8; strides[i].max(1) * layout[i].height])
         .collect();
     let mut refs: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
-    let err = decoder.decode_raw_strided(&mut refs, &strides).unwrap_err();
+    let err = raw.decode_into_strided(&mut refs, &strides).unwrap_err();
     match err {
         DecodeErrors::Format(_) => {}
         other => panic!("expected Format error, got {other:?}")
@@ -536,8 +571,9 @@ fn decode_raw_strided_rejects_too_small_buffer() {
     let bytes = include_bytes!("../../../test-images/jpeg/2029.jpg");
     let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
     decoder.decode_headers().unwrap();
-    let layout = decoder.planar_layout().unwrap();
-    let n = decoder.num_components().unwrap();
+    let mut raw = decoder.raw_output();
+    let layout = raw.layout().unwrap();
+    let n = raw.num_components().unwrap();
 
     let strides: Vec<usize> = (0..n).map(|i| layout[i].width).collect();
     let mut planes: Vec<Vec<u8>> = (0..n)
@@ -546,7 +582,7 @@ fn decode_raw_strided_rejects_too_small_buffer() {
     // Truncate component 0 by one byte.
     planes[0].pop();
     let mut refs: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
-    let err = decoder.decode_raw_strided(&mut refs, &strides).unwrap_err();
+    let err = raw.decode_into_strided(&mut refs, &strides).unwrap_err();
     match err {
         DecodeErrors::TooSmallOutput(_, _) => {}
         other => panic!("expected TooSmallOutput, got {other:?}")
@@ -560,8 +596,9 @@ fn decode_raw_strided_unaligned_dimensions_no_pad_writes() {
     let bytes = include_bytes!("../../../test-images/jpeg/fox410.jpg");
     let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
     decoder.decode_headers().unwrap();
-    let layout = decoder.planar_layout().unwrap();
-    let n = decoder.num_components().unwrap();
+    let mut raw = decoder.raw_output();
+    let layout = raw.layout().unwrap();
+    let n = raw.num_components().unwrap();
 
     // Allocate exactly one extra sentinel row past `height` in the same
     // backing Vec, but tell the decoder the buffer is `stride * height`.
@@ -579,7 +616,7 @@ fn decode_raw_strided_unaligned_dimensions_no_pad_writes() {
             .enumerate()
             .map(|(i, v)| &mut v[..buf_lens[i]])
             .collect();
-        decoder.decode_raw_strided(&mut refs, &strides).unwrap();
+        raw.decode_into_strided(&mut refs, &strides).unwrap();
     }
 
     for i in 0..n {
@@ -591,23 +628,31 @@ fn decode_raw_strided_unaligned_dimensions_no_pad_writes() {
     }
 }
 
-// component_ids() accessor.
+// component_ids() metadata.
 
 #[test]
-fn component_ids_returns_ycbcr_for_3_component_jpeg() {
-    use zune_jpeg::ComponentID;
+fn component_ids_return_canonical_sof_selectors() {
     let bytes = include_bytes!("../../../test-images/jpeg/2029.jpg");
     let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
     decoder.decode_headers().unwrap();
-    let ids = decoder
-        .component_ids()
-        .expect("component_ids after headers");
-    assert_eq!(ids, vec![ComponentID::Y, ComponentID::Cb, ComponentID::Cr]);
+    let raw = decoder.raw_output();
+    let ids = raw.component_ids().expect("component_ids after headers");
+    assert_eq!(ids, vec![1, 2, 3]);
+}
+
+#[test]
+fn component_ids_preserve_noncanonical_sof_selectors() {
+    let bytes = with_component_ids(include_bytes!("../../../test-images/jpeg/2029.jpg"), b"RGB");
+    let mut decoder = JpegDecoder::new(ZCursor::new(&bytes));
+    decoder.decode_headers().unwrap();
+    let raw = decoder.raw_output();
+    assert_eq!(raw.component_ids().as_deref(), Some(b"RGB".as_slice()));
 }
 
 #[test]
 fn component_ids_returns_none_before_headers() {
     let bytes = include_bytes!("../../../test-images/jpeg/2029.jpg");
-    let decoder = JpegDecoder::new(ZCursor::new(bytes));
-    assert!(decoder.component_ids().is_none());
+    let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
+    let raw = decoder.raw_output();
+    assert!(raw.component_ids().is_none());
 }

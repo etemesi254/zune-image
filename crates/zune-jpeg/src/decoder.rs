@@ -29,7 +29,7 @@ use crate::bitstream::{BitstreamStateSnapshot, BitStreamHuffman};
 #[cfg(feature = "arith")]
 use crate::bitstream_arith::{ArithACTables, ArithDCTables, BitStreamArithmetic};
 use crate::color_convert::choose_ycbcr_to_rgb_convert_func;
-use crate::components::{ComponentID, Components, SampleRatios};
+use crate::components::{Components, SampleRatios};
 use crate::errors::{DecodeErrors, UnsupportedSchemes};
 #[cfg(feature = "arith")]
 use crate::headers::parse_dac;
@@ -63,23 +63,29 @@ pub(crate) const MAX_DIMENSIONS: usize = 1 << 27;
 /// (`DCTSIZE = 8`). The logical `width`/`height` describe the meaningful
 /// sample area inside that buffer; trailing padding columns and rows
 /// contain implementation-defined data and should be ignored by the
-/// caller.
+/// caller. The sampling-factor fields preserve the exact SOF values so
+/// callers do not need to infer subsampling from rounded plane dimensions.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct PlaneInfo {
+    /// Horizontal sampling factor from the component's SOF entry.
+    pub horizontal_sampling_factor: usize,
+    /// Vertical sampling factor from the component's SOF entry.
+    pub vertical_sampling_factor:   usize,
     /// Logical component width in samples.
     /// `ceil(image_width * h_samp / h_max)`.
-    pub width:            usize,
+    pub width:                      usize,
     /// Logical component height in samples.
     /// `ceil(image_height * v_samp / v_max)`.
-    pub height:           usize,
+    pub height:                     usize,
     /// Allocated plane width (row stride) in bytes.
     /// `ceil(width / 8) * 8`.
-    pub stride:           usize,
+    pub stride:                     usize,
     /// Allocated plane height in rows.
     /// `ceil(height / 8) * 8`.
-    pub allocated_height: usize,
+    pub allocated_height:           usize,
     /// Required slice length for this plane: `stride * allocated_height`.
-    pub byte_size:        usize
+    pub byte_size:                  usize
 }
 
 /// Round `n` up to the next multiple of `align` (which must be non-zero).
@@ -480,6 +486,161 @@ pub(crate) struct RawPlanesSink<'planes, 'buf> {
     pub(crate) target_heights: [usize; MAX_COMPONENTS],
     /// Number of valid components.
     pub(crate) n_components:   usize
+}
+
+/// Exclusive borrowing session for whole-image raw component output.
+///
+/// Create a session with [`JpegDecoder::raw_output`] after decoding headers.
+/// While the session exists, its exclusive borrow prevents switching to pixel
+/// output or changing decoder options during a raw retry sequence. Entropy,
+/// MCU, checkpoint, and replay state remain owned by the borrowed decoder.
+///
+/// Unlike [`JpegDecoder::decode`] and [`JpegDecoder::decode_into`], raw output
+/// skips upsampling and color conversion and returns one post-IDCT plane per
+/// JPEG component. The configured output colorspace is therefore ignored.
+pub struct RawDecodeSession<'decoder, T> {
+    decoder: &'decoder mut JpegDecoder<T>
+}
+
+impl<T> RawDecodeSession<'_, T>
+where
+    T: ZByteReaderTrait
+{
+    /// Number of components in SOF declaration order.
+    ///
+    /// Returns `None` when headers have not been decoded yet.
+    #[must_use]
+    pub fn num_components(&self) -> Option<usize> {
+        self.decoder.raw_num_components()
+    }
+
+    /// Component selector bytes from the SOF marker, in declaration order.
+    ///
+    /// Common YCbCr files usually use `[1, 2, 3]`, while RGB files may use
+    /// `[b'R', b'G', b'B']`. Selectors are returned exactly as encoded so
+    /// callers can identify nonstandard component layouts.
+    ///
+    /// Returns `None` when headers have not been decoded yet or contain no
+    /// components.
+    #[must_use]
+    pub fn component_ids(&self) -> Option<Vec<u8>> {
+        self.decoder.raw_component_ids()
+    }
+
+    /// Per-component raw plane geometry and sampling metadata.
+    ///
+    /// Indices `0..num_components()` are populated in SOF declaration order;
+    /// trailing entries are [`PlaneInfo::default`]. The sampling-factor fields
+    /// preserve the exact SOF values, so callers can identify subsampling
+    /// without inferring it from rounded dimensions.
+    ///
+    /// ```text
+    /// width            = ceil(image_width  * h_samp / h_max)
+    /// height           = ceil(image_height * v_samp / v_max)
+    /// stride           = ceil(width  / 8) * 8
+    /// allocated_height = ceil(height / 8) * 8
+    /// byte_size        = stride * allocated_height
+    /// ```
+    ///
+    /// Returns `None` when headers have not been decoded or layout arithmetic
+    /// overflows `usize`.
+    #[must_use]
+    pub fn layout(&self) -> Option<[PlaneInfo; MAX_COMPONENTS]> {
+        self.decoder.raw_planar_layout()
+    }
+
+    /// Decode the complete image into DCT-block-padded component planes.
+    ///
+    /// Plane contents and geometry are compatible with libjpeg-turbo raw
+    /// output. This whole-image convenience method is not operationally
+    /// equivalent to one call to `jpeg_read_raw_data`, which returns one iMCU
+    /// row at a time.
+    ///
+    /// Supply one mutable plane per component in SOF declaration order. Each
+    /// plane must contain at least the corresponding [`PlaneInfo::byte_size`]
+    /// bytes from [`Self::layout`]. The configured output colorspace is
+    /// ignored. Samples within each plane's logical `width * height` area are
+    /// meaningful; trailing DCT padding is implementation-defined.
+    ///
+    /// On a recoverable EOF, call this method again on the same session after
+    /// exposing more input. Successful calls can also be replayed and produce
+    /// bit-identical planes.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use zune_core::bytestream::ZCursor;
+    /// use zune_jpeg::JpegDecoder;
+    ///
+    /// let data = std::fs::read("photo.jpg").unwrap();
+    /// let mut decoder = JpegDecoder::new(ZCursor::new(&data));
+    /// decoder.decode_headers().unwrap();
+    /// let mut raw = decoder.raw_output();
+    /// let layout = raw.layout().unwrap();
+    /// let count = raw.num_components().unwrap();
+    /// let mut buffers: Vec<Vec<u8>> = (0..count)
+    ///     .map(|index| vec![0; layout[index].byte_size])
+    ///     .collect();
+    /// let mut planes: Vec<&mut [u8]> =
+    ///     buffers.iter_mut().map(Vec::as_mut_slice).collect();
+    /// raw.decode_into(&mut planes).unwrap();
+    /// ```
+    ///
+    /// # Errors
+    /// Returns [`DecodeErrors::TooSmallOutput`] for an undersized plane,
+    /// [`DecodeErrors::Format`] for the wrong plane count, or an error from
+    /// the underlying decode pipeline.
+    pub fn decode_into(&mut self, planes: &mut [&mut [u8]]) -> Result<(), DecodeErrors> {
+        self.decoder.decode_raw_into(planes)
+    }
+
+    /// Decode the complete image into component planes with caller row strides.
+    ///
+    /// Logical plane contents and geometry are compatible with libjpeg-turbo
+    /// raw output. This whole-image convenience method is not operationally
+    /// equivalent to one call to `jpeg_read_raw_data`, which returns one iMCU
+    /// row at a time. Only each plane's logical `width * height` area is
+    /// written; stride padding is left untouched.
+    ///
+    /// Supply one mutable plane and stride per component in SOF declaration
+    /// order. Each stride must be at least the corresponding logical
+    /// [`PlaneInfo::width`], and each plane must contain at least
+    /// `stride * PlaneInfo::height` bytes.
+    ///
+    /// On a recoverable EOF, call this method again on the same session after
+    /// exposing more input. Successful calls can also be replayed and produce
+    /// bit-identical logical samples.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use zune_core::bytestream::ZCursor;
+    /// use zune_jpeg::JpegDecoder;
+    ///
+    /// let data = std::fs::read("photo.jpg").unwrap();
+    /// let mut decoder = JpegDecoder::new(ZCursor::new(&data));
+    /// decoder.decode_headers().unwrap();
+    /// let mut raw = decoder.raw_output();
+    /// let layout = raw.layout().unwrap();
+    /// let count = raw.num_components().unwrap();
+    /// let strides: Vec<usize> = (0..count)
+    ///     .map(|index| layout[index].width.div_ceil(64) * 64)
+    ///     .collect();
+    /// let mut buffers: Vec<Vec<u8>> = (0..count)
+    ///     .map(|index| vec![0; strides[index] * layout[index].height])
+    ///     .collect();
+    /// let mut planes: Vec<&mut [u8]> =
+    ///     buffers.iter_mut().map(Vec::as_mut_slice).collect();
+    /// raw.decode_into_strided(&mut planes, &strides).unwrap();
+    /// ```
+    ///
+    /// # Errors
+    /// Returns [`DecodeErrors::TooSmallOutput`] for an undersized plane,
+    /// [`DecodeErrors::Format`] for invalid plane counts or strides, or an
+    /// error from the underlying decode pipeline.
+    pub fn decode_into_strided(
+        &mut self, planes: &mut [&mut [u8]], strides: &[usize]
+    ) -> Result<(), DecodeErrors> {
+        self.decoder.decode_raw_into_strided(planes, strides)
+    }
 }
 
 impl<T> JpegDecoder<T>
@@ -1014,6 +1175,16 @@ where
         Some((decoded_output_bytes / row_stride).min(usize::from(self.height())))
     }
 
+    /// Begin an exclusive raw component-output session.
+    ///
+    /// Decode headers first when the caller needs to query
+    /// [`RawDecodeSession::layout`] or component metadata before allocating
+    /// output planes. The session borrows this decoder mutably, preventing
+    /// pixel output or option changes until the session is dropped.
+    pub fn raw_output(&mut self) -> RawDecodeSession<'_, T> {
+        RawDecodeSession { decoder: self }
+    }
+
     /// Number of components present in the JPEG scan (1..=4).
     ///
     /// Valid only after [`decode_headers`](Self::decode_headers).
@@ -1022,7 +1193,7 @@ where
     /// - `Some(n)`: number of components in the input scan
     /// - `None`: headers have not been decoded yet
     #[must_use]
-    pub fn num_components(&self) -> Option<usize> {
+    fn raw_num_components(&self) -> Option<usize> {
         if self.headers_decoded {
             Some(self.components.len())
         } else {
@@ -1036,6 +1207,9 @@ where
     /// (Y, Cb, Cr for YCbCr; Y for grayscale; C, M, Y, K for CMYK; etc.).
     /// Indices `0..num_components()` are populated; trailing entries are
     /// the default zero-sized [`PlaneInfo`].
+    /// [`PlaneInfo::horizontal_sampling_factor`] and
+    /// [`PlaneInfo::vertical_sampling_factor`] expose each component's exact
+    /// SOF sampling factors.
     ///
     /// Plane dimensions are computed using the same rules as libjpeg-turbo's
     /// `jpeg_read_raw_data`:
@@ -1054,7 +1228,7 @@ where
     /// - `Some([PlaneInfo; MAX_COMPONENTS])`: per-component layout
     /// - `None`: headers have not been decoded yet, or layout overflows `usize`
     #[must_use]
-    pub fn planar_layout(&self) -> Option<[PlaneInfo; MAX_COMPONENTS]> {
+    fn raw_planar_layout(&self) -> Option<[PlaneInfo; MAX_COMPONENTS]> {
         if !self.headers_decoded || self.components.is_empty() {
             return None;
         }
@@ -1082,6 +1256,8 @@ where
             let allocated_height = round_up_pow2(comp_h, DCT_BLOCK_SIZE)?;
             let byte_size = stride.checked_mul(allocated_height)?;
             *slot = PlaneInfo {
+                horizontal_sampling_factor: comp.horizontal_sample,
+                vertical_sampling_factor: comp.vertical_sample,
                 width: comp_w,
                 height: comp_h,
                 stride,
@@ -2133,100 +2309,19 @@ where
         }
     }
 
-    /// Decode the image into per-component raw planes, skipping upsampling
-    /// and color conversion.
-    ///
-    /// Mirrors libjpeg-turbo's `jpeg_read_raw_data`: each component's
-    /// post-IDCT samples are written directly into its own plane buffer.
-    /// A 4:2:0 YCbCr image yields a full-resolution Y plane and
-    /// half-resolution Cb / Cr planes, each rounded up to DCT-block
-    /// boundaries.
-    ///
-    /// Plane order matches `self.components[i]` declaration order, i.e.
-    /// the order from the SOF marker (`[Y, Cb, Cr]` for YCbCr,
-    /// `[Y]` for grayscale, `[C, M, Y, K]` for CMYK, etc.). The configured
-    /// output colorspace is **ignored** in raw mode.
-    ///
-    /// Each `planes[i]` must be at least
-    /// [`PlaneInfo::byte_size`](`PlaneInfo::byte_size`) bytes
-    /// (`stride * allocated_height`), i.e. dimensions rounded up to
-    /// 8-sample DCT-block boundaries. For a 388×477 4:2:0 image:
-    /// `392 * 480 = 188_160` for Y and `200 * 240 = 48_000` for Cb / Cr.
-    /// See [`decode_raw_strided`](Self::decode_raw_strided) for accepting
-    /// logically-sized buffers.
-    ///
-    /// Samples within `[0, width) × [0, height)` of each plane are
-    /// meaningful; trailing padding columns / rows contain
-    /// implementation-defined data.
-    ///
-    /// # Resumability
-    ///
-    /// On a recoverable EOF (`DecodeErrors::is_recoverable_eof()`) the
-    /// decoder keeps enough state to resume; the caller can grow the input
-    /// stream and call `decode_raw` again with plane buffers sized from the
-    /// same [`planar_layout`](Self::planar_layout).
-    ///
-    /// On success the decoder keeps scan-start replay state, so a later
-    /// `decode_raw` call is well-defined and produces bit-identical planes.
-    /// Replay re-runs entropy decoding from the first SOS.
-    ///
-    /// # Examples
-    ///
-    /// Decode a JPEG into raw YCbCr planes (libjpeg-turbo style) and access
-    /// individual component data:
-    ///
-    /// ```no_run
-    /// use zune_core::bytestream::ZCursor;
-    /// use zune_jpeg::JpegDecoder;
-    ///
-    /// let data = std::fs::read("photo.jpg").unwrap();
-    /// let mut decoder = JpegDecoder::new(ZCursor::new(&data));
-    /// decoder.decode_headers().unwrap();
-    ///
-    /// // Query the plane geometry (DCT-block-padded sizes).
-    /// let layout = decoder.planar_layout().unwrap();
-    /// let n = decoder.num_components().unwrap();
-    ///
-    /// // Allocate one buffer per component, sized to the full padded plane.
-    /// let mut buffers: Vec<Vec<u8>> = (0..n)
-    ///     .map(|i| vec![0u8; layout[i].byte_size])
-    ///     .collect();
-    /// let mut planes: Vec<&mut [u8]> = buffers.iter_mut().map(|b| b.as_mut_slice()).collect();
-    ///
-    /// decoder.decode_raw(&mut planes).unwrap();
-    ///
-    /// // For a 4:2:0 YCbCr image:
-    /// //   planes[0] = Y  (full resolution, padded to DCT blocks)
-    /// //   planes[1] = Cb (half resolution)
-    /// //   planes[2] = Cr (half resolution)
-    /// //
-    /// // Access a specific pixel's Y value:
-    /// let y_stride = layout[0].stride; // row pitch in bytes
-    /// let y_value = planes[0][/* row */ 10 * y_stride + /* col */ 20];
-    ///
-    /// // Identify component order for non-standard JPEGs:
-    /// let ids = decoder.component_ids().unwrap();
-    /// println!("Component order: {:?}", ids);
-    /// ```
-    ///
-    /// # Errors
-    /// - [`DecodeErrors::TooSmallOutput`]: a plane buffer is shorter than
-    ///   its `byte_size`.
-    /// - [`DecodeErrors::Format`]: `planes.len()` does not match the number
-    ///   of components.
-    /// - Any error from the underlying decode pipeline.
-    pub fn decode_raw(&mut self, planes: &mut [&mut [u8]]) -> Result<(), DecodeErrors> {
+    // Shared implementation for `RawDecodeSession::decode_into`.
+    fn decode_raw_into(&mut self, planes: &mut [&mut [u8]]) -> Result<(), DecodeErrors> {
         self.prepare_for_scan_decode()?;
 
         let n = self.components.len();
         if planes.len() != n {
             return Err(DecodeErrors::Format(format!(
-                "decode_raw expected {n} plane buffer(s), got {}",
+                "RawDecodeSession::decode_into expected {n} plane buffer(s), got {}",
                 planes.len()
             )));
         }
-        let layout = self.planar_layout().ok_or(DecodeErrors::FormatStatic(
-            "planar_layout unavailable after decode_headers"
+        let layout = self.raw_planar_layout().ok_or(DecodeErrors::FormatStatic(
+            "raw layout unavailable after decode_headers"
         ))?;
         for (i, plane) in planes.iter().enumerate() {
             let need = layout[i].byte_size;
@@ -2257,78 +2352,8 @@ where
         self.decode_mcu_output_with_success_cleanup(&mut output)
     }
 
-    /// Decode raw planes using caller-supplied row strides.
-    ///
-    /// For each component `i` the caller must supply:
-    /// - `planes[i]`: a mutable byte slice of length at least
-    ///   `strides[i] * planar_layout()[i].height` bytes.
-    /// - `strides[i]`: the destination row stride in bytes. Must satisfy
-    ///   `strides[i] >= planar_layout()[i].width`.
-    ///
-    /// Only the logical plane area is written. Padding columns in the caller's
-    /// stride and trailing DCT rows are left untouched.
-    ///
-    /// # Resumability
-    ///
-    /// On a recoverable EOF (`DecodeErrors::is_recoverable_eof()`) the
-    /// decoder keeps enough state to resume; the caller can grow the input
-    /// stream and call `decode_raw_strided` again with the same plane layout.
-    ///
-    /// On success the decoder keeps scan-start replay state, so a later
-    /// `decode_raw_strided` call is well-defined and produces bit-identical
-    /// logical plane samples. Replay re-runs entropy decoding from the first
-    /// SOS.
-    ///
-    /// # Examples
-    ///
-    /// Skia-style: decode into GPU-aligned buffers where each row has a
-    /// power-of-two stride, then upload the planes as textures. Only the
-    /// logical image area is written; padding bytes are left untouched so
-    /// the caller can pre-fill them with a known value (e.g. for debugging).
-    ///
-    /// ```no_run
-    /// use zune_core::bytestream::ZCursor;
-    /// use zune_jpeg::JpegDecoder;
-    ///
-    /// let data = std::fs::read("photo.jpg").unwrap();
-    /// let mut decoder = JpegDecoder::new(ZCursor::new(&data));
-    /// decoder.decode_headers().unwrap();
-    ///
-    /// let layout = decoder.planar_layout().unwrap();
-    /// let n = decoder.num_components().unwrap();
-    ///
-    /// // Use a 64-byte aligned stride (common for GPU upload).
-    /// let strides: Vec<usize> = (0..n)
-    ///     .map(|i| (layout[i].width + 63) & !63)
-    ///     .collect();
-    ///
-    /// // Allocate buffers sized to logical height × custom stride.
-    /// // Only layout[i].width × layout[i].height pixels are written;
-    /// // the gap between width and stride is never touched.
-    /// let mut buffers: Vec<Vec<u8>> = (0..n)
-    ///     .map(|i| vec![0u8; strides[i] * layout[i].height])
-    ///     .collect();
-    /// let mut planes: Vec<&mut [u8]> = buffers.iter_mut().map(|b| b.as_mut_slice()).collect();
-    ///
-    /// decoder.decode_raw_strided(&mut planes, &strides).unwrap();
-    ///
-    /// // Upload each plane to a GPU texture:
-    /// for i in 0..n {
-    ///     let width = layout[i].width;
-    ///     let height = layout[i].height;
-    ///     let row_pitch = strides[i];
-    ///     // gpu.upload_texture(planes[i], width, height, row_pitch);
-    /// }
-    /// ```
-    ///
-    /// # Errors
-    /// - [`DecodeErrors::Format`] if `planes.len()` or `strides.len()`
-    ///   doesn't match the number of components, or if any
-    ///   `strides[i] < width[i]`.
-    /// - [`DecodeErrors::TooSmallOutput`] if any plane buffer is shorter
-    ///   than `strides[i] * height[i]`.
-    /// - Any error from the underlying decode pipeline.
-    pub fn decode_raw_strided(
+    // Shared implementation for `RawDecodeSession::decode_into_strided`.
+    fn decode_raw_into_strided(
         &mut self, planes: &mut [&mut [u8]], strides: &[usize]
     ) -> Result<(), DecodeErrors> {
         self.prepare_for_scan_decode()?;
@@ -2336,18 +2361,18 @@ where
         let n = self.components.len();
         if planes.len() != n {
             return Err(DecodeErrors::Format(format!(
-                "decode_raw_strided expected {n} plane buffer(s), got {}",
+                "RawDecodeSession::decode_into_strided expected {n} plane buffer(s), got {}",
                 planes.len()
             )));
         }
         if strides.len() != n {
             return Err(DecodeErrors::Format(format!(
-                "decode_raw_strided expected {n} stride(s), got {}",
+                "RawDecodeSession::decode_into_strided expected {n} stride(s), got {}",
                 strides.len()
             )));
         }
-        let layout = self.planar_layout().ok_or(DecodeErrors::FormatStatic(
-            "planar_layout unavailable after decode_headers"
+        let layout = self.raw_planar_layout().ok_or(DecodeErrors::FormatStatic(
+            "raw layout unavailable after decode_headers"
         ))?;
         for (i, plane) in planes.iter().enumerate() {
             if strides[i] < layout[i].width {
@@ -2386,22 +2411,11 @@ where
         self.decode_mcu_output_with_success_cleanup(&mut output)
     }
 
-    /// Per-component [`ComponentID`] in declaration order
-    /// (`Y, Cb, Cr` for YCbCr; `Y` for grayscale; `Y, Cb, Cr, Q` for
-    /// 4-component scans, etc.).
-    ///
-    /// Useful when consuming the planes returned by
-    /// [`decode_raw`](Self::decode_raw) /
-    /// [`decode_raw_strided`](Self::decode_raw_strided) on non-conforming
-    /// JPEGs whose component order differs from the canonical layout.
-    ///
-    /// Valid only after [`decode_headers`](Self::decode_headers).
-    #[must_use]
-    pub fn component_ids(&self) -> Option<Vec<ComponentID>> {
+    fn raw_component_ids(&self) -> Option<Vec<u8>> {
         if !self.headers_decoded || self.components.is_empty() {
             return None;
         }
-        Some(self.components.iter().map(|c| c.component_id).collect())
+        Some(self.components.iter().map(|component| component.id).collect())
     }
 
     /// Copy one MCU stripe (`mcu_stripe_index`) of post-IDCT samples from

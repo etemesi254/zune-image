@@ -206,17 +206,16 @@ pub(crate) fn parse_dac<T: ZByteReaderTrait>(
 where
 {
     with_marker_body(decoder, |decoder, mut cursor| {
+        if cursor.body().len() % 2 != 0 {
+            return Err(DecodeErrors::FormatStatic(
+                "Bogus (odd) Arithmetic-coding conditioning segment length"
+            ));
+        }
         // Validate everything before committing: collect new entries into a
         // local Vec and apply them only when the whole body parses cleanly.
         enum DacEntry {
             Dc { index: usize, l: u8, u: u8 },
             Ac { index: usize, kx: u8 }
-        }
-
-        if cursor.body().len() % 2 != 0 {
-            return Err(DecodeErrors::FormatStatic(
-                "Bogus (odd) Arithmetic-coding conditioning segment length"
-            ));
         }
         let mut entries: Vec<DacEntry> = Vec::with_capacity(cursor.body().len() / 2);
         while cursor.remaining() >= 2 {
