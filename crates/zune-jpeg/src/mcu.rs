@@ -392,9 +392,37 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     Err(e) => return Err(e)
                 };
 
+                // A pull request must not publish a row assembled after the
+                // entropy reader exhausted visible input.
+                if output.requested_raw_stripe().is_some() && stream.overread_by() > 0 {
+                    return Err(DecodeErrors::ExhaustedData);
+                }
+                if output.requested_raw_stripe().is_some()
+                    && matches!(terminate, McuContinuation::Terminate)
+                    && !*stream.seen_eoi()
+                {
+                    return Err(DecodeErrors::ExhaustedData);
+                }
+
                 // process that width up until it's impossible. This is faster than allocation the
                 // full components, which we skipped earlier.
                 if all_components_in_first_scan {
+                    let pull_row_ready = output.requested_raw_stripe().is_some();
+                    if pull_row_ready {
+                        let dc_predictions = core::array::from_fn(|idx| {
+                            self.components
+                                .get(idx)
+                                .map_or((0, 0), |component| (component.dc_pred, component.dc_diff))
+                        });
+                        self.checkpoint_scan_with_bitstream(
+                            i + 1,
+                            0,
+                            pixels_written,
+                            dc_predictions,
+                            stream.snapshot_state()
+                        )?;
+                    }
+
                     match output {
                         McuDecodeOutput::Pixels(pixels) => {
                             self.post_process(
@@ -411,6 +439,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         McuDecodeOutput::RawPlanes(raw_planes) => {
                             self.copy_raw_planes_for_mcu_stripe(i, raw_planes)?;
                         }
+                    }
+                    if pull_row_ready {
+                        return Ok(());
                     }
                     // This row's coefficient buffers can be reused next, so
                     // any checkpoint inside the row is no longer valid.
@@ -561,6 +592,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
         trace!("Finished decoding image");
 
+        output.mark_raw_source_complete();
+
         Ok(())
     }
 
@@ -606,10 +639,16 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         }
 
         let mut pixels_written = 0;
-        let mut cancel = self.cancel_debounced(self.mcu_x);
+        let stripe_start = output.requested_raw_stripe().unwrap_or(0);
+        let stripe_end = if output.requested_raw_stripe().is_some() {
+            core::cmp::min(stripe_start + 1, mcu_height)
+        } else {
+            mcu_height
+        };
 
         // dequantize and idct have been performed, only color convert.
-        for i in 0..mcu_height {
+        let mut cancel = self.cancel_debounced(self.mcu_x);
+        for i in stripe_start..stripe_end {
             if cancel.is_cancelled() {
                 return Err(DecodeErrors::Cancelled);
             }
@@ -653,7 +692,18 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             }
         }
 
+        output.mark_raw_source_complete();
+
         return Ok(());
+    }
+
+    pub(crate) fn render_buffered_baseline_raw_stripe(
+        &mut self, output: &mut McuDecodeOutput<'_, '_>
+    ) -> Result<(), DecodeErrors> {
+        let block = core::mem::take(&mut self.progressive_mcus_buffer);
+        let result = self.finish_baseline_decoding(&block, 0, output);
+        self.progressive_mcus_buffer = block;
+        result
     }
 
     fn decode_mcu_width<const PROGRESSIVE: bool, B: BitStream>(

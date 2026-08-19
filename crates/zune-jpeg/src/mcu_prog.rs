@@ -984,10 +984,16 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         }
 
         let mut pixels_written = 0;
+        let stripe_start = output.requested_raw_stripe().unwrap_or(0);
+        let stripe_end = if output.requested_raw_stripe().is_some() {
+            core::cmp::min(stripe_start + 1, mcu_height)
+        } else {
+            mcu_height
+        };
 
         // dequantize, idct and color convert.
         let mut cancel = self.cancel_debounced(self.mcu_x);
-        for i in 0..mcu_height {
+        for i in stripe_start..stripe_end {
             if cancel.is_cancelled() {
                 return Err(DecodeErrors::Cancelled);
             }
@@ -1073,12 +1079,24 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             }
         }
 
+        output.mark_raw_source_complete();
+
         trace!("Finished decoding image");
 
         self.progressive_render_incomplete = false;
 
         return Ok(());
     }
+
+    pub(crate) fn render_buffered_progressive_raw_stripe(
+        &mut self, output: &mut McuDecodeOutput<'_, '_>
+    ) -> Result<(), DecodeErrors> {
+        let block = core::mem::take(&mut self.progressive_mcus_buffer);
+        let result = self.finish_progressive_decoding(&block, output);
+        self.progressive_mcus_buffer = block;
+        result
+    }
+
     pub(crate) fn reset_params(&mut self) {
         /*
         Apparently, grayscale images which can be down sampled exists, which is weird in the sense
