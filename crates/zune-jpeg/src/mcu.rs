@@ -645,6 +645,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             ctx.mcu_stride = if PROGRESSIVE { 8 } else { component.horizontal_sample * 8 };
         }
 
+        for block in &mut mcu_ctx[..usize::from(self.num_scan_blocks)] {
+            block.buffer_offset += block.mcu_stride * start_col;
+        }
+
         let z_order = self.z_order;
         let z_scans = &z_order[..usize::from(self.num_scans)];
 
@@ -679,7 +683,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
         for j in start_col..scan_du_width {
             // iterate over components
-            for part in &mcu_ctx[..usize::from(self.num_scan_blocks)] {
+            for part in &mut mcu_ctx[..usize::from(self.num_scan_blocks)] {
                 // we made this loop body massive due to several different paths that depend on
                 // static conditions. Note we (potentially) call into other functions so the
                 // compiler will not unroll anything here anyways. The gains from separating
@@ -763,7 +767,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     // tmp was only written partially, note that len is in ZigZag order.
                     clobber_more_than_4x4 = len > 10;
 
-                    let idct_position = part.buffer_offset + part.mcu_stride * j;
+                    // Each block is accessed exactly once in each iteration over the MCU row. Thus
+                    // each time the offset just gets one larger based on the stride.
+                    let idct_position = part.buffer_offset;
+                    part.buffer_offset += part.mcu_stride;
                     let idct_pos = channel.get_mut(idct_position..).unwrap();
 
                     //  call idct.
