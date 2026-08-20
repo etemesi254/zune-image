@@ -37,6 +37,37 @@
 //! let mut pixels = decoder.decode().unwrap();
 //! ```
 //!
+//! ## Decode converted scanlines into caller storage
+//!
+//! `scanline_output()` provides sequential converted rows without allocating a
+//! full internal pixel image. It uses the decoder's configured output
+//! colorspace and supports caller-selected row stride.
+//!
+//! ```no_run
+//! use zune_core::bytestream::ZCursor;
+//! use zune_jpeg::{JpegDecoder, ScanlineReadStatus, ScanlineStatus};
+//!
+//! let data = std::fs::read("photo.jpg").unwrap();
+//! let mut decoder = JpegDecoder::new(ZCursor::new(&data));
+//! let mut scanlines = decoder.scanline_output();
+//! assert_eq!(scanlines.start().unwrap(), ScanlineStatus::Ready);
+//! let row_bytes = scanlines.output_row_bytes().unwrap();
+//! let mut output = vec![0; row_bytes * 16];
+//!
+//! loop {
+//!     match scanlines.read_scanlines(&mut output, row_bytes).unwrap() {
+//!         ScanlineReadStatus::RowsProcessed { rows } => {
+//!             // Consume `rows` converted rows from `output`.
+//!             let _ = rows;
+//!         }
+//!         ScanlineReadStatus::NeedMoreInput => break,
+//!         ScanlineReadStatus::Complete => break,
+//!         _ => unreachable!()
+//!     }
+//! }
+//! assert_eq!(scanlines.finish().unwrap(), ScanlineStatus::Complete);
+//! ```
+//!
 //! ## Incremental input
 //!
 //! `JpegDecoder` can be retried on the same decoder when the underlying reader can
@@ -286,15 +317,17 @@ extern crate core;
 
 pub use zune_core;
 
+pub use crate::cancel::{CancelCheck, NeverCancel};
 pub use crate::components::SampleRatios;
 pub use crate::decoder::{
-    ImageInfo, JpegDecoder, PlaneInfo, RawDecodeSession, RawImcuRowStatus
+    ImageInfo, JpegDecoder, PlaneInfo, RawDecodeSession, RawImcuRowStatus, ScanlineDecodeSession,
+    ScanlineReadStatus, ScanlineStatus
 };
 pub use crate::marker::Marker;
-pub use crate::cancel::{CancelCheck, NeverCancel};
 mod bitstream;
 #[cfg(feature = "arith")]
 mod bitstream_arith;
+mod cancel;
 mod color_convert;
 mod components;
 mod decoder;
@@ -309,7 +342,6 @@ mod marker;
 mod mcu;
 mod mcu_prog;
 mod misc;
-mod cancel;
 mod unsafe_utils;
 mod unsafe_utils_avx2;
 mod unsafe_utils_neon;

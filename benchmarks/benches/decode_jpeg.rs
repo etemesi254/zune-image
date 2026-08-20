@@ -16,7 +16,9 @@ use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use zune_benches::sample_path;
 use zune_jpeg::zune_core::colorspace::ColorSpace;
 use zune_jpeg::zune_core::options::DecoderOptions;
-use zune_jpeg::{JpegDecoder, RawImcuRowStatus};
+use zune_jpeg::{
+    JpegDecoder, RawImcuRowStatus, ScanlineReadStatus, ScanlineStatus
+};
 use zune_png::zune_core::bytestream::ZCursor;
 
 fn decode_jpeg(buf: &[u8]) -> Vec<u8> {
@@ -63,7 +65,7 @@ fn decode_no_samp(c: &mut Criterion) {
     generic_bench(
         c,
         sample_path().join("test-images/jpeg/benchmarks/speed_bench.jpg"),
-        "jpeg: No sampling Baseline decode",
+        "jpeg: No sampling Baseline decode"
     );
 }
 
@@ -71,7 +73,7 @@ fn decode_h_samp(c: &mut Criterion) {
     generic_bench(
         c,
         sample_path().join("test-images/jpeg/benchmarks/speed_bench_horizontal_subsampling.jpg"),
-        "jpeg: Horizontal Sub Sampling",
+        "jpeg: Horizontal Sub Sampling"
     );
 }
 
@@ -79,7 +81,7 @@ fn decode_v_samp(c: &mut Criterion) {
     generic_bench(
         c,
         sample_path().join("test-images/jpeg/benchmarks/speed_bench_vertical_subsampling.jpg"),
-        "jpeg: Vertical sub sampling",
+        "jpeg: Vertical sub sampling"
     );
 }
 
@@ -87,7 +89,7 @@ fn decode_hv_samp(c: &mut Criterion) {
     generic_bench(
         c,
         sample_path().join("test-images/jpeg/benchmarks/speed_bench_hv_subsampling.jpg"),
-        "jpeg: HV sampling",
+        "jpeg: HV sampling"
     );
 }
 
@@ -141,7 +143,7 @@ fn decode_no_samp_prog(c: &mut Criterion) {
     generic_bench(
         c,
         sample_path().join("test-images/jpeg/benchmarks/speed_bench_prog.jpg"),
-        "jpeg: No sampling Progressive decoding",
+        "jpeg: No sampling Progressive decoding"
     );
 }
 
@@ -149,7 +151,7 @@ fn decode_h_samp_prog(c: &mut Criterion) {
     generic_bench(
         c,
         sample_path().join("test-images/jpeg/benchmarks/speed_bench_prog_h_sampling.jpg"),
-        "jpeg: Progressive Horizontal Sub Sampling",
+        "jpeg: Progressive Horizontal Sub Sampling"
     )
 }
 
@@ -157,7 +159,7 @@ fn decode_v_samp_prog(c: &mut Criterion) {
     generic_bench(
         c,
         sample_path().join("test-images/jpeg/benchmarks/speed_bench_prog_v_sampling.jpg"),
-        "jpeg: Progressive Vertical sub sampling",
+        "jpeg: Progressive Vertical sub sampling"
     )
 }
 
@@ -165,7 +167,7 @@ fn decode_hv_samp_prog(c: &mut Criterion) {
     generic_bench(
         c,
         sample_path().join("test-images/jpeg/benchmarks/speed_bench_prog_hv_sampling.jpg"),
-        "jpeg: Progressive HV sampling",
+        "jpeg: Progressive HV sampling"
     )
 }
 
@@ -228,9 +230,9 @@ use std::rc::Rc;
 /// bench grows `limit` via the shared `Rc<Cell<usize>>` to simulate more
 /// data arriving on the same decoder.
 struct GrowableCursor<'a> {
-    data: &'a [u8],
+    data:     &'a [u8],
     position: usize,
-    limit: Rc<Cell<usize>>,
+    limit:    Rc<Cell<usize>>
 }
 
 impl<'a> GrowableCursor<'a> {
@@ -238,7 +240,7 @@ impl<'a> GrowableCursor<'a> {
         Self {
             data,
             position: 0,
-            limit,
+            limit
         }
     }
 
@@ -280,12 +282,12 @@ impl Seek for GrowableCursor<'_> {
         let new_pos = match pos {
             SeekFrom::Start(p) => p as i64,
             SeekFrom::Current(p) => self.position as i64 + p,
-            SeekFrom::End(p) => self.visible() as i64 + p,
+            SeekFrom::End(p) => self.visible() as i64 + p
         };
         if new_pos < 0 {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                "seek before start",
+                "seek before start"
             ));
         }
         self.position = new_pos as usize;
@@ -330,7 +332,7 @@ fn decode_restart_resume(c: &mut Criterion) {
             // First scan attempt: expect recoverable EOF.
             match decoder.decode_into(&mut out) {
                 Ok(()) => panic!("scan should not complete at 80% visibility"),
-                Err(e) => assert!(e.is_recoverable_eof(), "got: {e:?}"),
+                Err(e) => assert!(e.is_recoverable_eof(), "got: {e:?}")
             }
 
             // Expose remaining bytes and resume from the latest checkpoint.
@@ -344,8 +346,9 @@ fn decode_restart_resume(c: &mut Criterion) {
 }
 
 fn decode_streaming_mode(c: &mut Criterion) {
-    let data = read(sample_path().join("test-images/jpeg/benchmarks/speed_bench_hv_subsampling.jpg"))
-        .unwrap();
+    let data =
+        read(sample_path().join("test-images/jpeg/benchmarks/speed_bench_hv_subsampling.jpg"))
+            .unwrap();
     let mut group = c.benchmark_group("jpeg: Incremental mode checkpoints");
     group.throughput(Throughput::Bytes(data.len() as u64));
 
@@ -369,7 +372,7 @@ fn decode_streaming_mode(c: &mut Criterion) {
 
             match decoder.decode_into(&mut out) {
                 Ok(()) => panic!("scan should not complete at 80% visibility"),
-                Err(e) => assert!(e.is_recoverable_eof(), "got: {e:?}"),
+                Err(e) => assert!(e.is_recoverable_eof(), "got: {e:?}")
             }
 
             limit.set(data.len());
@@ -391,7 +394,7 @@ fn decode_streaming_mode(c: &mut Criterion) {
 
             match decoder.decode_into(&mut out) {
                 Ok(()) => panic!("scan should not complete at 80% visibility"),
-                Err(e) => assert!(e.is_recoverable_eof(), "got: {e:?}"),
+                Err(e) => assert!(e.is_recoverable_eof(), "got: {e:?}")
             }
 
             limit.set(data.len());
@@ -457,6 +460,49 @@ fn decode_raw_pull_output(c: &mut Criterion) {
     });
 }
 
+fn decode_jpeg_scanlines(buf: &[u8], rows_per_read: usize) -> u64 {
+    let mut decoder = JpegDecoder::new(ZCursor::new(buf));
+    let mut scanlines = decoder.scanline_output();
+    assert_eq!(scanlines.start().unwrap(), ScanlineStatus::Ready);
+    let row_bytes = scanlines.output_row_bytes().unwrap();
+    let height = scanlines.output_height().unwrap();
+    let mut rows = vec![0; row_bytes * rows_per_read];
+    let mut checksum = 0u64;
+
+    while scanlines.output_scanline() < height {
+        match scanlines.read_scanlines(&mut rows, row_bytes).unwrap() {
+            ScanlineReadStatus::RowsProcessed { rows: written } => {
+                checksum = rows[..written * row_bytes]
+                    .iter()
+                    .fold(checksum, |sum, byte| sum.wrapping_add(u64::from(*byte)));
+            }
+            ScanlineReadStatus::NeedMoreInput => panic!("one-shot benchmark input suspended"),
+            ScanlineReadStatus::Complete => break,
+            _ => unreachable!()
+        }
+    }
+    assert_eq!(scanlines.finish().unwrap(), ScanlineStatus::Complete);
+    checksum
+}
+
+fn decode_scanline_output(c: &mut Criterion) {
+    let data =
+        read(sample_path().join("test-images/jpeg/benchmarks/speed_bench_hv_subsampling.jpg"))
+            .unwrap();
+    let mut group = c.benchmark_group("jpeg: converted scanline output");
+    group.throughput(Throughput::Bytes(data.len() as u64));
+
+    group.bench_function("full decode output", |b| {
+        b.iter(|| black_box(decode_jpeg(data.as_slice())));
+    });
+    group.bench_function("one-row caller storage", |b| {
+        b.iter(|| black_box(decode_jpeg_scanlines(data.as_slice(), 1)));
+    });
+    group.bench_function("64-row caller storage", |b| {
+        b.iter(|| black_box(decode_jpeg_scanlines(data.as_slice(), 64)));
+    });
+}
+
 criterion_group!(name=benches;
       config={
       let c = Criterion::default();
@@ -466,6 +512,7 @@ criterion_group!(name=benches;
     decode_hv_samp,criterion_benchmark_grayscale,
     decode_hv_samp_prog,decode_h_samp_prog,decode_no_samp_prog,decode_v_samp_prog,
     decode_no_samp_opts,
-    decode_restart_full,decode_restart_resume,decode_streaming_mode,decode_raw_pull_output);
+    decode_restart_full,decode_restart_resume,decode_streaming_mode,
+    decode_raw_pull_output,decode_scanline_output);
 
 criterion_main!(benches);
