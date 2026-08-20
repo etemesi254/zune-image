@@ -62,6 +62,10 @@ name = "decode_jpeg"
 harness = false
 
 [[bench]]
+name = "decode_jpeg_allocations"
+harness = false
+
+[[bench]]
 name = "decode_hdr"
 harness = false
 
