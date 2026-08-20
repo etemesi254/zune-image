@@ -656,3 +656,25 @@ fn component_ids_returns_none_before_headers() {
     let raw = decoder.raw_output();
     assert!(raw.component_ids().is_none());
 }
+
+#[test]
+fn dnl_whole_raw_apis_are_rejected_before_false_completion() {
+    let bytes = include_bytes!("images/dnl_image.jpg");
+    let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
+    decoder.decode_headers().unwrap();
+    let mut raw = decoder.raw_output();
+    let mut planes = [];
+
+    assert!(matches!(
+        raw.decode_into(&mut planes),
+        Err(DecodeErrors::FormatStatic(
+            "raw output does not support DNL images"
+        ))
+    ));
+    assert!(matches!(
+        raw.decode_into_strided(&mut planes, &[]),
+        Err(DecodeErrors::FormatStatic(
+            "raw output does not support DNL images"
+        ))
+    ));
+}

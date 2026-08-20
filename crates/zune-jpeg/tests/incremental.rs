@@ -12,6 +12,7 @@
 //! and that retrying with more data produces correct output.
 
 use zune_core::bytestream::{ZByteReaderTrait, ZCursor};
+use zune_core::colorspace::ColorSpace;
 use zune_core::options::DecoderOptions;
 use zune_jpeg::errors::DecodeErrors;
 use zune_jpeg::{JpegDecoder, RawDecodeSession};
@@ -2727,6 +2728,86 @@ fn per_row_checkpoint_avoids_full_scan_replay() {
         "per-row checkpoint should resume past entropy_start ({entropy_start}), \
          but sought to {resume_pos} — indicates full scan replay instead of row resume"
     );
+}
+
+fn checkpointed_pixel_decoder<'a>(
+    data: &'a [u8], cutoff: usize, options: DecoderOptions
+) -> (JpegDecoder<GrowableCursor<'a>>, Rc<Cell<usize>>) {
+    let limit = Rc::new(Cell::new(cutoff));
+    let cursor = GrowableCursor::new(data, Rc::clone(&limit));
+    let mut decoder = JpegDecoder::new_with_options(cursor, options);
+    decoder.decode_headers().unwrap();
+    let mut output = vec![0; decoder.output_buffer_size().unwrap()];
+    for _ in 0..2 {
+        let error = decoder.decode_into(&mut output).unwrap_err();
+        assert!(error.is_recoverable_eof());
+    }
+    assert!(decoder.decoded_scanlines().unwrap_or(0) > 0);
+    (decoder, limit)
+}
+
+#[test]
+fn switching_checkpointed_pixel_decode_to_whole_raw_replays_from_start() {
+    let data = include_bytes!("../../../test-images/jpeg/sampling_factors.jpg");
+    let entropy_start = entropy_start(data);
+    let cutoff = entropy_start + (data.len() - entropy_start) * 60 / 100;
+    let expected = decode_raw_oneshot(data);
+    let (mut decoder, limit) =
+        checkpointed_pixel_decoder(data, cutoff, DecoderOptions::default());
+    limit.set(data.len());
+
+    let mut raw = decoder.raw_output();
+    let mut actual = allocate_raw_planes(&raw);
+    decode_raw_into_existing(&mut raw, &mut actual).unwrap();
+    assert_raw_planes_match(&actual, &expected, "pixel_to_whole_raw", data.len());
+}
+
+#[test]
+fn changing_options_replays_pixel_output_and_invalidates_progress() {
+    let baseline = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let luma = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::Luma);
+    let expected = decode_oneshot(baseline);
+    let entropy_start = entropy_start(baseline);
+    let cutoff = entropy_start + (baseline.len() - entropy_start) * 60 / 100;
+    let (mut decoder, limit) = checkpointed_pixel_decoder(baseline, cutoff, luma);
+    limit.set(baseline.len());
+    decoder.set_options(DecoderOptions::default());
+    assert_eq!(decoder.decoded_output_bytes(), Some(0));
+    assert_eq!(decoder.decoded_scanlines(), Some(0));
+    let mut output = vec![0; expected.len()];
+    decoder.decode_into(&mut output).unwrap();
+    assert_eq!(output, expected);
+
+    let progressive =
+        include_bytes!("../../../test-images/jpeg/rebuilt_relax_fill_bytes_before_marker.jpg");
+    let scans = progressive_sos_scans(progressive);
+    let cutoff = scans[1].data_start + 1;
+    let limit = Rc::new(Cell::new(cutoff));
+    let cursor = GrowableCursor::new(progressive, Rc::clone(&limit));
+    let mut decoder = JpegDecoder::new_with_options(cursor, luma);
+    decoder.set_incremental_mode(true);
+    decoder.decode_headers().unwrap();
+    let mut preview = vec![0; decoder.output_buffer_size().unwrap()];
+    let error = decoder.decode_into(&mut preview).unwrap_err();
+    assert!(error.is_recoverable_eof());
+    let committed_scans = decoder.decoded_scans().unwrap();
+    assert!(committed_scans > 0);
+    assert!(decoder.decoded_preview_output_bytes().unwrap_or(0) > 0);
+
+    let rgba = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::RGBA);
+    decoder.set_options(rgba);
+    assert_eq!(decoder.decoded_output_bytes(), Some(0));
+    assert_eq!(decoder.decoded_scanlines(), Some(0));
+    assert_eq!(decoder.decoded_scans(), Some(committed_scans));
+    assert_eq!(decoder.decoded_preview_output_bytes(), Some(0));
+    assert_eq!(decoder.decoded_preview_scanlines(), Some(0));
+    limit.set(progressive.len());
+    let expected = JpegDecoder::new_with_options(ZCursor::new(progressive), rgba)
+        .decode()
+        .unwrap();
+    let mut output = vec![0; expected.len()];
+    decoder.decode_into(&mut output).unwrap();
+    assert_eq!(output, expected);
 }
 
 #[test]
