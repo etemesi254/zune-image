@@ -24,6 +24,8 @@ use crate::errors::DecodeErrors;
 use crate::huffman::HuffmanTable;
 use crate::misc::{SOFMarkers, UN_ZIGZAG};
 
+const MARKER_BODY_CANCEL_CHUNK_SIZE: usize = 4096;
+
 /// Wrapper over a marker body that exposes a cursor-style read API.
 ///
 /// All header parsers use this rather than `decoder.stream` directly, so any
@@ -102,10 +104,19 @@ where
     bytes.clear();
     bytes.resize(body_len, 0);
 
-    if let Err(e) = decoder.stream.read_exact_bytes(&mut bytes) {
-        bytes.clear();
-        decoder.marker_body_scratch = bytes;
-        return Err(e.into());
+    for (chunk_index, chunk) in bytes.chunks_mut(MARKER_BODY_CANCEL_CHUNK_SIZE).enumerate() {
+        if chunk_index > 0 {
+            if let Err(error) = decoder.check_cancelled() {
+                bytes.clear();
+                decoder.marker_body_scratch = bytes;
+                return Err(error);
+            }
+        }
+        if let Err(error) = decoder.stream.read_exact_bytes(chunk) {
+            bytes.clear();
+            decoder.marker_body_scratch = bytes;
+            return Err(error.into());
+        }
     }
 
     let result = parse(decoder, MarkerBody::new(&bytes));
