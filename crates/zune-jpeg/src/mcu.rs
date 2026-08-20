@@ -594,6 +594,15 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     fn inner_decode_mcu_width<const PROGRESSIVE: bool, B: BitStream>(
         &mut self, context: &mut McuWidthContext<'_, B>,
     ) -> Result<McuContinuation, DecodeErrors> {
+        #[derive(Clone, Copy, Default)]
+        struct McuBlockCtx {
+            component: usize,
+            // Constant offset for all MCU's (in this row).
+            buffer_offset: usize,
+            // Scaling offset per MCU in this row.
+            mcu_stride: usize,
+        }
+
         // Destructure the context into local bindings up front. Reading the
         // hot loop through `context.<field>` keeps the optimizer from
         // treating the per-field mutable borrows as `noalias` and was
@@ -606,6 +615,35 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let tmp: &mut [i32; 64] = &mut *context.tmp;
         let stream: &mut B = &mut *context.stream;
         let progressive: &mut [Vec<i16>; MAX_COMPONENTS] = &mut *context.progressive;
+
+        // Calculate loop constants for all MCU blocks.
+        let mut mcu_ctx = [McuBlockCtx::default(); 10];
+        for (block, ctx) in self.scan_blocks[..usize::from(self.num_scan_blocks)]
+            .iter()
+            .zip(&mut mcu_ctx)
+        {
+            let component = &self.components[block.component];
+            ctx.component = block.component;
+
+            ctx.buffer_offset = if PROGRESSIVE {
+                let offset = mcu_row
+                    .checked_mul(component.width_stride)
+                    .and_then(|x| x.checked_mul(8))
+                    .ok_or(DecodeErrors::FormatStatic("Overflow"))?;
+
+                // Small stopgap for https://github.com/etemesi254/zune-image/issues/362
+                if offset >= progressive[block.component].len() {
+                    return Err(DecodeErrors::FormatStatic("Would panic on slice iteration"));
+                }
+
+                offset
+            } else {
+                (usize::from(block.vertical) * component.width_stride * 8)
+                    + (usize::from(block.horizontal) * 8)
+            };
+
+            ctx.mcu_stride = if PROGRESSIVE { 8 } else { component.horizontal_sample * 8 };
+        }
 
         let z_order = self.z_order;
         let z_scans = &z_order[..usize::from(self.num_scans)];
@@ -641,14 +679,13 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
         for j in start_col..scan_du_width {
             // iterate over components
-            for part in &self.scan_blocks[..usize::from(self.num_scan_blocks)] {
-                let k = part.component;
+            for part in &mcu_ctx[..usize::from(self.num_scan_blocks)] {
                 // we made this loop body massive due to several different paths that depend on
                 // static conditions. Note we (potentially) call into other functions so the
                 // compiler will not unroll anything here anyways. The gains from separating
                 // differently optimized loop bodies are much greater than a single additional jump
                 // here.
-                let component = &mut self.components[k];
+                let component = &mut self.components[part.component];
 
                 let (dc_table, ac_table) = B::get_dc_ac_tables(
                     &mut self.entropy_tables,
@@ -658,33 +695,12 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
                 let qt_table = &component.quantization_table;
                 let channel = if PROGRESSIVE {
-                    let offset = mcu_row
-                        .checked_mul(component.width_stride)
-                        .and_then(|x| x.checked_mul(8))
-                        .ok_or(DecodeErrors::FormatStatic("Overflow"))?;
-                    // Small stopgap for https://github.com/etemesi254/zune-image/issues/362
-                    if offset >= progressive[k].len() {
-                        return Err(DecodeErrors::FormatStatic("Would panic on slice iteration"));
-                    }
-                    &mut progressive[k][offset..]
+                    &mut progressive[part.component]
                 } else {
                     &mut component.raw_coeff
                 };
 
                 let component_samples_needed = component.needed;
-
-                // If image is interleaved iterate over scan components,
-                // otherwise if it-s non-interleaved, these routines iterate in
-                // trivial scanline order(Y,Cb,Cr)
-                //
-                // Turn the bounds into a compile time constant for a common special case. This
-                // allows the compiler to unroll the loop and then do a bunch of interleaving.
-                //
-                // For PROGRESSIVE (non-interleaved), we iterate data units directly so
-                // h_samp/v_samp loops run exactly once.
-                let v_samp = usize::from(part.vertical);
-                let h_samp = usize::from(part.horizontal);
-
                 let result = if component_samples_needed {
                     // Fill the array with zeroes, decode_mcu_block expects
                     // a zero based array. Clobber is in zig-zag order though.
@@ -747,25 +763,15 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     // tmp was only written partially, note that len is in ZigZag order.
                     clobber_more_than_4x4 = len > 10;
 
-                    let idct_position = if PROGRESSIVE {
-                        // For non-interleaved, j indexes data units directly
-                        j * 8
-                    } else {
-                        // derived from stb and rewritten for my tastes
-                        let c2 = v_samp * 8;
-                        let c3 = ((j * component.horizontal_sample) + h_samp) * 8;
-
-                        component.width_stride * c2 + c3
-                    };
-
+                    let idct_position = part.buffer_offset + part.mcu_stride * j;
                     let idct_pos = channel.get_mut(idct_position..).unwrap();
 
+                    //  call idct.
                     if len <= 1 {
                         (self.idct_1x1_func)(tmp, idct_pos, component.width_stride);
                     } else if len <= 10 {
                         (self.idct_4x4_func)(tmp, idct_pos, component.width_stride);
                     } else {
-                        //  call idct.
                         (self.idct_func)(tmp, idct_pos, component.width_stride);
                     }
                 }
