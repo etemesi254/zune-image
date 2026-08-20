@@ -870,6 +870,13 @@ where
         }
     }
 
+    fn clear_scan_checkpoints(&mut self) {
+        if let Some(state) = self.scan_state.as_deref_mut() {
+            state.scan_checkpoint = None;
+            state.progressive_checkpoint = None;
+        }
+    }
+
     // Match output colorspace; we only care for ycbcr to rgb/rgba here, in
     // case one is using another colorspace may god help you.
     fn set_color_convert_from_options(&mut self) {
@@ -1182,6 +1189,7 @@ where
     /// output planes. The session borrows this decoder mutably, preventing
     /// pixel output or option changes until the session is dropped.
     pub fn raw_output(&mut self) -> RawDecodeSession<'_, T> {
+        self.clear_scan_checkpoints();
         RawDecodeSession { decoder: self }
     }
 
@@ -1307,10 +1315,8 @@ where
     }
     /// Set decoder options
     ///
-    /// This can be used to set new options even after initialization
-    /// but before decoding.
-    ///
-    /// This does not bear any significance after decoding an image
+    /// This can be used after initialization or a partial decode. The next
+    /// output operation replays from scan start with the new options.
     ///
     /// # Arguments
     /// - `options`: New decoder options
@@ -1392,7 +1398,15 @@ where
     }
 
     pub fn set_options(&mut self, options: DecoderOptions) {
+        self.clear_scan_checkpoints();
         self.options = options;
+        self.coeff = 1;
+        self.pixels_decoded = 0;
+        self.progressive_displayed_scans = 0;
+        self.set_color_convert_from_options();
+        self.idct_func = choose_idct_func(&self.options);
+        self.idct_4x4_func = choose_idct_4x4_func(&self.options);
+        self.idct_1x1_func = choose_idct_1x1_func(&self.options);
     }
     #[allow(clippy::cast_possible_truncation)]
     fn reassemble_extended_xmp(&mut self) {
@@ -2311,6 +2325,11 @@ where
 
     // Shared implementation for `RawDecodeSession::decode_into`.
     fn decode_raw_into(&mut self, planes: &mut [&mut [u8]]) -> Result<(), DecodeErrors> {
+        if self.expects_dnl {
+            return Err(DecodeErrors::FormatStatic(
+                "raw output does not support DNL images"
+            ));
+        }
         self.prepare_for_scan_decode()?;
 
         let n = self.components.len();
@@ -2356,6 +2375,11 @@ where
     fn decode_raw_into_strided(
         &mut self, planes: &mut [&mut [u8]], strides: &[usize]
     ) -> Result<(), DecodeErrors> {
+        if self.expects_dnl {
+            return Err(DecodeErrors::FormatStatic(
+                "raw output does not support DNL images"
+            ));
+        }
         self.prepare_for_scan_decode()?;
 
         let n = self.components.len();
@@ -2696,7 +2720,14 @@ impl ImageInfo {
 
 #[cfg(test)]
 mod planar_layout_helpers {
-    use super::round_up_pow2;
+    use zune_core::bytestream::ZCursor;
+    use zune_core::colorspace::ColorSpace;
+    use zune_core::options::DecoderOptions;
+
+    use crate::color_convert::choose_ycbcr_to_rgb_convert_func;
+    use crate::idct::{choose_idct_1x1_func, choose_idct_4x4_func, choose_idct_func};
+
+    use super::{round_up_pow2, JpegDecoder};
 
     #[test]
     fn div_ceil_basic() {
@@ -2722,5 +2753,40 @@ mod planar_layout_helpers {
     #[test]
     fn round_up_pow2_overflow() {
         assert_eq!(round_up_pow2(usize::MAX, 8), None);
+    }
+
+    #[test]
+    fn set_options_refreshes_cached_dispatch() {
+        for (initial, replacement) in [
+            (DecoderOptions::new_fast(), DecoderOptions::new_safe()),
+            (DecoderOptions::new_safe(), DecoderOptions::new_fast())
+        ] {
+            let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&[]), initial);
+            decoder.set_options(replacement);
+            assert_eq!(decoder.idct_func as usize, choose_idct_func(&replacement) as usize);
+            assert_eq!(
+                decoder.idct_4x4_func as usize,
+                choose_idct_4x4_func(&replacement) as usize
+            );
+            assert_eq!(
+                decoder.idct_1x1_func as usize,
+                choose_idct_1x1_func(&replacement) as usize
+            );
+        }
+
+        for colorspace in [
+            ColorSpace::RGB,
+            ColorSpace::BGR,
+            ColorSpace::RGBA,
+            ColorSpace::BGRA
+        ] {
+            let replacement = DecoderOptions::default().jpeg_set_out_colorspace(colorspace);
+            let mut decoder = JpegDecoder::new(ZCursor::new(&[]));
+            decoder.set_options(replacement);
+            assert_eq!(
+                decoder.color_convert_16 as usize,
+                choose_ycbcr_to_rgb_convert_func(colorspace, &replacement).unwrap() as usize
+            );
+        }
     }
 }
