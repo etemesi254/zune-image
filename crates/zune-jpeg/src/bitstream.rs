@@ -931,6 +931,7 @@ impl BitStream for BitStreamHuffman {
         debug_assert!(bit > 0, "One bit in low mask set");
 
         let mut k = self.spec_start;
+        let spec_bound = self.spec_end;
 
         if self.eob_run == 0 {
             // We always know how many zeros *not* to initialize. For within an EOB run, that's all
@@ -938,7 +939,7 @@ impl BitStream for BitStreamHuffman {
             // safe upper bound.
             let (mut symbol, mut r);
 
-            'non_eob: while k <= self.spec_end {
+            'non_eob: while k <= spec_bound {
                 self.refill(reader)?;
 
                 // We need our next instructions, decode a symbol and so on.
@@ -1021,7 +1022,7 @@ impl BitStream for BitStreamHuffman {
 
                     k += 1;
 
-                    if k > self.spec_end {
+                    if k > spec_bound {
                         break 'non_eob;
                     }
                 }
@@ -1035,7 +1036,7 @@ impl BitStream for BitStreamHuffman {
             if &block[1..] != &[0; 63] {
                 self.refill(reader)?;
 
-                for k in k..=self.spec_end {
+                while k <= spec_bound {
                     let coefficient = &mut block[UN_ZIGZAG[k as usize & 63] & 63];
 
                     if *coefficient != 0 && self.get_bit() == 1 {
@@ -1049,10 +1050,13 @@ impl BitStream for BitStreamHuffman {
                             }
                         }
                     }
+
                     if self.bits_left < 1 {
                         // refill at the last possible moment
                         self.refill(reader)?;
                     }
+
+                    k += 1;
                 }
             }
 
