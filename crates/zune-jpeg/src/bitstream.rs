@@ -922,21 +922,42 @@ impl BitStream for BitStreamHuffman {
     }
     #[allow(clippy::too_many_lines, clippy::op_ref)]
     fn decode_mcu_ac_refine<T>(
-        &mut self, reader: &mut ZReader<T>, table: &mut HuffmanTable, block: &mut [i16; 64]
+        &mut self, reader: &mut ZReader<T>, table: &mut HuffmanTable, block: &mut [i16; 64],
     ) -> Result<bool, DecodeErrors>
     where
-        T: ZByteReaderTrait
+        T: ZByteReaderTrait,
     {
         let bit = self.successive_low_mask;
+        debug_assert!(bit > 0, "One bit in low mask set");
 
-        let mut k = self.spec_start;
         let (mut symbol, mut r);
 
-        if self.eob_run == 0 {
-            'no_eob: loop {
-                // Decode a coefficient from the bit stream
+        // We always know how many zeros *not* to initialize. For within an EOB run, that's all
+        // remaining zeroes of the spectral band. We never iterate 127 coefficients so this is a
+        // safe upper bound.
+        const NZ_EOB_VAL: i8 = 127;
+        let mut nz: i8;
+        let mut was_eob_run = false;
+
+        // `symbol` is used to initialize an indicated zero coefficient, but control flow is not
+        // hierarchical (and dependent on iteration being less than 127 items) so this is a default
+        // for soundness purposes.
+        symbol = 0;
+
+        if self.eob_run > 0 {
+            was_eob_run = true;
+            // FIXME: fast path for entirely zeroes?
+
+            nz = NZ_EOB_VAL;
+        } else {
+            nz = -1;
+        }
+
+        for k in self.spec_start..=self.spec_end {
+            if nz < 0 {
                 self.refill(reader)?;
 
+                // We need our next instructions, decode a symbol and so on.
                 symbol = self.peek_bits::<HUFF_LOOKAHEAD>();
                 symbol = table.lookup[symbol as usize];
 
@@ -947,17 +968,33 @@ impl BitStream for BitStreamHuffman {
 
                 if symbol == 0 {
                     if r != 15 {
-                        // EOB run is 2^r + bits
+                        // This indicates the start of an EOBRUN.
+                        // EOB run is 2^r + bits.
                         self.eob_run = 1 << r;
                         self.eob_run += self.get_bits(r as u8);
-                        // EOB runs are handled by the eob logic
-                        break 'no_eob;
+                        was_eob_run = true;
+                        nz = NZ_EOB_VAL;
+                    } else {
+                        // This indicates a zero-fill.
+                        nz = 15;
+                        symbol = 0;
                     }
                 } else {
-                    // libjpeg-turbo also doesn't return an error here, so let's also warn.
+                    // libjpeg-turbo also doesn't return an error here, so let's also only warn.
                     if symbol != 1 {
                         warn!("Bad Huffman code, corrupt JPEG?");
                     }
+
+                    if self.bits_left < 1 {
+                        self.refill(reader)?;
+                    }
+
+                    if self.bits_left < 1 && self.marker.is_some() {
+                        return Err(DecodeErrors::Format(
+                            "Marker found where not expected in refine bit".to_string(),
+                        ));
+                    }
+
                     // get sign bit
                     // We assume we have enough bits, which should be correct for sane images
                     // since we refill by 32 above
@@ -966,91 +1003,47 @@ impl BitStream for BitStreamHuffman {
                     } else {
                         symbol = i32::from(-bit);
                     }
+
+                    nz = r as i8;
+                }
+            }
+
+            let coefficient = &mut block[UN_ZIGZAG[k as usize] & 63];
+
+            if *coefficient == 0 {
+                // We have hit either the end of a ZRL or R_ZZ run. Find out which was decoded by
+                // inspecting `symbol`. This tells us if this is an assignment or just the last to
+                // skip.
+                if nz == 0 && symbol != 0 {
+                    // This is a coefficient to initialize.
+                    *coefficient = symbol as i16;
                 }
 
-                // Advance over already nonzero coefficients  appending
-                // correction bits to the non-zeroes.
-                // A correction bit is 1 if the absolute value of the coefficient must be increased
+                nz -= 1;
+            } else {
+                if self.bits_left < 1 {
+                    // refill at the last possible moment
+                    self.refill(reader)?;
+                }
 
-                if k <= self.spec_end {
-                    'advance_nonzero: loop {
-                        let coefficient = &mut block[UN_ZIGZAG[k as usize & 63] & 63];
+                if self.bits_left < 1 && self.marker.is_some() {
+                    return Err(DecodeErrors::Format(
+                        "Marker found where not expected in refine bit".to_string(),
+                    ));
+                }
 
-                        if *coefficient != 0 {
-                            if self.bits_left < 1 {
-                                self.refill(reader)?;
-                                if self.bits_left < 1 && self.marker.is_some() {
-                                    return Err(DecodeErrors::Format(
-                                        "Marker found where not expected in refine bit".to_string()
-                                    ));
-                                }
-                            }
-                            if self.get_bit() == 1 && (*coefficient & bit) == 0 {
-                                if *coefficient > 0 {
-                                    *coefficient = coefficient.wrapping_add(bit);
-                                } else {
-                                    *coefficient = coefficient.wrapping_sub(bit);
-                                }
-                            }
-                        } else {
-                            r -= 1;
-
-                            if r < 0 {
-                                // reached target zero coefficient.
-                                break 'advance_nonzero;
-                            }
-                        }
-
-                        if k == self.spec_end {
-                            break 'advance_nonzero;
-                        }
-
-                        k += 1;
+                if self.get_bit() == 1 && (*coefficient & bit) == 0 {
+                    if *coefficient > 0 {
+                        *coefficient = coefficient.wrapping_add(bit);
+                    } else {
+                        *coefficient = coefficient.wrapping_sub(bit);
                     }
-                }
-
-                if symbol != 0 {
-                    let pos = UN_ZIGZAG[k as usize & 63];
-                    // output new non-zero coefficient.
-                    block[pos & 63] = symbol as i16;
-                }
-
-                k += 1;
-
-                if k > self.spec_end {
-                    break 'no_eob;
                 }
             }
         }
-        if self.eob_run > 0 {
-            // only run if block does not consists of purely zeroes
-            // changing this to iter_any makes perf regress by 10%
-            //   time:   [+10.836% +11.589% +12.376%] (p = 0.00 < 0.05)
-            if &block[1..] != &[0; 63] {
-                self.refill(reader)?;
 
-                while k <= self.spec_end {
-                    let coefficient = &mut block[UN_ZIGZAG[k as usize & 63] & 63];
-
-                    if *coefficient != 0 && self.get_bit() == 1 {
-                        // check if we already modified it, if so do nothing, otherwise
-                        // append the correction bit.
-                        if (*coefficient & bit) == 0 {
-                            if *coefficient >= 0 {
-                                *coefficient = coefficient.wrapping_add(bit);
-                            } else {
-                                *coefficient = coefficient.wrapping_sub(bit);
-                            }
-                        }
-                    }
-                    if self.bits_left < 1 {
-                        // refill at the last possible moment
-                        self.refill(reader)?;
-                    }
-                    k += 1;
-                }
-            }
-            // count a block completed in EOB run
+        // Update after all potential errors.
+        if was_eob_run {
             self.eob_run -= 1;
         }
 
