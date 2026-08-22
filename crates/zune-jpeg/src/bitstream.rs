@@ -931,100 +931,97 @@ impl BitStream for BitStreamHuffman {
         debug_assert!(bit > 0, "One bit in low mask set");
 
         let mut k = self.spec_start;
-        let spec_bound = self.spec_end;
+        let spec_bound = if self.eob_run == 0 { self.spec_end }  else { 0 };
 
-        if self.eob_run == 0 {
-            // We always know how many zeros *not* to initialize. For within an EOB run, that's all
-            // remaining zeroes of the spectral band. We never iterate 127 coefficients so this is a
-            // safe upper bound.
+        // We always know how many zeros *not* to initialize. For within an EOB run, that's all
+        // remaining zeroes of the spectral band. We never iterate 127 coefficients so this is a
+        // safe upper bound.
+        'non_eob: while k <= spec_bound {
             let (mut symbol, mut r);
+            self.refill(reader)?;
 
-            'non_eob: while k <= spec_bound {
-                self.refill(reader)?;
+            // We need our next instructions, decode a symbol and so on.
+            symbol = self.peek_bits::<HUFF_LOOKAHEAD>();
+            symbol = table.lookup[symbol as usize];
 
-                // We need our next instructions, decode a symbol and so on.
-                symbol = self.peek_bits::<HUFF_LOOKAHEAD>();
-                symbol = table.lookup[symbol as usize];
+            decode_huff!(self, symbol, table);
 
-                decode_huff!(self, symbol, table);
+            r = symbol >> 4;
+            symbol &= 15;
 
-                r = symbol >> 4;
-                symbol &= 15;
+            if symbol == 0 {
+                if r != 15 {
+                    // This indicates the start of an EOBRUN.
+                    // EOB run is 2^r + bits.
+                    self.eob_run = 1 << r;
+                    self.eob_run += self.get_bits(r as u8);
+                    break;
+                } else /* r == 15 && symbol == 0 */ {
+                    // This indicates a zero-fill.
+                }
+            } else {
+                // libjpeg-turbo also doesn't return an error here, so let's also only warn.
+                if symbol != 1 {
+                    warn!("Bad Huffman code, corrupt JPEG?");
+                }
 
-                if symbol == 0 {
-                    if r != 15 {
-                        // This indicates the start of an EOBRUN.
-                        // EOB run is 2^r + bits.
-                        self.eob_run = 1 << r;
-                        self.eob_run += self.get_bits(r as u8);
+                if self.bits_left < 1 {
+                    self.refill(reader)?;
+                }
+
+                if self.bits_left < 1 && self.marker.is_some() {
+                    return Err(DecodeErrors::Format(
+                        "Marker found where not expected in refine bit".to_string(),
+                    ));
+                }
+
+                // get sign bit
+                // We assume we have enough bits, which should be correct for sane images
+                // since we refill by 32 above
+                if self.get_bit() == 1 {
+                    symbol = i32::from(bit);
+                } else {
+                    symbol = i32::from(-bit);
+                }
+            }
+
+            loop {
+                let coefficient = &mut block[UN_ZIGZAG[k as usize & 63] & 63];
+
+                if *coefficient == 0 {
+                    // We have hit either the end of a ZRL or R_ZZ run. Find out which was decoded by
+                    // inspecting `symbol`. This tells us if this is an assignment or just the last to
+                    // skip.
+                    if r == 0 && symbol != 0 {
+                        // This is a coefficient to initialize.
+                        *coefficient = symbol as i16;
+                    }
+
+                    r -= 1;
+
+                    if r < 0 {
+                        k += 1;
                         break;
-                    } else /* r == 15 && symbol == 0 */ {
-                        // This indicates a zero-fill.
                     }
                 } else {
-                    // libjpeg-turbo also doesn't return an error here, so let's also only warn.
-                    if symbol != 1 {
-                        warn!("Bad Huffman code, corrupt JPEG?");
-                    }
-
                     if self.bits_left < 1 {
+                        // refill at the last possible moment
                         self.refill(reader)?;
                     }
 
-                    if self.bits_left < 1 && self.marker.is_some() {
-                        return Err(DecodeErrors::Format(
-                            "Marker found where not expected in refine bit".to_string(),
-                        ));
-                    }
-
-                    // get sign bit
-                    // We assume we have enough bits, which should be correct for sane images
-                    // since we refill by 32 above
-                    if self.get_bit() == 1 {
-                        symbol = i32::from(bit);
-                    } else {
-                        symbol = i32::from(-bit);
+                    if self.get_bit() == 1 && (*coefficient & bit) == 0 {
+                        if *coefficient > 0 {
+                            *coefficient = coefficient.wrapping_add(bit);
+                        } else {
+                            *coefficient = coefficient.wrapping_sub(bit);
+                        }
                     }
                 }
 
-                loop {
-                    let coefficient = &mut block[UN_ZIGZAG[k as usize & 63] & 63];
+                k += 1;
 
-                    if *coefficient == 0 {
-                        // We have hit either the end of a ZRL or R_ZZ run. Find out which was decoded by
-                        // inspecting `symbol`. This tells us if this is an assignment or just the last to
-                        // skip.
-                        if r == 0 && symbol != 0 {
-                            // This is a coefficient to initialize.
-                            *coefficient = symbol as i16;
-                        }
-
-                        r -= 1;
-
-                        if r < 0 {
-                            k += 1;
-                            break;
-                        }
-                    } else {
-                        if self.bits_left < 1 {
-                            // refill at the last possible moment
-                            self.refill(reader)?;
-                        }
-
-                        if self.get_bit() == 1 && (*coefficient & bit) == 0 {
-                            if *coefficient > 0 {
-                                *coefficient = coefficient.wrapping_add(bit);
-                            } else {
-                                *coefficient = coefficient.wrapping_sub(bit);
-                            }
-                        }
-                    }
-
-                    k += 1;
-
-                    if k > spec_bound {
-                        break 'non_eob;
-                    }
+                if k > spec_bound {
+                    break 'non_eob;
                 }
             }
         }
@@ -1036,7 +1033,7 @@ impl BitStream for BitStreamHuffman {
             if &block[1..] != &[0; 63] {
                 self.refill(reader)?;
 
-                while k <= spec_bound {
+                while k <= self.spec_end {
                     let coefficient = &mut block[UN_ZIGZAG[k as usize & 63] & 63];
 
                     if *coefficient != 0 && self.get_bit() == 1 {
