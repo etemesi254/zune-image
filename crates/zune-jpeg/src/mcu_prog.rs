@@ -652,25 +652,21 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let (mcu_width, mcu_height) = self.get_non_interleaved_dimensions(k);
         let ac_pos = self.components[k].ac_huff_table;
         let component_buffer_data = &mut buffer[k];
+        let width_stride = self.components[k].width_stride / 8;
 
         let mut cancel = self.cancel_debounced(mcu_width);
-        for i in 0..mcu_height {
+        let lines = component_buffer_data.chunks_exact_mut(64 * width_stride);
+
+        for line in lines.take(mcu_height) {
             if cancel.is_cancelled() {
                 return Err(DecodeErrors::Cancelled);
             }
-            for j in 0..mcu_width {
+
+            for data in line.as_chunks_mut::<64>().0 {
                 if *stream.eob_run() > 0 {
                     // handle EOB runs here.
                     *stream.eob_run() -= 1;
                 } else {
-                    let start = 64 * (j + i * (self.components[k].width_stride / 8));
-
-                    let data: &mut [i16; 64] = component_buffer_data
-                        .get_mut(start..start + 64)
-                        .ok_or(DecodeErrors::FormatStatic("Slice to Small"))?
-                        .try_into()
-                        .unwrap();
-
                     let ac_table = B::get_ac_table(&mut self.entropy_tables, ac_pos)?;
                     if !stream.decode_mcu_ac_first(&mut self.stream, ac_table, data)? {
                         // Arithmetic bad-code termination is scan-wide, matching
@@ -695,18 +691,14 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let width_stride = self.components[k].width_stride / 8;
 
         let mut cancel = self.cancel_debounced(mcu_width);
-        for i in 0..mcu_height {
+        let lines = component_buffer_data.chunks_exact_mut(64 * width_stride);
+
+        for line in lines.take(mcu_height) {
             if cancel.is_cancelled() {
                 return Err(DecodeErrors::Cancelled);
             }
-            for j in 0..mcu_width {
-                let start = 64 * (j + i * width_stride);
-                let data: &mut [i16; 64] = component_buffer_data
-                    .get_mut(start..start + 64)
-                    .ok_or(DecodeErrors::FormatStatic("Slice to Small"))?
-                    .try_into()
-                    .unwrap();
 
+            for data in line.as_chunks_mut::<64>().0 {
                 let ac_table = B::get_ac_table(&mut self.entropy_tables, ac_pos)?;
                 stream.decode_mcu_ac_refine(&mut self.stream, ac_table, data)?;
 

@@ -955,9 +955,13 @@ impl BitStream for BitStreamHuffman {
                     // EOB run is 2^r + bits.
                     self.eob_run = 1 << r;
                     self.eob_run += self.get_bits(r as u8);
-                    break;
+                    break 'non_eob;
                 } else /* r == 15 && symbol == 0 */ {
-                    // This indicates a zero-fill.
+                    // This indicates a zero-fill.run
+                    // NOTE: it also implies there's going to another coefficient.
+                    // Before encoding it checks `K ≥ EOB` and we'd get an EOB (i.e. indication of
+                    // the number of zero-coefficients) if that would hold. Thus, k < EOB (the last
+                    // index of a magnitude-1 coefficient in this block).
                 }
             } else {
                 // libjpeg-turbo also doesn't return an error here, so let's also only warn.
@@ -1020,6 +1024,16 @@ impl BitStream for BitStreamHuffman {
 
                 k += 1;
 
+                // NOTE: in a valid bitstream we can assume this to only happen after the case
+                // `coefficient ! 0`, (corresponding to the nodes:
+                //
+                // - `Encode_R_ZZ(K), `Append_BR_bits`
+                // - `K = Se` -> Yes
+                //
+                // in figure G.7 (in ITU t81, section G1.3.2). If we had hit the other bound, this
+                // would have been encoded as an EOBRUN instead.
+                // FIXME: do we want to diagnose this or utilize it for optimization (avoiding an
+                // attack DOS vector though)?
                 if k > spec_bound {
                     break 'non_eob;
                 }
