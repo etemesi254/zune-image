@@ -1044,7 +1044,16 @@ impl BitStream for BitStreamHuffman {
             // only run if block does not consists of purely zeroes
             // changing this to iter_any makes perf regress by 10%
             //   time:   [+10.836% +11.589% +12.376%] (p = 0.00 < 0.05)
-            if &block[1..] != &[0; 63] {
+            //
+            // we can reduce the amount of total memory loads by trading against some comparisons if
+            // the spectral end can bound the index in UN_ZIGZAG order.
+            let have_any_nz_heuristic = if self.spec_end < 19 {
+                &block[1..33] != &[0; 32]
+            } else {
+                &block[1..] != &[0; 63]
+            };
+
+            if have_any_nz_heuristic {
                 self.refill(reader)?;
 
                 while k <= self.spec_end {
