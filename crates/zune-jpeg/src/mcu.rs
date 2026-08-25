@@ -272,10 +272,16 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     0
                 };
                 if stream.overread_by() > 0 {
-                    // The bitstream reader has exhausted available data.
-                    // Return a recoverable error so the caller can feed more
-                    // bytes and retry (incremental decoding).
-                    return Err(DecodeErrors::ExhaustedData);
+                    if self.scan_eof_is_error() {
+                        return Err(DecodeErrors::ExhaustedData);
+                    }
+                    if all_components_in_first_scan {
+                        if let Some(remaining) = pixels.get_mut(pixels_written..) {
+                            remaining.fill(128);
+                        }
+                        return Ok(());
+                    }
+                    break 'sos;
                 }
 
                 // Per-row checkpoint: save bitstream state at the start of
@@ -310,21 +316,22 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
                 // decode a whole MCU width,
                 // this takes into account interleaved components.
-                let mut mcu_width_context = McuWidthContext {
-                    mcu_width,
-                    mcu_row: i,
-                    start_col,
-                    pixels_written,
-                    tmp: &mut tmp,
-                    stream: &mut stream,
-                    progressive: &mut *progressive_mcus,
-                };
                 if cancel.is_cancelled() {
                     return Err(DecodeErrors::Cancelled);
                 }
-                let terminate = if all_components_in_first_scan {
-                    self.decode_mcu_width::<false, B>(&mut mcu_width_context)?
-                } else {
+                let terminate_result = {
+                    let mut mcu_width_context = McuWidthContext {
+                        mcu_width,
+                        mcu_row: i,
+                        start_col,
+                        pixels_written,
+                        tmp: &mut tmp,
+                        stream: &mut stream,
+                        progressive: &mut *progressive_mcus,
+                    };
+                    if all_components_in_first_scan {
+                        self.decode_mcu_width::<false, B>(&mut mcu_width_context)
+                    } else {
                     /* NB: (cae). This code was added due to the issue at https://github.com/etemesi254/zune-image/issues/277
                     *
                     * There is a particular set of images that interleave the start of scan (SOS) with the MCU,
@@ -342,7 +349,34 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     *
                     */
 
-                    self.decode_mcu_width::<true, B>(&mut mcu_width_context)?
+                        self.decode_mcu_width::<true, B>(&mut mcu_width_context)
+                    }
+                };
+
+                let terminate = match terminate_result {
+                    Ok(terminate) => terminate,
+                    Err(e) if e.is_recoverable_eof() && !self.scan_eof_is_error() => {
+                        error!("{e}");
+                        if all_components_in_first_scan {
+                            self.post_process(
+                                pixels,
+                                i,
+                                mcu_height,
+                                width,
+                                padded_width,
+                                &mut pixels_written,
+                                &mut upsampler_scratch_space,
+                            )?;
+                            self.pixels_decoded = pixels_written;
+                            if let Some(remaining) = pixels.get_mut(pixels_written..) {
+                                remaining.fill(128);
+                            }
+                        } else {
+                            pixels.fill(128);
+                        }
+                        return Ok(());
+                    }
+                    Err(e) => return Err(e)
                 };
 
                 // process that width up until it's impossible. This is faster than allocation the
@@ -419,7 +453,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         break;
                     }
                     Err(e) if e.is_recoverable_eof() => {
-                        return Err(e);
+                        if self.scan_eof_is_error() {
+                            return Err(e);
+                        }
+                        break;
                     }
                     Err(e) => {
                         if self.options.strict_mode() {
@@ -440,7 +477,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         // This catches the case where the final MCU row consumed data past EOF
         // (e.g. a 0xFF at the boundary was misinterpreted as byte-stuffing)
         // without a subsequent row to detect it.
-        if stream.overread_by() > 0 {
+        if stream.overread_by() > 0 && self.scan_eof_is_error() {
             return Err(DecodeErrors::ExhaustedData);
         }
 
@@ -488,7 +525,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     trace!("Found marker {_m:?}");
                 }
                 Err(e) if e.is_recoverable_eof() => {
-                    return Err(e);
+                    if self.scan_eof_is_error() {
+                        return Err(e);
+                    }
+                    error!("{e}");
                 }
                 Err(e) => {
                     if self.options.strict_mode() {

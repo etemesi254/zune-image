@@ -292,17 +292,14 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             if matches!(e, DecodeErrors::Cancelled) {
                 return Err(e);
             }
-            // Completed scans are displayable, but a truncated scan is not:
-            // refinement passes read-modify-write coefficient data, so the
-            // scratch copy is discarded on recoverable EOF.
-            if e.is_recoverable_eof() {
+            if e.is_recoverable_eof() && self.scan_eof_is_error() {
                 if fine_resume.is_some() {
                     self.invalidate_progressive_fine_checkpoint();
                 }
                 self.finish_progressive_partial(block, pixels)?;
                 return Err(e);
             }
-            if self.stream.eof()? {
+            if self.stream.eof()? && self.scan_eof_is_error() {
                 if fine_resume.is_some() {
                     self.invalidate_progressive_fine_checkpoint();
                 }
@@ -313,22 +310,38 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 return Err(e);
             }
             error!("{e}");
-            // Match the direct path's best-effort non-strict output: keep
-            // partial corrupt-scan coefficients, but never for recoverable EOF.
+            // Match the direct path's best-effort non-strict output by keeping
+            // partial coefficients, including lenient non-incremental EOF.
             for idx in 0..MAX_COMPONENTS {
                 if touched_components[idx] {
                     core::mem::swap(&mut block[idx], &mut scan_block[idx]);
                 }
             }
+            if fine_resume.is_some() {
+                self.invalidate_progressive_fine_checkpoint();
+            }
             self.invalidate_progressive_scan_checkpoint();
             return Ok(false);
         }
         if stream.overread_by() > 0 {
+            if self.scan_eof_is_error() {
+                if fine_resume.is_some() {
+                    self.invalidate_progressive_fine_checkpoint();
+                }
+                self.finish_progressive_partial(block, pixels)?;
+                return Err(DecodeErrors::ExhaustedData);
+            }
+            error!("{}", DecodeErrors::ExhaustedData);
+            for idx in 0..MAX_COMPONENTS {
+                if touched_components[idx] {
+                    core::mem::swap(&mut block[idx], &mut scan_block[idx]);
+                }
+            }
             if fine_resume.is_some() {
                 self.invalidate_progressive_fine_checkpoint();
             }
-            self.finish_progressive_partial(block, pixels)?;
-            return Err(DecodeErrors::ExhaustedData);
+            self.invalidate_progressive_scan_checkpoint();
+            return Ok(false);
         }
 
         for idx in 0..MAX_COMPONENTS {
@@ -351,11 +364,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 self.discard_progressive_partial();
                 return Err(e);
             }
-            if e.is_recoverable_eof() {
+            if e.is_recoverable_eof() && self.scan_eof_is_error() {
                 self.discard_progressive_partial();
                 return Err(e);
             }
-            if self.stream.eof()? {
+            if self.stream.eof()? && self.scan_eof_is_error() {
                 self.discard_progressive_partial();
                 return Err(DecodeErrors::ExhaustedData);
             }
@@ -366,8 +379,12 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             return Ok(false);
         }
         if stream.overread_by() > 0 {
-            self.discard_progressive_partial();
-            return Err(DecodeErrors::ExhaustedData);
+            if self.scan_eof_is_error() {
+                self.discard_progressive_partial();
+                return Err(DecodeErrors::ExhaustedData);
+            }
+            error!("{}", DecodeErrors::ExhaustedData);
+            return Ok(false);
         }
 
         self.progressive_completed_scans += 1;
@@ -381,7 +398,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         if matches!(error, DecodeErrors::Cancelled) {
             return Err(error);
         }
-        if error.is_recoverable_eof() {
+        if error.is_recoverable_eof() && self.scan_eof_is_error() {
             if preserve_completed_scans {
                 self.finish_progressive_partial(block, pixels)?;
             } else {
