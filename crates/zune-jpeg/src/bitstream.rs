@@ -931,7 +931,7 @@ impl BitStream for BitStreamHuffman {
         debug_assert!(bit > 0, "One bit in low mask set");
 
         let mut k = self.spec_start;
-        let spec_bound = if self.eob_run == 0 { self.spec_end }  else { 0 };
+        let spec_bound = if self.eob_run == 0 { self.spec_end } else { 0 };
 
         // We always know how many zeros *not* to initialize. For within an EOB run, that's all
         // remaining zeroes of the spectral band. We never iterate 127 coefficients so this is a
@@ -956,7 +956,9 @@ impl BitStream for BitStreamHuffman {
                     self.eob_run = 1 << r;
                     self.eob_run += self.get_bits(r as u8);
                     break 'non_eob;
-                } else /* r == 15 && symbol == 0 */ {
+                } else
+                /* r == 15 && symbol == 0 */
+                {
                     // This indicates a zero-fill.run
                     // NOTE: it also implies there's going to another coefficient.
                     // Before encoding it checks `K ≥ EOB` and we'd get an EOB (i.e. indication of
@@ -967,10 +969,6 @@ impl BitStream for BitStreamHuffman {
                 // libjpeg-turbo also doesn't return an error here, so let's also only warn.
                 if symbol != 1 {
                     warn!("Bad Huffman code, corrupt JPEG?");
-                }
-
-                if self.bits_left < 1 {
-                    self.refill(reader)?;
                 }
 
                 if self.bits_left < 1 && self.marker.is_some() {
@@ -987,6 +985,15 @@ impl BitStream for BitStreamHuffman {
                 } else {
                     symbol = i32::from(-bit);
                 }
+
+                // The encoding says there are `r` more zeros to be skipped, and then the zero to be
+                // initialized by the symbol bit, all which must occur before the end of the block.
+                // Our current index says this only leaves the last coefficient as the target for
+                // this operation. And that implies the block was finished with no EOBRUN.
+                if k + r as u8 == self.spec_end {
+                    block[UN_ZIGZAG[self.spec_end as usize & 63] & 63] = symbol as i16;
+                    break 'non_eob;
+                }
             }
 
             loop {
@@ -996,14 +1003,18 @@ impl BitStream for BitStreamHuffman {
                     // We have hit either the end of a ZRL or R_ZZ run. Find out which was decoded by
                     // inspecting `symbol`. This tells us if this is an assignment or just the last to
                     // skip.
-                    if r == 0 && symbol != 0 {
-                        // This is a coefficient to initialize.
-                        *coefficient = symbol as i16;
+                    if r == 0 {
+                        if symbol != 0 {
+                            // This is a coefficient to initialize.
+                            *coefficient = symbol as i16;
+                        }
                     }
 
                     r -= 1;
 
                     if r < 0 {
+                        // If we're doe with this zero-fill or coefficient initialization, advance the
+                        // index but keeping the check against `r` in this branch.
                         k += 1;
                         break;
                     }
