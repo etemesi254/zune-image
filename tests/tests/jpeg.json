@@ -92,6 +92,11 @@
     "comment": "Down sampled progressive image with only grayscale component"
   },
   {
+    "name": "progressive_dc_huffman_table_1.jpg",
+    "hash": 174920954580235010517398776891831906725,
+    "comment": "Progressive non-interleaved scan selecting DC Huffman table 1; from image-rs/image tests/images/jpg/progressive/3.jpg"
+  },
+  {
     "name": "weird_sampling_2.jpeg",
     "hash": 153334696196554300891417361546372006533,
     "comment": "Y and Cb not sub-sampled, Cr sub-sampled, jxl effect"
