@@ -9,7 +9,6 @@
 //!Routines for progressive decoding
 
 use alloc::string::ToString;
-use alloc::vec::Vec;
 use alloc::{format, vec};
 use core::cmp::min;
 
@@ -19,7 +18,7 @@ use zune_core::log::{error, trace, warn};
 
 use crate::bitstream::BitStream;
 use crate::components::SampleRatios;
-use crate::decoder::{JpegDecoder, ProgressiveFineCheckpoint, MAX_COMPONENTS};
+use crate::decoder::{JpegDecoder,ProgressiveFineCheckpoint, MAX_COMPONENTS, ProgressiveBufferData};
 use crate::errors::DecodeErrors;
 use crate::headers::parse_sos;
 use crate::marker::Marker;
@@ -68,12 +67,12 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         clippy::too_many_lines
     )]
     fn decode_mcu_ycbcr_progressive_inner<B: BitStream>(
-        &mut self, pixels: &mut [u8], block: &mut [Vec<i16>; MAX_COMPONENTS],
-        scan_block: &mut [Vec<i16>; MAX_COMPONENTS]
+        &mut self, pixels: &mut [u8], block: &mut [ProgressiveBufferData; MAX_COMPONENTS],
+        scan_block: &mut [ProgressiveBufferData; MAX_COMPONENTS]
     ) -> Result<(), DecodeErrors> {
         setup_component_params(self)?;
         let mut mcu_height;
-        let mut mcu_width;
+        let mcu_width;
 
         if self.input_colorspace == ColorSpace::Luma && self.is_interleaved {
             warn!("Grayscale image with down-sampled component, resetting component details");
@@ -110,18 +109,20 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             self.coeff = 2;
         }
 
-        mcu_width *= 64;
-
         if self.progressive_scan_checkpoint().is_none() {
             self.progressive_completed_scans = 0;
         }
         for (i, comp) in self.components.iter().enumerate() {
             let len = mcu_width * comp.vertical_sample * comp.horizontal_sample * mcu_height;
-            if block[i].len() != len {
-                block[i].clear();
-                block[i].resize(len, 0);
+
+            if block[i].mcu.len() != len * 64 {
+                block[i].mcu.clear();
+                block[i].mcu.resize(64 * len, 0);
+                block[i].init_mask.clear();
+                block[i].init_mask.resize(len, 0);
             } else if self.progressive_completed_scans == 0 {
-                block[i].fill(0);
+                block[i].mcu.fill(0);
+                block[i].init_mask.fill(0);
             }
         }
 
@@ -245,8 +246,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     }
 
     fn decode_progressive_scan<B: BitStream>(
-        &mut self, stream: &mut B, block: &mut [Vec<i16>; MAX_COMPONENTS],
-        scan_block: &mut [Vec<i16>; MAX_COMPONENTS], pixels: &mut [u8],
+        &mut self, stream: &mut B, block: &mut [ProgressiveBufferData; MAX_COMPONENTS],
+        scan_block: &mut [ProgressiveBufferData; MAX_COMPONENTS], pixels: &mut [u8],
         use_scratch_coefficients: bool
     ) -> Result<bool, DecodeErrors> {
         if !use_scratch_coefficients {
@@ -272,14 +273,17 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
         for idx in 0..MAX_COMPONENTS {
             if !touched_components[idx] {
-                scan_block[idx].clear();
+                scan_block[idx].mcu.clear();
+                scan_block[idx].init_mask.clear();
                 continue;
             }
 
             if fine_resume.is_none() {
-                scan_block[idx].clear();
-                scan_block[idx].extend_from_slice(&block[idx]);
-            } else if scan_block[idx].len() != block[idx].len() {
+                scan_block[idx].mcu.clear();
+                scan_block[idx].mcu.extend_from_slice(&block[idx].mcu);
+                scan_block[idx].init_mask.clear();
+                scan_block[idx].init_mask.extend_from_slice(&block[idx].init_mask);
+            } else if scan_block[idx].mcu.len() != block[idx].mcu.len() {
                 return Err(DecodeErrors::FormatStatic(
                     "Progressive resume scratch buffer has invalid length"
                 ));
@@ -355,7 +359,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     }
 
     fn decode_progressive_scan_direct<B: BitStream>(
-        &mut self, stream: &mut B, block: &mut [Vec<i16>; MAX_COMPONENTS]
+        &mut self, stream: &mut B, block: &mut [ProgressiveBufferData; MAX_COMPONENTS]
     ) -> Result<bool, DecodeErrors> {
         let result = self.parse_entropy_coded_data(stream, block, None);
 
@@ -392,7 +396,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     }
 
     fn handle_progressive_inter_scan_error(
-        &mut self, error: DecodeErrors, block: &[Vec<i16>; MAX_COMPONENTS], pixels: &mut [u8],
+        &mut self, error: DecodeErrors, block: &[ProgressiveBufferData; MAX_COMPONENTS], pixels: &mut [u8],
         preserve_completed_scans: bool
     ) -> Result<(), DecodeErrors> {
         if matches!(error, DecodeErrors::Cancelled) {
@@ -422,7 +426,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     }
 
     fn finish_progressive_partial(
-        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], pixels: &mut [u8]
+        &mut self, block: &[ProgressiveBufferData; MAX_COMPONENTS], pixels: &mut [u8]
     ) -> Result<(), DecodeErrors> {
         if self.progressive_completed_scans == 0 {
             self.pixels_decoded = 0;
@@ -487,7 +491,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     /// once instead of read-modify-writing refinement data.
     #[allow(clippy::too_many_lines, clippy::cast_sign_loss)]
     fn parse_entropy_coded_data<B: BitStream>(
-        &mut self, stream: &mut B, buffer: &mut [Vec<i16>; MAX_COMPONENTS],
+        &mut self, stream: &mut B, buffer: &mut [ProgressiveBufferData; MAX_COMPONENTS],
         fine_resume: Option<&ProgressiveFineCheckpoint>,
     ) -> Result<(), DecodeErrors> {
         self.reset_prog_params(stream);
@@ -581,7 +585,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     }
 
     fn parse_dc_first_non_interleaved<B: BitStream>(
-        &mut self, stream: &mut B, buffer: &mut [Vec<i16>; MAX_COMPONENTS], k: usize,
+        &mut self, stream: &mut B, buffer: &mut [ProgressiveBufferData; MAX_COMPONENTS], k: usize,
         resume_position: Option<(usize, usize)>,
     ) -> Result<(), DecodeErrors> {
         let (mcu_width, mcu_height) = self.get_non_interleaved_dimensions(k);
@@ -597,7 +601,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             let start_col = if i == resume_row { resume_col } else { 0 };
             for j in start_col..mcu_width {
                 let start = 64 * (j + i * width_stride);
-                let dc_pred_opt: Option<&mut i16> = buffer[k].get_mut(start);
+                let dc_pred_opt: Option<&mut i16> = buffer[k].mcu.get_mut(start);
 
                 if let Some(dc_pred) = dc_pred_opt {
                     let dc_table = B::get_dc_table(&mut self.entropy_tables, dc_pos)?;
@@ -621,7 +625,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     }
 
     fn parse_dc_refine_non_interleaved<B: BitStream>(
-        &mut self, stream: &mut B, buffer: &mut [Vec<i16>; MAX_COMPONENTS], k: usize,
+        &mut self, stream: &mut B, buffer: &mut [ProgressiveBufferData; MAX_COMPONENTS], k: usize,
     ) -> Result<(), DecodeErrors> {
         let (mcu_width, mcu_height) = self.get_non_interleaved_dimensions(k);
         let width_stride = self.components[k].width_stride / 8;
@@ -634,7 +638,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             }
             for j in 0..mcu_width {
                 let start = 64 * (j + i * width_stride);
-                let dc_pred_id: Option<&mut i16> = component_buffer.get_mut(start);
+                let dc_pred_id: Option<&mut i16> = component_buffer.mcu.get_mut(start);
 
                 if let Some(dc_pred) = dc_pred_id {
                     stream.decode_prog_dc_refine(&mut self.stream, dc_pred)?;
@@ -647,11 +651,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     }
 
     fn parse_ac_first_non_interleaved<B: BitStream>(
-        &mut self, stream: &mut B, buffer: &mut [Vec<i16>; MAX_COMPONENTS], k: usize,
+        &mut self, stream: &mut B, buffer: &mut [ProgressiveBufferData; MAX_COMPONENTS], k: usize,
     ) -> Result<(), DecodeErrors> {
         let (mcu_width, mcu_height) = self.get_non_interleaved_dimensions(k);
         let ac_pos = self.components[k].ac_huff_table;
-        let component_buffer_data = &mut buffer[k];
+        let component_buffer_data = &mut buffer[k].mcu;
         let width_stride = self.components[k].width_stride / 8;
 
         let mut cancel = self.cancel_debounced(mcu_width);
@@ -683,11 +687,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     }
 
     fn parse_ac_refine_non_interleaved<B: BitStream>(
-        &mut self, stream: &mut B, buffer: &mut [Vec<i16>; MAX_COMPONENTS], k: usize,
+        &mut self, stream: &mut B, buffer: &mut [ProgressiveBufferData; MAX_COMPONENTS], k: usize,
     ) -> Result<(), DecodeErrors> {
         let (mcu_width, mcu_height) = self.get_non_interleaved_dimensions(k);
         let ac_pos = self.components[k].ac_huff_table;
-        let component_buffer_data = &mut buffer[k];
+        let component_buffer_data = &mut buffer[k].mcu;
         let width_stride = self.components[k].width_stride / 8;
 
         let mut cancel = self.cancel_debounced(mcu_width);
@@ -710,7 +714,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     }
 
     fn parse_dc_first_interleaved<B: BitStream>(
-        &mut self, stream: &mut B, buffer: &mut [Vec<i16>; MAX_COMPONENTS],
+        &mut self, stream: &mut B, buffer: &mut [ProgressiveBufferData; MAX_COMPONENTS],
         resume_position: Option<(usize, usize)>,
     ) -> Result<(), DecodeErrors> {
         let mut cancel = self.cancel_debounced(self.mcu_x);
@@ -733,7 +737,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             let y2 = i * component.vertical_sample + v_samp;
                             let position = 64 * (x2 + y2 * component.width_stride / 8);
 
-                            let Some(data) = buffer[n].get_mut(position) else {
+                            let Some(data) = buffer[n].mcu.get_mut(position) else {
                                 return Err(DecodeErrors::FormatStatic("Invalid image"));
                             };
 
@@ -756,7 +760,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     }
 
     fn parse_dc_refine_interleaved<B: BitStream>(
-        &mut self, stream: &mut B, buffer: &mut [Vec<i16>; MAX_COMPONENTS],
+        &mut self, stream: &mut B, buffer: &mut [ProgressiveBufferData; MAX_COMPONENTS],
     ) -> Result<(), DecodeErrors> {
         let mut cancel = self.cancel_debounced(self.mcu_x);
         for i in 0..self.mcu_y {
@@ -774,7 +778,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             let y2 = i * component.vertical_sample + v_samp;
                             let position = 64 * (x2 + y2 * component.width_stride / 8);
 
-                            let Some(data) = buffer[n].get_mut(position) else {
+                            let Some(data) = buffer[n].mcu.get_mut(position) else {
                                 return Err(DecodeErrors::FormatStatic("Invalid image"));
                             };
 
@@ -892,7 +896,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     #[allow(clippy::too_many_lines)]
     #[allow(clippy::needless_range_loop, clippy::cast_sign_loss)]
     fn finish_progressive_decoding(
-        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], pixels: &mut [u8],
+        &mut self, block: &[ProgressiveBufferData; MAX_COMPONENTS], pixels: &mut [u8],
     ) -> Result<(), DecodeErrors> {
         // Rendering replaces the caller's output row by row. Until every row
         // succeeds, the buffer may contain a mix of preview generations and
@@ -987,11 +991,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 //
                 // For interleaved images, this gives us the exact pixels comprising a whole MCU
                 // block
-                let step = block[position].len() / mcu_height;
+                let step = block[position].mcu.len() / mcu_height;
                 // where we will be reading our pixels from.
                 let start = i * step;
 
-                let slice = &block[position][start..start + step];
+                let slice = &block[position].mcu[start..start + step];
 
                 let temp_channel = &mut component.raw_coeff;
 
@@ -1182,7 +1186,7 @@ mod tests {
                 let options = DecoderOptions::default().set_strict_mode(strict);
                 let mut direct = JpegDecoder::new_with_options(ZCursor::new(data), options);
                 direct.decode().unwrap();
-                let reference = direct.progressive_mcus_buffer[0].clone();
+                let reference = direct.progressive_mcus_buffer[0].mcu.clone();
                 assert_eq!(reference.len(), 16 * 64, "{name}");
                 assert_eq!(coefficient_hash(&reference), LIBJPEG_COEFFICIENT_HASH, "{name}");
                 for (block, natural_index, expected) in [
@@ -1217,7 +1221,7 @@ mod tests {
                         assert!(result.unwrap_err().is_recoverable_eof());
                     }
                     assert_eq!(decoder.decoded_scans(), Some(scan_count));
-                    let actual = &decoder.progressive_mcus_buffer[0];
+                    let actual = &decoder.progressive_mcus_buffer[0].mcu;
                     assert_eq!(actual.len(), reference.len());
 
                     let mut known = [false; 64];

@@ -347,13 +347,13 @@ pub struct JpegDecoder<T> {
     /// coefficient buffers for completed scans. The inner `Vec`s are reused
     /// across `decode_into` calls; capacity is reclaimed only when the decoder
     /// is dropped.
-    pub(crate) progressive_mcus_buffer: [Vec<i16>; MAX_COMPONENTS],
+    pub(crate) progressive_mcus_buffer: [ProgressiveBufferData; MAX_COMPONENTS],
     /// Active progressive scan scratch buffers.
     ///
     /// Storage is retained across EOF or cancellation so retries can reuse its
     /// capacity. Safe first-DC scans also keep its contents so a later retry can
     /// resume from a fine checkpoint without committing partial scan data.
-    pub(crate) progressive_scan_buffer: [Vec<i16>; MAX_COMPONENTS],
+    pub(crate) progressive_scan_buffer: [ProgressiveBufferData; MAX_COMPONENTS],
     /// Number of progressive scans committed into `progressive_mcus_buffer`.
     pub(crate) progressive_completed_scans: usize,
     /// Number of committed progressive scans currently rendered as preview
@@ -399,6 +399,13 @@ pub struct JpegDecoder<T> {
     /// and store the real height; if it never arrives, decoding returns an
     /// error.
     pub(crate) expects_dnl: bool
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct ProgressiveBufferData {
+    pub(crate) mcu: Vec<i16>,
+    /// Initialization mask of AC components.
+    pub(crate) init_mask: Vec<u64>,
 }
 
 impl<T> JpegDecoder<T>
@@ -710,8 +717,8 @@ where
             mcu_checkpoints_enabled:     false,
             incremental_mode:            false,
             scan_decode_attempted:       false,
-            progressive_mcus_buffer:     core::array::from_fn(|_| Vec::new()),
-            progressive_scan_buffer: core::array::from_fn(|_| Vec::new()),
+            progressive_mcus_buffer:     core::array::from_fn(|_| ProgressiveBufferData::default()),
+            progressive_scan_buffer:     core::array::from_fn(|_| ProgressiveBufferData::default()),
             progressive_completed_scans: 0,
             progressive_displayed_scans: 0,
             progressive_render_incomplete: false,
