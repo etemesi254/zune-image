@@ -655,24 +655,25 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     ) -> Result<(), DecodeErrors> {
         let (mcu_width, mcu_height) = self.get_non_interleaved_dimensions(k);
         let ac_pos = self.components[k].ac_huff_table;
-        let component_buffer_data = &mut buffer[k].mcu;
+        let component_buffer_data = &mut buffer[k];
         let width_stride = self.components[k].width_stride / 8;
 
         let mut cancel = self.cancel_debounced(mcu_width);
-        let lines = component_buffer_data.chunks_exact_mut(64 * width_stride);
+        let lines = component_buffer_data.mcu.chunks_exact_mut(64 * width_stride);
+        let masks = component_buffer_data.init_mask.chunks_exact_mut(width_stride);
 
-        for line in lines.take(mcu_height) {
+        for (line, masks) in lines.take(mcu_height).zip(masks) {
             if cancel.is_cancelled() {
                 return Err(DecodeErrors::Cancelled);
             }
 
-            for data in line.as_chunks_mut::<64>().0 {
+            for (data, mask) in line.as_chunks_mut::<64>().0.iter_mut().zip(masks) {
                 if *stream.eob_run() > 0 {
                     // handle EOB runs here.
                     *stream.eob_run() -= 1;
                 } else {
                     let ac_table = B::get_ac_table(&mut self.entropy_tables, ac_pos)?;
-                    if !stream.decode_mcu_ac_first(&mut self.stream, ac_table, data)? {
+                    if !stream.decode_mcu_ac_first(&mut self.stream, ac_table, data, mask)? {
                         // Arithmetic bad-code termination is scan-wide, matching
                         // libjpeg's no-op handling for the remaining MCUs.
                         return Ok(());
@@ -691,20 +692,21 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     ) -> Result<(), DecodeErrors> {
         let (mcu_width, mcu_height) = self.get_non_interleaved_dimensions(k);
         let ac_pos = self.components[k].ac_huff_table;
-        let component_buffer_data = &mut buffer[k].mcu;
+        let component_buffer_data = &mut buffer[k];
         let width_stride = self.components[k].width_stride / 8;
 
         let mut cancel = self.cancel_debounced(mcu_width);
-        let lines = component_buffer_data.chunks_exact_mut(64 * width_stride);
+        let lines = component_buffer_data.mcu.chunks_exact_mut(64 * width_stride);
+        let masks = component_buffer_data.init_mask.chunks_exact_mut(width_stride);
 
-        for line in lines.take(mcu_height) {
+        for (line, masks) in lines.take(mcu_height).zip(masks) {
             if cancel.is_cancelled() {
                 return Err(DecodeErrors::Cancelled);
             }
 
-            for data in line.as_chunks_mut::<64>().0 {
+            for (data, mask) in line.as_chunks_mut::<64>().0.iter_mut().zip(masks) {
                 let ac_table = B::get_ac_table(&mut self.entropy_tables, ac_pos)?;
-                stream.decode_mcu_ac_refine(&mut self.stream, ac_table, data)?;
+                stream.decode_mcu_ac_refine(&mut self.stream, ac_table, data, mask)?;
 
                 self.todo -= 1;
                 self.handle_rst_main(stream)?;

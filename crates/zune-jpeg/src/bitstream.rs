@@ -196,13 +196,14 @@ pub(crate) trait BitStream {
 
     fn decode_mcu_ac_first<T>(
         &mut self, reader: &mut ZReader<T>, ac_table: &mut Self::ACEntropyTable,
-        block: &mut [i16; 64]
+        block: &mut [i16; 64], mask: &mut u64,
     ) -> Result<bool, DecodeErrors>
     where
         T: ZByteReaderTrait;
 
     fn decode_mcu_ac_refine<T>(
-        &mut self, reader: &mut ZReader<T>, table: &mut Self::ACEntropyTable, block: &mut [i16; 64]
+        &mut self, reader: &mut ZReader<T>, table: &mut Self::ACEntropyTable,
+        block: &mut [i16; 64], mask: &mut u64,
     ) -> Result<bool, DecodeErrors>
     where
         T: ZByteReaderTrait;
@@ -864,7 +865,8 @@ impl BitStream for BitStreamHuffman {
     }
 
     fn decode_mcu_ac_first<T>(
-        &mut self, reader: &mut ZReader<T>, ac_table: &mut HuffmanTable, block: &mut [i16; 64]
+        &mut self, reader: &mut ZReader<T>, ac_table: &mut HuffmanTable,
+        block: &mut [i16; 64], mask: &mut u64,
     ) -> Result<bool, DecodeErrors>
     where
         T: ZByteReaderTrait
@@ -888,6 +890,7 @@ impl BitStream for BitStreamHuffman {
                 // fast ac path
                 k += ((fac >> 4) & 15) as usize; // run
                 block[UN_ZIGZAG[min(k, 63)] & 63] = (fac >> 8).wrapping_mul(bit); // value
+                *mask |= u64::from((fac >> 8) != 0) << min(k, 63);
                 self.drop_bits((fac & 15) as u8);
                 k += 1;
             } else {
@@ -901,6 +904,7 @@ impl BitStream for BitStreamHuffman {
                     r = self.get_bits(symbol as u8);
                     symbol = huff_extend(r, symbol);
                     block[UN_ZIGZAG[k & 63] & 63] = (symbol as i16).wrapping_mul(bit);
+                    *mask |= u64::from(symbol != 0) << (k & 63);
                     k += 1;
                 } else {
                     if r != 15 {
@@ -922,7 +926,8 @@ impl BitStream for BitStreamHuffman {
     }
     #[allow(clippy::too_many_lines, clippy::op_ref)]
     fn decode_mcu_ac_refine<T>(
-        &mut self, reader: &mut ZReader<T>, table: &mut HuffmanTable, block: &mut [i16; 64],
+        &mut self, reader: &mut ZReader<T>, table: &mut HuffmanTable,
+        block: &mut [i16; 64], mask: &mut u64,
     ) -> Result<bool, DecodeErrors>
     where
         T: ZByteReaderTrait,
@@ -931,6 +936,9 @@ impl BitStream for BitStreamHuffman {
         debug_assert!(bit > 0, "One bit in low mask set");
 
         let mut k = self.spec_start;
+        let mut non_zero_mask = (*mask) >> k;
+        let mut init_mask = 0;
+
         let spec_bound = if self.eob_run == 0 { self.spec_end } else { 0 };
 
         // We always know how many zeros *not* to initialize. For within an EOB run, that's all
@@ -992,14 +1000,16 @@ impl BitStream for BitStreamHuffman {
                 // this operation. And that implies the block was finished with no EOBRUN.
                 if k + r as u8 == self.spec_end {
                     block[UN_ZIGZAG[self.spec_end as usize & 63] & 63] = symbol as i16;
+                    init_mask |= 1 << self.spec_end;
                     break 'non_eob;
                 }
             }
 
             loop {
                 let coefficient = &mut block[UN_ZIGZAG[k as usize & 63] & 63];
+                debug_assert_eq!(*coefficient == 0, (non_zero_mask & 0b1) == 0);
 
-                if *coefficient == 0 {
+                if (non_zero_mask & 0b1) == 0 {
                     // We have hit either the end of a ZRL or R_ZZ run. Find out which was decoded by
                     // inspecting `symbol`. This tells us if this is an assignment or just the last to
                     // skip.
@@ -1007,6 +1017,7 @@ impl BitStream for BitStreamHuffman {
                         if symbol != 0 {
                             // This is a coefficient to initialize.
                             *coefficient = symbol as i16;
+                            init_mask |= 1 << k;
                         }
                     }
 
@@ -1016,6 +1027,7 @@ impl BitStream for BitStreamHuffman {
                         // If we're doe with this zero-fill or coefficient initialization, advance the
                         // index but keeping the check against `r` in this branch.
                         k += 1;
+                        non_zero_mask >>= 1;
                         break;
                     }
                 } else {
@@ -1034,6 +1046,7 @@ impl BitStream for BitStreamHuffman {
                 }
 
                 k += 1;
+                non_zero_mask >>= 1;
 
                 // NOTE: in a valid bitstream we can assume this to only happen after the case
                 // `coefficient ! 0`, (corresponding to the nodes:
@@ -1053,24 +1066,20 @@ impl BitStream for BitStreamHuffman {
 
         if self.eob_run > 0 {
             // only run if block does not consists of purely zeroes
-            // changing this to iter_any makes perf regress by 10%
-            //   time:   [+10.836% +11.589% +12.376%] (p = 0.00 < 0.05)
-            //
-            // we can reduce the amount of total memory loads by trading against some comparisons if
-            // the spectral end can bound the index in UN_ZIGZAG order.
-            let have_any_nz_heuristic = if self.spec_end < 19 {
-                &block[1..33] != &[0; 32]
-            } else {
-                &block[1..] != &[0; 63]
-            };
+            let have_any_nz_heuristic = (non_zero_mask << (63 - (self.spec_end - k))) != 0;
+            debug_assert!(
+                have_any_nz_heuristic || (k as usize..=self.spec_end as usize).all(|k| block[UN_ZIGZAG[k as usize]] == 0),
+                "{non_zero_mask} for {k}..{}", self.spec_end,
+            );
 
             if have_any_nz_heuristic {
                 self.refill(reader)?;
 
                 while k <= self.spec_end {
                     let coefficient = &mut block[UN_ZIGZAG[k as usize & 63] & 63];
+                    debug_assert_eq!(*coefficient == 0, (non_zero_mask & 0b1) == 0);
 
-                    if *coefficient != 0 && self.get_bit() == 1 {
+                    if (non_zero_mask & 0b1) != 0 && self.get_bit() == 1 {
                         // check if we already modified it, if so do nothing, otherwise
                         // append the correction bit.
                         if (*coefficient & bit) == 0 {
@@ -1088,12 +1097,14 @@ impl BitStream for BitStreamHuffman {
                     }
 
                     k += 1;
+                    non_zero_mask >>= 1;
                 }
             }
 
             self.eob_run -= 1;
         }
 
+        *mask |= init_mask;
         return Ok(true);
     }
 
