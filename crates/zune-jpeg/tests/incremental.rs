@@ -1281,7 +1281,7 @@ fn progressive_non_strict_scratch_path_matches_direct_path() {
     );
 
     let mut corrupt = original.to_vec();
-    corrupt[huffman_selector] = 0xFF;
+    corrupt[huffman_selector] = 0x33;
 
     let strict_error = decode_with_mode(&corrupt, true, true)
         .expect_err("strict mode must reject the missing Huffman table");
@@ -1297,6 +1297,46 @@ fn progressive_non_strict_scratch_path_matches_direct_path() {
         "progressive non-strict scratch/direct parity",
         corrupt.len()
     );
+}
+
+#[test]
+fn progressive_invalid_huffman_selectors_do_not_alias_table_three() {
+    let original = include_bytes!("../../../test-images/jpeg/synthetic_image.jpg");
+    let mut table_three = original.to_vec();
+    let first_sos = sos_marker_offset(&table_three, 0);
+    let first_dc_dht = list_jpeg_markers(&table_three)
+        .into_iter()
+        .find_map(|(offset, code, _)| {
+            (code == 0xC4 && table_three.get(offset + 4) == Some(&0)).then_some(offset)
+        })
+        .expect("fixture must define DC Huffman table 0 before its first scan");
+
+    table_three[first_dc_dht + 4] = 3;
+    table_three[first_sos + 6] = 3 << 4;
+    decode_with_mode(&table_three, false, true)
+        .expect("control image using DC Huffman table 3 must decode");
+
+    table_three[first_sos + 6] = 15 << 4;
+    let mut decoder = JpegDecoder::new(ZCursor::new(&table_three));
+    let error = decoder
+        .decode_headers()
+        .expect_err("invalid DC Huffman selector must fail during SOS parsing");
+    assert!(
+        matches!(error, DecodeErrors::SosError(_)),
+        "invalid selector returned {error:?}"
+    );
+    assert!(!error.is_recoverable_eof(), "invalid selector returned {error:?}");
+
+    table_three[first_sos + 6] = (3 << 4) | 15;
+    let mut decoder = JpegDecoder::new(ZCursor::new(&table_three));
+    let error = decoder
+        .decode_headers()
+        .expect_err("invalid AC Huffman selector must fail during SOS parsing");
+    assert!(
+        matches!(error, DecodeErrors::SosError(_)),
+        "invalid selector returned {error:?}"
+    );
+    assert!(!error.is_recoverable_eof(), "invalid selector returned {error:?}");
 }
 
 #[test]
@@ -1405,7 +1445,7 @@ fn progressive_dc_first_resume_uses_fine_checkpoint() {
 }
 
 #[test]
-fn progressive_repeated_dc_eof_falls_back_to_scan_boundary() {
+fn progressive_repeated_dc_eof_keeps_latest_mcu_checkpoint() {
     let name = "synthetic_image_repeated_dc_eof";
     let data = include_bytes!("../../../test-images/jpeg/synthetic_image.jpg");
     let expected = decode_oneshot(data);
@@ -1443,20 +1483,28 @@ fn progressive_repeated_dc_eof_falls_back_to_scan_boundary() {
     limit.set(data.len());
     decoder.decode_into(&mut out).expect("full input should finish");
     assert_pixels_match(&out, &expected, name, data.len());
-    assert_eq!(
-        seek_log.borrow()[0],
-        first_scan.data_start,
-        "a repeated EOF after fine resume should fall back to the scan boundary"
+    let latest_fine_seek = seek_log.borrow()[0];
+    assert!(
+        latest_fine_seek >= fine_seek && latest_fine_seek < second_sos_offset,
+        "a repeated EOF should retain or advance the fine checkpoint; \
+         prior={fine_seek}, latest={latest_fine_seek}"
     );
 }
 
 #[test]
-fn progressive_unsafe_scans_replay_from_scan_boundary() {
+fn progressive_huffman_transactional_scans_resume_from_mcu_checkpoint() {
     let data = include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg");
     let expected = decode_oneshot(data);
     let scans = progressive_sos_scans(data);
 
     for (name, scan_index) in [
+        (
+            "dc_refine",
+            scans
+                .iter()
+                .position(|scan| scan.spec_start == 0 && scan.succ_high > 0)
+                .expect("fixture must contain a DC refinement scan")
+        ),
         (
             "ac_first",
             scans
@@ -1508,12 +1556,53 @@ fn progressive_unsafe_scans_replay_from_scan_boundary() {
         let first_seek = seeks
             .first()
             .copied()
-            .expect("retry should seek to active scan boundary");
-        assert_eq!(
-            first_seek, scan.data_start,
-            "{name}: unsafe progressive scan must replay from scan boundary"
+            .expect("retry should seek to an active scan MCU checkpoint");
+        assert!(
+            first_seek > scan.data_start && first_seek < scan_end,
+            "{name}: progressive Huffman scan must resume inside entropy data; \
+             scan_start={}, seek={first_seek}, scan_end={scan_end}",
+            scan.data_start
         );
     }
+
+    let data = include_bytes!("../../../test-images/jpeg/progressive_restart_420.jpg");
+    let expected = decode_oneshot(data);
+    let scans = progressive_sos_scans(data);
+    let scan_index = scans
+        .iter()
+        .position(|scan| scan.components > 1 && scan.spec_start == 0 && scan.succ_high > 0)
+        .expect("fixture must contain an interleaved DC refinement scan");
+    let scan = scans[scan_index];
+    let scan_end = if scan_index + 1 < scans.len() {
+        sos_marker_offset(data, scan_index + 1)
+    } else {
+        data.len()
+    };
+    let cutoff = (scan.data_start + 64).min(scan_end - 1);
+    let limit = Rc::new(Cell::new(cutoff));
+    let seek_log = Rc::new(RefCell::new(Vec::new()));
+    let cursor = GrowableCursor::with_seek_log(data, Rc::clone(&limit), Rc::clone(&seek_log));
+    let mut decoder = JpegDecoder::new(cursor);
+    decoder.set_incremental_mode(true);
+
+    decoder.decode_headers().expect("headers should be visible at cutoff");
+    let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+    let error = decoder
+        .decode_into(&mut out)
+        .expect_err("truncated interleaved DC refinement should be recoverable");
+    assert!(error.is_recoverable_eof(), "got {error:?}");
+
+    seek_log.borrow_mut().clear();
+    limit.set(data.len());
+    decoder
+        .decode_into(&mut out)
+        .expect("full input should resume interleaved DC refinement");
+    assert_pixels_match(&out, &expected, "dc_refine_interleaved", data.len());
+    let first_seek = seek_log.borrow()[0];
+    assert!(
+        first_seek > scan.data_start && first_seek < scan_end,
+        "interleaved DC refinement must resume inside entropy data"
+    );
 }
 
 #[test]
@@ -2032,6 +2121,7 @@ fn sos_marker_offset(data: &[u8], sos_index: usize) -> usize {
 #[derive(Clone, Copy)]
 struct ProgressiveSosScan {
     data_start: usize,
+    components: u8,
     spec_start: u8,
     spec_end:   u8,
     succ_high:  u8
@@ -2051,6 +2141,7 @@ fn progressive_sos_scans(data: &[u8]) -> Vec<ProgressiveSosScan> {
             let successive = data[params + 2];
             Some(ProgressiveSosScan {
                 data_start: offset + 2 + length,
+                components: data[payload],
                 spec_start: data[params],
                 spec_end:   data[params + 1],
                 succ_high:  successive >> 4

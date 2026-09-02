@@ -48,6 +48,8 @@ use crate::upsampler::{
 
 /// Maximum components
 pub(crate) const MAX_COMPONENTS: usize = 4;
+#[cfg(feature = "arith")]
+pub(crate) const MAX_ARITHMETIC_TABLES: usize = 16;
 
 /// Maximum image dimensions supported.
 pub(crate) const MAX_DIMENSIONS: usize = 1 << 27;
@@ -98,9 +100,10 @@ pub(crate) struct ScanDecodeState {
 
 /// Saved state at the start of a progressive scan.
 ///
-/// Progressive refinement scans update existing coefficients in place, so a
-/// retry must restart at a scan boundary using only completed scans. The
-/// coefficient buffers themselves stay on `JpegDecoder`.
+/// This is the fallback retry boundary when an entropy decoder cannot safely
+/// checkpoint an individual MCU. Progressive Huffman scans use
+/// `ProgressiveFineCheckpoint`; arithmetic scans replay from this boundary.
+/// Completed-scan coefficient buffers stay on `JpegDecoder`.
 #[derive(Clone)]
 pub(crate) struct ProgressiveScanCheckpoint {
     pub(crate) stream_position: usize,
@@ -110,11 +113,11 @@ pub(crate) struct ProgressiveScanCheckpoint {
     pub(crate) completed_scans: usize
 }
 
-/// Saved state inside a progressive scan when mid-scan resume is safe.
+/// Saved state at a completed progressive Huffman MCU boundary.
 ///
-/// This is only recorded for first DC scans. Those coefficients are assigned
-/// once, so keeping the active scan scratch buffer across EOF and resuming from
-/// a later MCU boundary cannot double-apply refinement data.
+/// Coefficient changes for the next MCU are committed transactionally, so the
+/// active scan scratch buffer can survive EOF across every progressive scan
+/// type without exposing or double-applying an incomplete MCU.
 #[derive(Clone)]
 pub(crate) struct ProgressiveFineCheckpoint {
     pub(crate) stream_position:  usize,
@@ -234,10 +237,10 @@ pub(crate) struct EntropyTables {
     pub(crate) ac_huffman:    [Option<HuffmanTable>; MAX_COMPONENTS],
     /// Arithmetic coding initial conditioning parameters and statistics (has a default value)
     #[cfg(feature = "arith")]
-    pub(crate) dc_arithmetic: [ArithDCTables; MAX_COMPONENTS],
+    pub(crate) dc_arithmetic: [ArithDCTables; MAX_ARITHMETIC_TABLES],
     /// Arithmetic coding initial conditioning parameters and statistics  (has a default value)
     #[cfg(feature = "arith")]
-    pub(crate) ac_arithmetic: [ArithACTables; MAX_COMPONENTS]
+    pub(crate) ac_arithmetic: [ArithACTables; MAX_ARITHMETIC_TABLES]
 }
 
 /// A JPEG Decoder Instance.
@@ -351,8 +354,8 @@ pub struct JpegDecoder<T> {
     /// Active progressive scan scratch buffers.
     ///
     /// Storage is retained across EOF or cancellation so retries can reuse its
-    /// capacity. Safe first-DC scans also keep its contents so a later retry can
-    /// resume from a fine checkpoint without committing partial scan data.
+    /// capacity. Huffman scans also keep completed MCU transactions so a later
+    /// retry can resume from a fine checkpoint without exposing partial data.
     pub(crate) progressive_scan_buffer: [Vec<i16>; MAX_COMPONENTS],
     /// Number of progressive scans committed into `progressive_mcus_buffer`.
     pub(crate) progressive_completed_scans: usize,
@@ -408,7 +411,7 @@ where
     // Mark the current stream position as a safe resume point at a marker
     // boundary; on a future retry decode_headers_internal will seek here
     // instead of restarting from SOI.
-    fn stream_position(&mut self) -> Result<usize, DecodeErrors> {
+    pub(crate) fn stream_position(&mut self) -> Result<usize, DecodeErrors> {
         let position = self.stream.position()?;
         usize::try_from(position).map_err(|_| {
             DecodeErrors::FormatStatic("Stream position does not fit in usize")
@@ -520,43 +523,53 @@ where
     }
 
     pub(crate) fn checkpoint_progressive_fine_scan(
-        &mut self, mcu_row: usize, mcu_col: usize, bitstream_state: BitstreamStateSnapshot
-    ) -> Result<(), DecodeErrors> {
-        let stream_position = self.stream_position()?;
-        let append_snapshot = HeaderAppendStateSnapshot::capture(self);
-        let sos_snapshot = self.capture_sos_params();
+        &mut self, stream_position: usize, mcu_row: usize, mcu_col: usize,
+        bitstream_state: BitstreamStateSnapshot
+    ) {
         let dc_predictions = core::array::from_fn(|idx| {
             self.components
                 .get(idx)
                 .map_or((0, 0), |component| (component.dc_pred, component.dc_diff))
         });
+        let needs_allocation = self
+            .scan_state
+            .as_deref()
+            .is_some_and(|state| state.progressive_fine_checkpoint.is_none());
+        let snapshots = needs_allocation.then(|| {
+            (
+                HeaderAppendStateSnapshot::capture(self),
+                self.capture_sos_params()
+            )
+        });
 
         if let Some(state) = self.scan_state.as_mut() {
-            state.progressive_fine_checkpoint = Some(Box::new(ProgressiveFineCheckpoint {
-                stream_position,
-                append_snapshot,
-                sos_snapshot,
-                completed_scans: self.progressive_completed_scans,
-                displayed_scans: self.progressive_displayed_scans,
-                mcu_row,
-                mcu_col,
-                todo: self.todo,
-                dc_predictions,
-                bitstream_state
-            }));
+            if let Some(checkpoint) = state.progressive_fine_checkpoint.as_deref_mut() {
+                checkpoint.stream_position = stream_position;
+                checkpoint.mcu_row = mcu_row;
+                checkpoint.mcu_col = mcu_col;
+                checkpoint.todo = self.todo;
+                checkpoint.dc_predictions = dc_predictions;
+                checkpoint.bitstream_state = bitstream_state;
+            } else if let Some((append_snapshot, sos_snapshot)) = snapshots {
+                state.progressive_fine_checkpoint = Some(Box::new(ProgressiveFineCheckpoint {
+                    stream_position,
+                    append_snapshot,
+                    sos_snapshot,
+                    completed_scans: self.progressive_completed_scans,
+                    displayed_scans: self.progressive_displayed_scans,
+                    mcu_row,
+                    mcu_col,
+                    todo: self.todo,
+                    dc_predictions,
+                    bitstream_state
+                }));
+            }
         }
-        Ok(())
     }
 
     pub(crate) fn invalidate_progressive_scan_checkpoint(&mut self) {
         if let Some(state) = self.scan_state.as_mut() {
             state.progressive_checkpoint = None;
-            state.progressive_fine_checkpoint = None;
-        }
-    }
-
-    pub(crate) fn invalidate_progressive_fine_checkpoint(&mut self) {
-        if let Some(state) = self.scan_state.as_mut() {
             state.progressive_fine_checkpoint = None;
         }
     }
@@ -654,19 +667,9 @@ where
                 dc_huffman: [None, None, None, None],
                 ac_huffman: [None, None, None, None],
                 #[cfg(feature = "arith")]
-                dc_arithmetic: [
-                    ArithDCTables::default(),
-                    ArithDCTables::default(),
-                    ArithDCTables::default(),
-                    ArithDCTables::default()
-                ],
+                dc_arithmetic: [ArithDCTables::default(); MAX_ARITHMETIC_TABLES],
                 #[cfg(feature = "arith")]
-                ac_arithmetic: [
-                    ArithACTables::default(),
-                    ArithACTables::default(),
-                    ArithACTables::default(),
-                    ArithACTables::default()
-                ]
+                ac_arithmetic: [ArithACTables::default(); MAX_ARITHMETIC_TABLES]
             },
             components:        vec![],
             // Interleaved information
@@ -886,9 +889,10 @@ where
     /// Return whether incremental mode is enabled.
     ///
     /// Incremental mode makes scan EOF recoverable in non-strict mode and
-    /// records per-row checkpoints during the first scan decode attempt,
-    /// allowing a later retry to resume from the latest stable row instead of
-    /// replaying from scan start.
+    /// records checkpoints during the first scan decode attempt. Baseline
+    /// Huffman scans checkpoint by row, while progressive Huffman scans
+    /// checkpoint after each completed MCU. Arithmetic progressive scans replay
+    /// from the current scan start.
     ///
     /// It is disabled by default so one-shot decoding keeps the lowest
     /// overhead path.
@@ -902,7 +906,17 @@ where
     /// Call this before the first `decode_into` scan attempt. When enabled,
     /// scan EOF is recoverable and decoding can be retried with more input.
     /// Otherwise, non-strict decoding returns best-effort output on scan EOF.
-    /// Strict mode always treats scan EOF as an error. The default is `false`.
+    /// Strict mode always treats scan EOF as an error. Baseline Huffman scans
+    /// save row checkpoints on the first attempt, while progressive Huffman scans
+    /// save completed-MCU checkpoints, and all progressive scans decode through
+    /// scratch coefficient storage so completed scans can be rendered as
+    /// previews if that first attempt reaches EOF.
+    ///
+    /// The default is `false`. A first-attempt one-shot progressive decode then
+    /// updates its existing coefficient buffers directly and does not clone them.
+    /// Incremental mode clones only the coefficient buffers touched by the active
+    /// progressive scan. After any previous scan decode attempt, later attempts
+    /// enable the same preservation automatically so retries remain idempotent.
     pub fn set_incremental_mode(&mut self, enabled: bool) {
         self.incremental_mode = enabled;
     }
@@ -1292,8 +1306,8 @@ where
     // dropped) so this remains atomic for resumability purposes: an EOF mid-
     // payload surfaces before any decoder state is mutated.
     fn skip_marker_payload(&mut self) -> Result<(), DecodeErrors> {
-        with_marker_body(self, |_, _body| {
-            warn!("Skipping {} bytes", _body.body().len());
+        with_marker_body(self, |_, body| {
+            warn!("Skipping {} bytes", body.body().len());
             Ok(())
         })
     }
