@@ -1,7 +1,7 @@
 use std::io::Cursor;
 
 use zune_core::bytestream::ZCursor;
-use zune_jpeg::errors::DecodeErrors;
+use zune_jpeg::errors::{DecodeErrors, UnsupportedSchemes};
 use zune_jpeg::JpegDecoder;
 
 fn grayscale_fixture(sof_marker: u8, sample_precision: u8) -> Vec<u8> {
@@ -47,6 +47,119 @@ fn assert_twelve_bit_size(sof_marker: u8) {
         .expect_err("12-bit pixel decoding must remain unsupported");
     assert!(error.to_string().contains("12-bit"));
     assert_eq!(decoder.dimensions(), Some((32, 32)));
+}
+
+fn lossless_header(precision: u8, sampling: u8, quantization_table: u8) -> Vec<u8> {
+    vec![
+        0xFF, 0xD8, // SOI
+        0xFF, 0xC4, 0x00, 0x14, // DHT, one DC symbol
+        0x00, // DC table 0
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // code counts 1-8
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // code counts 9-16
+        0x10, // lossless difference category 16
+        0xFF, 0xC3, 0x00, 0x0B, precision, 0x00, 0x20, 0x00, 0x20, 0x01,
+        0x01, sampling, quantization_table, // component
+        0xFF, 0xDA, 0x00, 0x08, 0x01, 0x01, 0x00, 0x01, 0x00, 0x00, // SOS
+        0xFF, 0xD9 // EOI
+    ]
+}
+
+fn lossless_arithmetic_header(component_count: u8, interleaved: bool) -> Vec<u8> {
+    let mut data = vec![0xFF, 0xD8, 0xFF, 0xCB]; // SOI, SOF11
+    let sof_length = 8 + 3 * u16::from(component_count);
+    data.extend_from_slice(&sof_length.to_be_bytes());
+    data.extend_from_slice(&[8, 0, 32, 0, 32, component_count]);
+    for component in 1..=component_count {
+        data.extend_from_slice(&[component, 0x11, 0]);
+    }
+    data.extend_from_slice(&[0xFF, 0xCC, 0, 4, 0, 0x10]); // DAC, DC table 0
+
+    let scans: Vec<Vec<u8>> = if interleaved {
+        vec![(1..=component_count).collect()]
+    } else {
+        (1..=component_count).map(|component| vec![component]).collect()
+    };
+    for scan in scans {
+        data.extend_from_slice(&[0xFF, 0xDA]);
+        let sos_length = 6 + 2 * u16::try_from(scan.len()).unwrap();
+        data.extend_from_slice(&sos_length.to_be_bytes());
+        data.push(u8::try_from(scan.len()).unwrap());
+        for component in scan {
+            data.extend_from_slice(&[component, 0]);
+        }
+        data.extend_from_slice(&[1, 0, 0]);
+    }
+    data.extend_from_slice(&[0xFF, 0xD9]);
+    data
+}
+
+#[test]
+fn lossless_huffman_headers_expose_dimensions() {
+    for precision in [2, 8, 12, 16] {
+        let data = lossless_header(precision, 0x21, 1);
+        let mut decoder = JpegDecoder::new(ZCursor::new(&data));
+
+        decoder.decode_headers().unwrap();
+
+        let info = decoder.info().unwrap();
+        assert_eq!(decoder.dimensions(), Some((32, 32)));
+        assert_eq!(info.pixel_density, precision);
+        assert!(info.sof.is_lossless());
+    }
+}
+
+#[test]
+fn lossless_huffman_pixel_decode_remains_unsupported() {
+    let data = lossless_header(8, 0x11, 0);
+    let mut decoder = JpegDecoder::new(ZCursor::new(&data));
+    decoder.decode_headers().unwrap();
+    let mut output = vec![0xA5; decoder.output_buffer_size().unwrap()];
+
+    let error = decoder.decode_into(&mut output).unwrap_err();
+    assert!(matches!(
+        error,
+        DecodeErrors::Unsupported(UnsupportedSchemes::LosslessHuffman)
+    ));
+    assert!(output.iter().all(|&byte| byte == 0xA5));
+
+    let error = JpegDecoder::new(ZCursor::new(&data)).decode().unwrap_err();
+    assert!(matches!(
+        error,
+        DecodeErrors::Unsupported(UnsupportedSchemes::LosslessHuffman)
+    ));
+}
+
+#[test]
+fn lossless_arithmetic_headers_expose_dimensions() {
+    for (component_count, interleaved) in [(1, true), (3, false), (3, true)] {
+        let data = lossless_arithmetic_header(component_count, interleaved);
+        let mut decoder = JpegDecoder::new(ZCursor::new(&data));
+
+        decoder.decode_headers().unwrap();
+
+        let info = decoder.info().unwrap();
+        assert_eq!(decoder.dimensions(), Some((32, 32)));
+        assert_eq!(info.components, component_count);
+        assert!(info.sof.is_lossless());
+
+        let error = decoder.decode().unwrap_err();
+        assert!(matches!(
+            error,
+            DecodeErrors::Unsupported(UnsupportedSchemes::LosslessArithmetic)
+        ));
+    }
+}
+
+#[test]
+fn lossless_only_huffman_categories_stay_rejected_for_lossy_frames() {
+    let mut data = lossless_header(8, 0x11, 0);
+    let sof = data.windows(2).position(|bytes| bytes == [0xFF, 0xC3]).unwrap();
+    data[sof + 1] = 0xC0;
+
+    let error = JpegDecoder::new(ZCursor::new(&data))
+        .decode_headers()
+        .unwrap_err();
+    assert!(matches!(error, DecodeErrors::HuffmanDecode(_)));
 }
 
 #[test]
