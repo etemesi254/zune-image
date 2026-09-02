@@ -628,33 +628,25 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     fn decode_mcu_width<const PROGRESSIVE: bool, B: BitStream>(
         &mut self, context: &mut McuWidthContext<'_, B>,
     ) -> Result<McuContinuation, DecodeErrors> {
-        let is_one_by_one = !self.scan_subsampled;
-
-        // The definition of MCU depends on the sampling factor of involved scans. When components
-        // have different factors then each Minimal-Coding-Unit is the least common multiple such
-        // that we have an integer number of blocks from each component. But the decoding of these
-        // components differs from it otherwise, we need an inner loop with a dynamic amount of
-        // coefficients per component, whereas otherwise we have exactly one block of coefficients
-        // encoded for each component in the bitstream order.
-        //
-        // We statically specialize on this to improve code generation of the common case a little
-        // bit. We could also special case common sub-sampling cases but be mindful of code bloat.
-        if is_one_by_one {
-            self.inner_decode_mcu_width::<PROGRESSIVE, false, B>(context)
-        } else {
-            self.inner_decode_mcu_width::<PROGRESSIVE, true, B>(context)
-        }
+        self.inner_decode_mcu_width::<PROGRESSIVE, B>(context)
     }
 
     // Inline-never ensures we do get this function optimize on its own, into two different
     // versions, without the optimizer tripping up over the complexity that comes with the
-    // constant folding. And constant folding is quite important for performance here as
-    // when `not SAMPLED` then the inner loop has exactly one iteration per component in
-    // the scan. The difference was ~1% or a bit more.
+    // constant folding.
     #[allow(clippy::too_many_lines)]
-    fn inner_decode_mcu_width<const PROGRESSIVE: bool, const SAMPLED: bool, B: BitStream>(
+    fn inner_decode_mcu_width<const PROGRESSIVE: bool, B: BitStream>(
         &mut self, context: &mut McuWidthContext<'_, B>,
     ) -> Result<McuContinuation, DecodeErrors> {
+        #[derive(Clone, Copy, Default)]
+        struct McuBlockCtx {
+            component: usize,
+            // Constant offset for all MCU's (in this row).
+            buffer_offset: usize,
+            // Scaling offset per MCU in this row.
+            mcu_stride: usize,
+        }
+
         // Destructure the context into local bindings up front. Reading the
         // hot loop through `context.<field>` keeps the optimizer from
         // treating the per-field mutable borrows as `noalias` and was
@@ -667,6 +659,39 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let tmp: &mut [i32; 64] = &mut *context.tmp;
         let stream: &mut B = &mut *context.stream;
         let progressive: &mut [Vec<i16>; MAX_COMPONENTS] = &mut *context.progressive;
+
+        // Calculate loop constants for all MCU blocks.
+        let mut mcu_ctx = [McuBlockCtx::default(); 10];
+        for (block, ctx) in self.scan_blocks[..usize::from(self.num_scan_blocks)]
+            .iter()
+            .zip(&mut mcu_ctx)
+        {
+            let component = &self.components[block.component];
+            ctx.component = block.component;
+
+            ctx.buffer_offset = if PROGRESSIVE {
+                let offset = mcu_row
+                    .checked_mul(component.width_stride)
+                    .and_then(|x| x.checked_mul(8))
+                    .ok_or(DecodeErrors::FormatStatic("Overflow"))?;
+
+                // Small stopgap for https://github.com/etemesi254/zune-image/issues/362
+                if offset >= progressive[block.component].len() {
+                    return Err(DecodeErrors::FormatStatic("Would panic on slice iteration"));
+                }
+
+                offset
+            } else {
+                (usize::from(block.vertical) * component.width_stride * 8)
+                    + (usize::from(block.horizontal) * 8)
+            };
+
+            ctx.mcu_stride = if PROGRESSIVE { 8 } else { component.horizontal_sample * 8 };
+        }
+
+        for block in &mut mcu_ctx[..usize::from(self.num_scan_blocks)] {
+            block.buffer_offset += block.mcu_stride * start_col;
+        }
 
         let z_order = self.z_order;
         let z_scans = &z_order[..usize::from(self.num_scans)];
@@ -702,13 +727,13 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
         for j in start_col..scan_du_width {
             // iterate over components
-            for &k in z_scans {
+            for part in &mut mcu_ctx[..usize::from(self.num_scan_blocks)] {
                 // we made this loop body massive due to several different paths that depend on
                 // static conditions. Note we (potentially) call into other functions so the
                 // compiler will not unroll anything here anyways. The gains from separating
                 // differently optimized loop bodies are much greater than a single additional jump
                 // here.
-                let component = &mut self.components[k];
+                let component = &mut self.components[part.component];
 
                 let (dc_table, ac_table) = B::get_dc_ac_tables(
                     &mut self.entropy_tables,
@@ -718,122 +743,87 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
                 let qt_table = &component.quantization_table;
                 let channel = if PROGRESSIVE {
-                    let offset = mcu_row
-                        .checked_mul(component.width_stride)
-                        .and_then(|x| x.checked_mul(8))
-                        .ok_or(DecodeErrors::FormatStatic("Overflow"))?;
-                    // Small stopgap for https://github.com/etemesi254/zune-image/issues/362
-                    if offset >= progressive[k].len() {
-                        return Err(DecodeErrors::FormatStatic("Would panic on slice iteration"));
-                    }
-                    &mut progressive[k][offset..]
+                    &mut progressive[part.component]
                 } else {
                     &mut component.raw_coeff
                 };
 
                 let component_samples_needed = component.needed;
+                let result = if component_samples_needed {
+                    // Fill the array with zeroes, decode_mcu_block expects
+                    // a zero based array. Clobber is in zig-zag order though.
+                    // Writing consecutive entries is basically free in terms
+                    // of memory throughput so we opt for a larger power of
+                    // two which lets the compiler turn this into a repeated
+                    // write of a zeroed vector register, which does not have
+                    // any branches, instead of a more difficult pattern where
+                    // we attempt to overwrite exactly one coefficient.
+                    let clobber_len = if clobber_more_than_4x4 { 64 } else { 32 };
 
-                // If image is interleaved iterate over scan components,
-                // otherwise if it-s non-interleaved, these routines iterate in
-                // trivial scanline order(Y,Cb,Cr)
+                    tmp[..clobber_len].fill(0);
+
+                    stream.decode_mcu_block(
+                        &mut self.stream,
+                        dc_table,
+                        ac_table,
+                        qt_table,
+                        tmp,
+                        &mut component.dc_pred,
+                        &mut component.dc_diff,
+                    )
+                } else {
+                    // We do not touch tmp so there is no need to reset it.
+                    stream.discard_mcu_block(
+                        &mut self.stream,
+                        dc_table,
+                        ac_table,
+                        &mut component.dc_diff,
+                    )
+                };
+
+                // If an error occurs we can either propagate it
+                // as an error or print it and call terminate.
                 //
-                // Turn the bounds into a compile time constant for a common special case. This
-                // allows the compiler to unroll the loop and then do a bunch of interleaving.
+                // This allows even corrupt images to render something,
+                // even if its bad, matching browsers.
                 //
-                // For PROGRESSIVE (non-interleaved), we iterate data units directly so
-                // h_samp/v_samp loops run exactly once.
-                let v_step =
-                    if SAMPLED && !PROGRESSIVE { 0..component.vertical_sample } else { 0..1 };
+                // See example in https://github.com/etemesi254/zune-image/issues/293
+                let Ok(len) = result else {
+                    let err = result.err().unwrap();
+                    // Always propagate ExhaustedData for incremental
+                    // decoding support — the caller can retry with more
+                    // data.
+                    if err.is_recoverable_eof() {
+                        return Err(err);
+                    }
+                    if self.stream.eof()? {
+                        return Err(DecodeErrors::ExhaustedData);
+                    }
+                    return if self.options.strict_mode() {
+                        Err(err)
+                    } else {
+                        error!("{}", err);
+                        Ok(McuContinuation::Terminate)
+                    };
+                };
 
-                for v_samp in v_step {
-                    let h_step =
-                        if SAMPLED && !PROGRESSIVE { 0..component.horizontal_sample } else { 0..1 };
+                if component_samples_needed {
+                    // tmp was only written partially, note that len is in ZigZag order.
+                    clobber_more_than_4x4 = len > 10;
 
-                    for h_samp in h_step {
-                        let result = if component_samples_needed {
-                            // Fill the array with zeroes, decode_mcu_block expects
-                            // a zero based array. Clobber is in zig-zag order though.
-                            // Writing consecutive entries is basically free in terms
-                            // of memory throughput so we opt for a larger power of
-                            // two which lets the compiler turn this into a repeated
-                            // write of a zeroed vector register, which does not have
-                            // any branches, instead of a more difficult pattern where
-                            // we attempt to overwrite exactly one coefficient.
-                            let clobber_len = if clobber_more_than_4x4 { 64 } else { 32 };
+                    // Each block is accessed exactly once in each iteration over the MCU row. Thus
+                    // each time the offset just gets one larger based on the stride.
+                    let idct_position = part.buffer_offset;
+                    part.buffer_offset += part.mcu_stride;
+                    let idct_pos = channel.get_mut(idct_position..).unwrap();
 
-                            tmp[..clobber_len].fill(0);
-
-                            stream.decode_mcu_block(
-                                &mut self.stream,
-                                dc_table,
-                                ac_table,
-                                qt_table,
-                                tmp,
-                                &mut component.dc_pred,
-                                &mut component.dc_diff,
-                            )
-                        } else {
-                            // We do not touch tmp so there is no need to reset it.
-                            stream.discard_mcu_block(
-                                &mut self.stream,
-                                dc_table,
-                                ac_table,
-                                &mut component.dc_diff,
-                            )
-                        };
-
-                        // If an error occurs we can either propagate it
-                        // as an error or print it and call terminate.
-                        //
-                        // This allows even corrupt images to render something,
-                        // even if its bad, matching browsers.
-                        //
-                        // See example in https://github.com/etemesi254/zune-image/issues/293
-                        let Ok(len) = result else {
-                            let err = result.err().unwrap();
-                            // Always propagate ExhaustedData for incremental
-                            // decoding support — the caller can retry with more
-                            // data.
-                            if err.is_recoverable_eof() {
-                                return Err(err);
-                            }
-                            if self.stream.eof()? {
-                                return Err(DecodeErrors::ExhaustedData);
-                            }
-                            return if self.options.strict_mode() {
-                                Err(err)
-                            } else {
-                                error!("{}", err);
-                                Ok(McuContinuation::Terminate)
-                            };
-                        };
-
-                        if component_samples_needed {
-                            // tmp was only written partially, note that len is in ZigZag order.
-                            clobber_more_than_4x4 = len > 10;
-
-                            let idct_position = if PROGRESSIVE {
-                                // For non-interleaved, j indexes data units directly
-                                j * 8
-                            } else {
-                                // derived from stb and rewritten for my tastes
-                                let c2 = v_samp * 8;
-                                let c3 = ((j * component.horizontal_sample) + h_samp) * 8;
-
-                                component.width_stride * c2 + c3
-                            };
-
-                            let idct_pos = channel.get_mut(idct_position..).unwrap();
-
-                            if len <= 1 {
-                                (self.idct_1x1_func)(tmp, idct_pos, component.width_stride);
-                            } else if len <= 10 {
-                                (self.idct_4x4_func)(tmp, idct_pos, component.width_stride);
-                            } else {
-                                //  call idct.
-                                (self.idct_func)(tmp, idct_pos, component.width_stride);
-                            }
-                        }
+                    //  call idct.
+                    if len <= 1 {
+                        (self.idct_1x1_func)(tmp, idct_pos, component.width_stride);
+                    } else if len <= 10 {
+                        (self.idct_4x4_func)(tmp, idct_pos, component.width_stride);
+                    } else {
+                        (self.idct_func)(tmp, idct_pos, component.width_stride);
                     }
                 }
             }

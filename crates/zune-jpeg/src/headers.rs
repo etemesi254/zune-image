@@ -18,7 +18,7 @@ use core::cmp::max;
 use zune_core::bytestream::ZByteReaderTrait;
 use zune_core::log::{trace, warn};
 
-use crate::components::{Components, SampleRatios};
+use crate::components::{Components, SampleRatios, ScanBlock};
 use crate::decoder::{ExtendedXmpSegment, GainMapInfo, ICCChunk, JpegDecoder, MAX_COMPONENTS};
 use crate::errors::DecodeErrors;
 use crate::huffman::HuffmanTable;
@@ -32,8 +32,8 @@ const MARKER_BODY_CANCEL_CHUNK_SIZE: usize = 4096;
 /// I/O failure has already happened (and been surfaced to the caller) before
 /// the parser starts mutating decoder fields.
 pub(crate) struct MarkerBody<'a> {
-    body:     &'a [u8],
-    position: usize
+    body: &'a [u8],
+    position: usize,
 }
 
 impl<'a> MarkerBody<'a> {
@@ -50,9 +50,12 @@ impl<'a> MarkerBody<'a> {
     }
 
     fn read_u8(&mut self) -> Result<u8, DecodeErrors> {
-        let byte = *self.body.get(self.position).ok_or(DecodeErrors::FormatStatic(
-            "Marker payload shorter than declared length"
-        ))?;
+        let byte = *self
+            .body
+            .get(self.position)
+            .ok_or(DecodeErrors::FormatStatic(
+                "Marker payload shorter than declared length",
+            ))?;
         self.position += 1;
         Ok(byte)
     }
@@ -60,7 +63,7 @@ impl<'a> MarkerBody<'a> {
     fn read_u16_be(&mut self) -> Result<u16, DecodeErrors> {
         if self.position + 2 > self.body.len() {
             return Err(DecodeErrors::FormatStatic(
-                "Marker payload shorter than declared length"
+                "Marker payload shorter than declared length",
             ));
         }
         let v = u16::from_be_bytes([self.body[self.position], self.body[self.position + 1]]);
@@ -71,7 +74,7 @@ impl<'a> MarkerBody<'a> {
     fn read_exact(&mut self, dst: &mut [u8]) -> Result<(), DecodeErrors> {
         if self.position + dst.len() > self.body.len() {
             return Err(DecodeErrors::FormatStatic(
-                "Marker payload shorter than declared length"
+                "Marker payload shorter than declared length",
             ));
         }
         dst.copy_from_slice(&self.body[self.position..self.position + dst.len()]);
@@ -89,11 +92,11 @@ impl<'a> MarkerBody<'a> {
 /// body scoped to the closure also makes it impossible for safe code to hold
 /// a marker body after the decoder has been dropped.
 pub(crate) fn with_marker_body<T, R, F>(
-    decoder: &mut JpegDecoder<T>, parse: F
+    decoder: &mut JpegDecoder<T>, parse: F,
 ) -> Result<R, DecodeErrors>
 where
     T: ZByteReaderTrait,
-    F: FnOnce(&mut JpegDecoder<T>, MarkerBody<'_>) -> Result<R, DecodeErrors>
+    F: FnOnce(&mut JpegDecoder<T>, MarkerBody<'_>) -> Result<R, DecodeErrors>,
 {
     let length = decoder.stream.get_u16_be_err()?;
     let body_len = usize::from(length)
@@ -128,7 +131,7 @@ where
 ///**B.2.4.2 Huffman table-specification syntax**
 #[allow(clippy::similar_names, clippy::cast_sign_loss)]
 pub(crate) fn parse_huffman<T: ZByteReaderTrait>(
-    decoder: &mut JpegDecoder<T>
+    decoder: &mut JpegDecoder<T>,
 ) -> Result<(), DecodeErrors>
 where
 {
@@ -161,7 +164,7 @@ where
             let symbols_sum: i32 = num_symbols.iter().map(|f| i32::from(*f)).sum();
             if symbols_sum > 256 {
                 return Err(DecodeErrors::FormatStatic(
-                    "Encountered Huffman table with excessive length in DHT"
+                    "Encountered Huffman table with excessive length in DHT",
                 ));
             }
             if symbols_sum as usize > cursor.remaining() {
@@ -201,21 +204,21 @@ where
 #[cfg(feature = "arith")]
 #[allow(clippy::similar_names, clippy::cast_sign_loss)]
 pub(crate) fn parse_dac<T: ZByteReaderTrait>(
-    decoder: &mut JpegDecoder<T>
+    decoder: &mut JpegDecoder<T>,
 ) -> Result<(), DecodeErrors>
 where
 {
     with_marker_body(decoder, |decoder, mut cursor| {
         if cursor.body().len() % 2 != 0 {
             return Err(DecodeErrors::FormatStatic(
-                "Bogus (odd) Arithmetic-coding conditioning segment length"
+                "Bogus (odd) Arithmetic-coding conditioning segment length",
             ));
         }
         // Validate everything before committing: collect new entries into a
         // local Vec and apply them only when the whole body parses cleanly.
         enum DacEntry {
             Dc { index: usize, l: u8, u: u8 },
-            Ac { index: usize, kx: u8 }
+            Ac { index: usize, kx: u8 },
         }
         let mut entries: Vec<DacEntry> = Vec::with_capacity(cursor.body().len() / 2);
         while cursor.remaining() >= 2 {
@@ -249,7 +252,10 @@ where
                             "Invalid conditioning table value {cs_value} for AC table, should be in [1,63]"
                         )));
                     }
-                    entries.push(DacEntry::Ac { index, kx: cs_value });
+                    entries.push(DacEntry::Ac {
+                        index,
+                        kx: cs_value,
+                    });
                 }
                 _ => {
                     return Err(DecodeErrors::ArithmeticDecode(format!(
@@ -338,11 +344,11 @@ pub(crate) fn parse_dqt<T: ZByteReaderTrait>(img: &mut JpegDecoder<T>) -> Result
 
 /// Section:`B.2.2 Frame header syntax`
 pub(crate) fn parse_start_of_frame<T: ZByteReaderTrait>(
-    sof: SOFMarkers, img: &mut JpegDecoder<T>
+    sof: SOFMarkers, img: &mut JpegDecoder<T>,
 ) -> Result<(), DecodeErrors> {
     if img.seen_sof {
         return Err(DecodeErrors::SofError(
-            "Two Start of Frame Markers".to_string()
+            "Two Start of Frame Markers".to_string(),
         ));
     }
     with_marker_body(img, |img, mut cursor| {
@@ -402,7 +408,7 @@ pub(crate) fn parse_start_of_frame<T: ZByteReaderTrait>(
 
         if num_components == 0 {
             return Err(DecodeErrors::SofError(
-                "Number of components cannot be zero.".to_string()
+                "Number of components cannot be zero.".to_string(),
             ));
         }
 
@@ -436,7 +442,7 @@ pub(crate) fn parse_start_of_frame<T: ZByteReaderTrait>(
             (1, 2) => SampleRatios::V,
             (2, 1) => SampleRatios::H,
             (2, 2) => SampleRatios::HV,
-            (hs, vs) => SampleRatios::Generic(hs, vs)
+            (hs, vs) => SampleRatios::Generic(hs, vs),
         };
 
         // Commit phase: all reads succeeded, mutate the decoder.
@@ -499,11 +505,11 @@ fn validate_scan_parameters(
 
 /// Parse a start of scan data
 pub(crate) fn parse_sos<T: ZByteReaderTrait>(
-    image: &mut JpegDecoder<T>
+    image: &mut JpegDecoder<T>,
 ) -> Result<(), DecodeErrors> {
     with_marker_body(image, |image, mut cursor| {
         let ls = cursor.body().len() + 2; // total scan header length including the length field
-        // Number of image components in scan
+                                          // Number of image components in scan
         let ns = cursor.read_u8()?;
 
         let mut seen: [_; 5] = [-1; { MAX_COMPONENTS + 1 }];
@@ -524,7 +530,7 @@ pub(crate) fn parse_sos<T: ZByteReaderTrait>(
 
         if image.info.components == 0 {
             return Err(DecodeErrors::FormatStatic(
-                "Error decoding SOF Marker, Number of components cannot be zero."
+                "Error decoding SOF Marker, Number of components cannot be zero.",
             ));
         }
 
@@ -611,23 +617,88 @@ pub(crate) fn parse_sos<T: ZByteReaderTrait>(
 
         trace!("Ss={spec_start}, Se={spec_end} Ah={succ_high} Al={succ_low}");
 
+        // A.2.3 (Interleaved order).
+        //
+        // Scans of only one component are never interleaved. For all other scans the order of
+        // blocks within the MCU depends on the sample definitions from the header. There's as many
+        // vertical and horizontal samples in the scan as defined for the component.
+        //
+        // B.2.1 (High-level syntax)
+        //
+        // This clarifies that for progressive images only the first scan with DC components is
+        // allowed to be interleaved. All other scans with other components are not to be
+        // interleaved, implying those can not contain multiple subsampled components.
+
+        // NOTE: not sure about comparing number of scans to components. It's an internal choice
+        // that we're using a different buffer in these cases but how would that influence the MCU
+        // order of scans that are present? It's not clear from the ITU T.81 specification.
+        let is_image_progressive =
+            usize::from(image.num_scans) != image.components.len();
+
+        if ns > 1 && !is_image_progressive {
+            let mut idx_block = 0;
+
+            for i in 0..ns {
+                let k = z_order[i as usize];
+                let component = &image.components[usize::from(k)];
+
+                for j in 0..component.vertical_sample {
+                    for i in 0..component.horizontal_sample {
+                        image.scan_blocks[idx_block] = ScanBlock {
+                            component: k,
+                            horizontal: i as u8,
+                            vertical: j as u8,
+                        };
+
+                        idx_block += 1;
+                    }
+                }
+            }
+
+            if idx_block > 10 {
+                return Err(DecodeErrors::SofError(format!(
+                    "Invalid scan with {:?} components, must be at most 10",
+                    idx_block,
+                )));
+            }
+
+            image.num_scan_blocks = idx_block as u8;
+        } else {
+            for i in 0..ns {
+                let component = z_order[usize::from(i)];
+                image.scan_blocks[usize::from(i)] = ScanBlock {
+                    component,
+                    horizontal: 0,
+                    vertical: 0,
+                };
+            }
+
+            image.num_scan_blocks = ns;
+        }
+
+        trace!(
+            "Blocks per MCU: {:?}",
+            &image.scan_blocks[..image.num_scan_blocks as usize]
+        );
+
         Ok(())
     })
 }
 
 /// Parse the APP13 (IPTC) segment.
 pub(crate) fn parse_app13<T: ZByteReaderTrait>(
-    decoder: &mut JpegDecoder<T>
+    decoder: &mut JpegDecoder<T>,
 ) -> Result<(), DecodeErrors> {
     const IPTC_PREFIX: &[u8] = b"Photoshop 3.0\0";
     with_marker_body(decoder, |decoder, cursor| {
         let body = cursor.body();
 
-        let new_iptc = if body.len() > IPTC_PREFIX.len() && &body[..IPTC_PREFIX.len()] == IPTC_PREFIX {
-            Some(body[IPTC_PREFIX.len()..].to_vec())
-        } else {
-            None
-        };
+        let new_iptc =
+            if body.len() > IPTC_PREFIX.len() && &body[..IPTC_PREFIX.len()] == IPTC_PREFIX {
+                Some(body[IPTC_PREFIX.len()..].to_vec())
+            } else {
+                None
+            };
 
         // Commit phase.
         if let Some(iptc_bytes) = new_iptc {
@@ -639,7 +710,7 @@ pub(crate) fn parse_app13<T: ZByteReaderTrait>(
 
 /// Parse Adobe App14 segment
 pub(crate) fn parse_app14<T: ZByteReaderTrait>(
-    decoder: &mut JpegDecoder<T>
+    decoder: &mut JpegDecoder<T>,
 ) -> Result<(), DecodeErrors> {
     with_marker_body(decoder, |decoder, cursor| {
         let body = cursor.body();
@@ -649,7 +720,7 @@ pub(crate) fn parse_app14<T: ZByteReaderTrait>(
             // Adobe segment must be at least 12 bytes of body (6 id + 5 ver/flags + 1 transform).
             if body.len() < 12 {
                 return Err(DecodeErrors::FormatStatic(
-                    "Too short of a length for App14 segment"
+                    "Too short of a length for App14 segment",
                 ));
             }
             // adobe id = 6, version/flags = 5, transform = 1
@@ -664,7 +735,10 @@ pub(crate) fn parse_app14<T: ZByteReaderTrait>(
                 }
             }
         } else {
-            warn!("Not a valid Adobe APP14 Segment, skipping {} bytes", body.len());
+            warn!(
+                "Not a valid Adobe APP14 Segment, skipping {} bytes",
+                body.len()
+            );
             None
         };
 
@@ -680,7 +754,7 @@ pub(crate) fn parse_app14<T: ZByteReaderTrait>(
 ///
 /// This contains the exif tag
 pub(crate) fn parse_app1<T: ZByteReaderTrait>(
-    decoder: &mut JpegDecoder<T>
+    decoder: &mut JpegDecoder<T>,
 ) -> Result<(), DecodeErrors> {
     const XMP_NAMESPACE_PREFIX: &[u8] = b"http://ns.adobe.com/xap/1.0/\0";
     const EXTENDED_XMP_NAMESPACE_PREFIX: &[u8] = b"http://ns.adobe.com/xmp/extension/\0";
@@ -694,7 +768,7 @@ pub(crate) fn parse_app1<T: ZByteReaderTrait>(
         Exif(Vec<u8>),
         Xmp(Vec<u8>),
         ExtendedXmp(ExtendedXmpSegment),
-        Unknown
+        Unknown,
     }
 
     with_marker_body(decoder, |decoder, cursor| {
@@ -725,7 +799,12 @@ pub(crate) fn parse_app1<T: ZByteReaderTrait>(
             let offset_end = offset_start + EXTENDED_XMP_OFFSET_SIZE;
             let offset = u32::from_be_bytes(rest[offset_start..offset_end].try_into().unwrap());
             let data = rest[EXTENDED_XMP_HEADER_SIZE..].to_vec();
-            App1Payload::ExtendedXmp(ExtendedXmpSegment { offset, total_size, guid, data })
+            App1Payload::ExtendedXmp(ExtendedXmpSegment {
+                offset,
+                total_size,
+                guid,
+                data,
+            })
         } else {
             warn!("Unknown format for APP1 tag, skipping");
             App1Payload::Unknown
@@ -743,7 +822,7 @@ pub(crate) fn parse_app1<T: ZByteReaderTrait>(
 }
 
 pub(crate) fn parse_app2<T: ZByteReaderTrait>(
-    decoder: &mut JpegDecoder<T>
+    decoder: &mut JpegDecoder<T>,
 ) -> Result<(), DecodeErrors> {
     static HDR_META: &[u8] = b"urn:iso:std:iso:ts:21496:-1\0";
     static MPF_DATA: &[u8] = b"MPF\0";
@@ -753,64 +832,67 @@ pub(crate) fn parse_app2<T: ZByteReaderTrait>(
         IccChunk(ICCChunk),
         GainMap(GainMapInfo),
         Mpf { offset: u64, data: Vec<u8> },
-        Unknown
+        Unknown,
     }
 
     with_marker_body(decoder, |decoder, cursor| {
         let body = cursor.body();
 
-        let payload = if body.len() > ICC_PROFILE.len() + 2 && &body[..ICC_PROFILE.len()] == ICC_PROFILE
-        {
-            trace!("ICC Profile present");
-            let rest = &body[ICC_PROFILE.len()..];
-            let seq_no = rest[0];
-            let num_markers = rest[1];
+        let payload =
+            if body.len() > ICC_PROFILE.len() + 2 && &body[..ICC_PROFILE.len()] == ICC_PROFILE {
+                trace!("ICC Profile present");
+                let rest = &body[ICC_PROFILE.len()..];
+                let seq_no = rest[0];
+                let num_markers = rest[1];
 
-            // Mirrors libjpeg-turbo jdicc.c: reject num_markers == 0
-            // and seq_no out of [1, num_markers]. No artificial cap on
-            // num_markers — the field is a u8 so 255 is the natural limit.
-            if num_markers == 0 {
-                return Err(DecodeErrors::Format(format!(
-                    "ICC profile claims {num_markers} chunks (must be >= 1)"
-                )));
-            }
-            if seq_no == 0 || seq_no > num_markers {
-                return Err(DecodeErrors::Format(format!(
-                    "ICC chunk seq_no {seq_no} out of range for {num_markers} chunks"
-                )));
-            }
-
-            let data = rest[2..].to_vec();
-            App2Payload::IccChunk(ICCChunk {
-                seq_no,
-                num_markers,
-                data
-            })
-        } else if body.len() > HDR_META.len() && &body[..HDR_META.len()] == HDR_META {
-            trace!("Gain Map metadata found");
-            let rest = &body[HDR_META.len()..];
-            match rest.len() {
-                4 => {
-                    // If gain map metadata length == 4 the body is just version words.
-                    App2Payload::GainMap(GainMapInfo { data: Vec::new() })
+                // Mirrors libjpeg-turbo jdicc.c: reject num_markers == 0
+                // and seq_no out of [1, num_markers]. No artificial cap on
+                // num_markers — the field is a u8 so 255 is the natural limit.
+                if num_markers == 0 {
+                    return Err(DecodeErrors::Format(format!(
+                        "ICC profile claims {num_markers} chunks (must be >= 1)"
+                    )));
                 }
-                n if n > 4 => App2Payload::GainMap(GainMapInfo {
-                    data: rest.to_vec()
-                }),
-                _ => App2Payload::Unknown
-            }
-        } else if body.len() > MPF_DATA.len() && &body[..MPF_DATA.len()] == MPF_DATA {
-            trace!("MPF Signature present");
-            // Compute body start position on-demand (only MPF needs it).
-            // After with_marker_body read the payload, the stream sits at
-            // body_start + body.len(); subtract to recover the origin.
-            let body_start_pos = decoder.stream.position()? - body.len() as u64;
-            let mpf_offset = body_start_pos + MPF_DATA.len() as u64;
-            let data = body[MPF_DATA.len()..].to_vec();
-            App2Payload::Mpf { offset: mpf_offset, data }
-        } else {
-            App2Payload::Unknown
-        };
+                if seq_no == 0 || seq_no > num_markers {
+                    return Err(DecodeErrors::Format(format!(
+                        "ICC chunk seq_no {seq_no} out of range for {num_markers} chunks"
+                    )));
+                }
+
+                let data = rest[2..].to_vec();
+                App2Payload::IccChunk(ICCChunk {
+                    seq_no,
+                    num_markers,
+                    data,
+                })
+            } else if body.len() > HDR_META.len() && &body[..HDR_META.len()] == HDR_META {
+                trace!("Gain Map metadata found");
+                let rest = &body[HDR_META.len()..];
+                match rest.len() {
+                    4 => {
+                        // If gain map metadata length == 4 the body is just version words.
+                        App2Payload::GainMap(GainMapInfo { data: Vec::new() })
+                    }
+                    n if n > 4 => App2Payload::GainMap(GainMapInfo {
+                        data: rest.to_vec(),
+                    }),
+                    _ => App2Payload::Unknown,
+                }
+            } else if body.len() > MPF_DATA.len() && &body[..MPF_DATA.len()] == MPF_DATA {
+                trace!("MPF Signature present");
+                // Compute body start position on-demand (only MPF needs it).
+                // After with_marker_body read the payload, the stream sits at
+                // body_start + body.len(); subtract to recover the origin.
+                let body_start_pos = decoder.stream.position()? - body.len() as u64;
+                let mpf_offset = body_start_pos + MPF_DATA.len() as u64;
+                let data = body[MPF_DATA.len()..].to_vec();
+                App2Payload::Mpf {
+                    offset: mpf_offset,
+                    data,
+                }
+            } else {
+                App2Payload::Unknown
+            };
 
         // Commit phase.
         match payload {
@@ -831,7 +913,7 @@ pub(crate) fn parse_app2<T: ZByteReaderTrait>(
 fn un_zig_zag<T>(a: &[T]) -> [i32; 64]
 where
     T: Default + Copy,
-    i32: core::convert::From<T>
+    i32: core::convert::From<T>,
 {
     let mut output = [i32::default(); 64];
 

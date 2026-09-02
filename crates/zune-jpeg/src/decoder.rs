@@ -29,13 +29,13 @@ use crate::bitstream::{BitstreamStateSnapshot, BitStreamHuffman};
 #[cfg(feature = "arith")]
 use crate::bitstream_arith::{ArithACTables, ArithDCTables, BitStreamArithmetic};
 use crate::color_convert::choose_ycbcr_to_rgb_convert_func;
-use crate::components::{Components, SampleRatios};
+use crate::components::{Components, SampleRatios, ScanBlock};
 use crate::errors::{DecodeErrors, UnsupportedSchemes};
 #[cfg(feature = "arith")]
 use crate::headers::parse_dac;
 use crate::headers::{
     parse_app1, parse_app13, parse_app14, parse_app2, parse_dqt, parse_huffman, parse_sos,
-    parse_start_of_frame, with_marker_body
+    parse_start_of_frame, with_marker_body,
 };
 use crate::huffman::HuffmanTable;
 use crate::idct::{choose_idct_1x1_func, choose_idct_4x4_func, choose_idct_func};
@@ -140,7 +140,9 @@ pub(crate) struct SosParamsSnapshot {
     pub(crate) succ_high:       u8,
     pub(crate) succ_low:        u8,
     pub(crate) dc_huff_tables:  [usize; MAX_COMPONENTS],
-    pub(crate) ac_huff_tables:  [usize; MAX_COMPONENTS]
+    pub(crate) ac_huff_tables:  [usize; MAX_COMPONENTS],
+    pub(crate) scan_blocks:     [ScanBlock; 10],
+    pub(crate) num_scan_blocks: u8,
 }
 
 /// Marker-defined decode state restored for first-SOS replay.
@@ -289,7 +291,14 @@ pub struct JpegDecoder<T> {
     /// Number of components.
     pub(crate) num_scans:        u8,
     /// For a scan, check if any component has vertical/horizontal sampling.
+    ///
+    /// This tells us if blocks occur in the same natural image order in all components part of the
+    /// scan or not. If multiple blocks from a component are part of an MCU they occur in vertical/
+    /// horizontal order of blocks within an MCU, for each MCU.
     pub(crate) scan_subsampled:  bool,
+    pub(crate) scan_blocks:      [ScanBlock; 10],
+    /// Number of component blocks in the scan.
+    pub(crate) num_scan_blocks:  u8,
     // Function pointers, for pointy stuff.
     /// Dequantize and idct function
     // This is determined at runtime which function to run, statically it's
@@ -439,7 +448,9 @@ where
                 self.components
                     .get(i)
                     .map_or(0, |component| component.ac_huff_table)
-            })
+            }),
+            scan_blocks:     self.scan_blocks,
+            num_scan_blocks: self.num_scan_blocks,
         }
     }
 
@@ -684,6 +695,8 @@ where
             succ_high:                   0,
             succ_low:                    0,
             num_scans:                   0,
+            scan_blocks:                 [ScanBlock::INVALID; 10],
+            num_scan_blocks:             0,
             scan_subsampled:             false,
             idct_func:                   choose_idct_func(&options),
             idct_4x4_func:               choose_idct_4x4_func(&options),
@@ -1809,6 +1822,8 @@ where
             self.spec_end = resume_sos_snapshot.spec_end;
             self.succ_high = resume_sos_snapshot.succ_high;
             self.succ_low = resume_sos_snapshot.succ_low;
+            self.scan_blocks = resume_sos_snapshot.scan_blocks;
+            self.num_scan_blocks = resume_sos_snapshot.num_scan_blocks;
             debug_assert!(
                 self.components.len() <= MAX_COMPONENTS,
                 "components vector exceeds MAX_COMPONENTS; SOS restore would index out of bounds"
