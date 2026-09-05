@@ -69,9 +69,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         // on `self`. The buffer is put back on return and survives across
         // `decode_into` retries, which is what lets scan checkpoints stay
         // allocation-free.
-        let mut progressive_mcus = core::mem::take(&mut self.progressive_mcus_buffer);
+        let mut progressive_mcus = self.progressive_mcus_buffer.each_mut().map(|buf| core::mem::take(&mut buf.mcu));
         let result = self.decode_mcu_ycbcr_baseline_inner::<B>(pixels, &mut progressive_mcus);
-        self.progressive_mcus_buffer = progressive_mcus;
+        for (buf, mcu) in self.progressive_mcus_buffer.iter_mut().zip(progressive_mcus) {
+            buf.mcu = mcu;
+        }
         result
     }
 
