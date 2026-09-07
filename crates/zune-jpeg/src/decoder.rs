@@ -499,7 +499,14 @@ pub(crate) struct RawPlanesSink<'planes, 'buf> {
 /// skips upsampling and color conversion and returns one post-IDCT plane per
 /// JPEG component. The configured output colorspace is therefore ignored.
 pub struct RawDecodeSession<'decoder, T> {
-    decoder: &'decoder mut JpegDecoder<T>
+    decoder: &'decoder mut JpegDecoder<T>,
+    previous_incremental_mode: bool,
+}
+
+impl<T> Drop for RawDecodeSession<'_, T> {
+    fn drop(&mut self) {
+        self.decoder.incremental_mode = self.previous_incremental_mode;
+    }
 }
 
 impl<T> RawDecodeSession<'_, T>
@@ -874,6 +881,7 @@ where
         if let Some(state) = self.scan_state.as_deref_mut() {
             state.scan_checkpoint = None;
             state.progressive_checkpoint = None;
+            state.progressive_fine_checkpoint = None;
         }
     }
 
@@ -1190,7 +1198,12 @@ where
     /// pixel output or option changes until the session is dropped.
     pub fn raw_output(&mut self) -> RawDecodeSession<'_, T> {
         self.clear_scan_checkpoints();
-        RawDecodeSession { decoder: self }
+        let previous_incremental_mode = self.incremental_mode;
+        self.incremental_mode = true;
+        RawDecodeSession {
+            decoder: self,
+            previous_incremental_mode,
+        }
     }
 
     /// Number of components present in the JPEG scan (1..=4).

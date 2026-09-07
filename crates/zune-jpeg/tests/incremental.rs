@@ -2736,6 +2736,7 @@ fn checkpointed_pixel_decoder<'a>(
     let limit = Rc::new(Cell::new(cutoff));
     let cursor = GrowableCursor::new(data, Rc::clone(&limit));
     let mut decoder = JpegDecoder::new_with_options(cursor, options);
+    decoder.set_incremental_mode(true);
     decoder.decode_headers().unwrap();
     let mut output = vec![0; decoder.output_buffer_size().unwrap()];
     for _ in 0..2 {
