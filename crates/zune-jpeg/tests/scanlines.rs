@@ -430,7 +430,7 @@ fn short_scanline_buffers_are_rejected_without_progress() {
 fn cancellation_does_not_publish_scanlines_and_can_retry() {
     let bytes = include_bytes!("../../../test-images/jpeg/2029.jpg");
     let expected = JpegDecoder::new(ZCursor::new(bytes)).decode().unwrap();
-    let cancelled = Arc::new(AtomicBool::new(true));
+    let cancelled = Arc::new(AtomicBool::new(false));
     let check = Arc::clone(&cancelled);
     let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
     decoder.set_cancel(move || check.load(Ordering::SeqCst));
@@ -439,6 +439,7 @@ fn cancellation_does_not_publish_scanlines_and_can_retry() {
     assert_eq!(scanlines.start().unwrap(), ScanlineStatus::Ready);
     let row_bytes = scanlines.output_row_bytes().unwrap();
     let mut row = vec![0xCD; row_bytes];
+    cancelled.store(true, Ordering::SeqCst);
 
     assert!(matches!(
         scanlines.read_scanlines(&mut row, row_bytes),
@@ -460,7 +461,7 @@ fn cancellation_after_a_committed_batch_is_reported_on_the_next_read() {
     let bytes = include_bytes!("../../../test-images/jpeg/2029.jpg");
     let expected = JpegDecoder::new(ZCursor::new(bytes)).decode().unwrap();
     let polls = Arc::new(AtomicUsize::new(0));
-    let cancel_at = Arc::new(AtomicUsize::new(2));
+    let cancel_at = Arc::new(AtomicUsize::new(usize::MAX));
     let check_polls = Arc::clone(&polls);
     let check_cancel_at = Arc::clone(&cancel_at);
     let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
@@ -472,6 +473,8 @@ fn cancellation_after_a_committed_batch_is_reported_on_the_next_read() {
     assert_eq!(scanlines.start().unwrap(), ScanlineStatus::Ready);
     let row_bytes = scanlines.output_row_bytes().unwrap();
     let mut output = vec![0xCD; row_bytes * 100];
+    polls.store(0, Ordering::SeqCst);
+    cancel_at.store(2, Ordering::SeqCst);
 
     let ScanlineReadStatus::RowsProcessed { rows: first_rows } =
         scanlines.read_scanlines(&mut output, row_bytes).unwrap()
@@ -636,6 +639,7 @@ fn changing_output_options_rebuilds_derived_state_for_replay() {
                 );
             }
             OptionChangePrelude::PixelCheckpoint => {
+                decoder.set_incremental_mode(true);
                 decoder.decode_headers().unwrap();
                 let mut old_output = vec![0; decoder.output_buffer_size().unwrap()];
                 for _ in 0..2 {

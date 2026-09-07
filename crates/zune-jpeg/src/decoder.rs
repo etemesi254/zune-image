@@ -464,11 +464,7 @@ pub(crate) enum McuDecodeOutput<'planes, 'buf> {
 
 impl McuDecodeOutput<'_, '_> {
     pub(crate) const fn is_raw(&self) -> bool {
-        match self {
-            Self::Pixels(_) => false,
-            Self::RawPlanes(_) => true,
-            Self::Scanlines(_) => false
-        }
+        matches!(self, Self::RawPlanes(_))
     }
 
     pub(crate) fn pixels_mut(&mut self) -> Option<&mut [u8]> {
@@ -676,12 +672,6 @@ pub struct RawDecodeSession<'decoder, T> {
     previous_incremental_mode: bool,
 }
 
-impl<T> Drop for RawDecodeSession<'_, T> {
-    fn drop(&mut self) {
-        self.decoder.incremental_mode = self.previous_incremental_mode;
-    }
-}
-
 /// Stateful converted scanline output session.
 ///
 /// Obtain a session with [`JpegDecoder::scanline_output`], call [`Self::start`],
@@ -693,8 +683,24 @@ impl<T> Drop for RawDecodeSession<'_, T> {
 /// through this API. They return [`ScanlineReadStatus::NeedMoreInput`] until
 /// all coefficients needed for stable final rows are available. Progressive
 /// preview reporting on [`JpegDecoder`] remains a separate full-frame API.
+/// Output dimensions always match the JPEG frame dimensions. This API does not
+/// provide libjpeg's scaled-IDCT or horizontal crop operations; callers must
+/// perform scaling or cropping after row conversion.
 pub struct ScanlineDecodeSession<'decoder, T> {
-    decoder: &'decoder mut JpegDecoder<T>
+    decoder: &'decoder mut JpegDecoder<T>,
+    previous_incremental_mode: bool,
+}
+
+impl<T> Drop for RawDecodeSession<'_, T> {
+    fn drop(&mut self) {
+        self.decoder.incremental_mode = self.previous_incremental_mode;
+    }
+}
+
+impl<T> Drop for ScanlineDecodeSession<'_, T> {
+    fn drop(&mut self) {
+        self.decoder.incremental_mode = self.previous_incremental_mode;
+    }
 }
 
 impl<T> ScanlineDecodeSession<'_, T>
@@ -1856,14 +1862,6 @@ where
         }
     }
 
-    fn clear_scan_checkpoints(&mut self) {
-        if let Some(state) = self.scan_state.as_deref_mut() {
-            state.scan_checkpoint = None;
-            state.progressive_checkpoint = None;
-            state.progressive_fine_checkpoint = None;
-        }
-    }
-
     // Refresh the conversion function selected by the configured output colorspace.
     fn set_color_convert_from_options(&mut self) {
         let out_colorspace = self.options.jpeg_get_out_colorspace();
@@ -2213,7 +2211,12 @@ where
         if !self.scanline_state.started {
             self.clear_scan_checkpoints();
         }
-        ScanlineDecodeSession { decoder: self }
+        let previous_incremental_mode = self.incremental_mode;
+        self.incremental_mode = true;
+        ScanlineDecodeSession {
+            decoder: self,
+            previous_incremental_mode,
+        }
     }
 
     #[cfg(test)]
@@ -3439,6 +3442,7 @@ where
         if let Some(state) = self.scan_state.as_deref_mut() {
             state.scan_checkpoint = None;
             state.progressive_checkpoint = None;
+            state.progressive_fine_checkpoint = None;
         }
     }
 
