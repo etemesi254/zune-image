@@ -403,6 +403,8 @@ pub struct JpegDecoder<T> {
     /// capacity. Safe first-DC scans also keep its contents so a later retry can
     /// resume from a fine checkpoint without committing partial scan data.
     pub(crate) progressive_scan_buffer: [Vec<i16>; MAX_COMPONENTS],
+    /// Reusable baseline upsampling scratch retained across pull calls.
+    pub(crate) upsampler_scratch: Vec<i16>,
     /// Number of progressive scans committed into `progressive_mcus_buffer`.
     pub(crate) progressive_completed_scans: usize,
     /// Number of committed progressive scans currently rendered as preview
@@ -1461,6 +1463,7 @@ where
             scan_decode_attempted:       false,
             progressive_mcus_buffer:     core::array::from_fn(|_| Vec::new()),
             progressive_scan_buffer: core::array::from_fn(|_| Vec::new()),
+            upsampler_scratch: Vec::new(),
             progressive_completed_scans: 0,
             progressive_displayed_scans: 0,
             progressive_render_incomplete: false,

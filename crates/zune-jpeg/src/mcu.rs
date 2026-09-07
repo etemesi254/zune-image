@@ -70,9 +70,14 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         // `decode_into` retries, which is what lets scan checkpoints stay
         // allocation-free.
         let mut progressive_mcus = core::mem::take(&mut self.progressive_mcus_buffer);
-        let result =
-            self.decode_mcu_ycbcr_baseline_inner::<B>(output, &mut progressive_mcus);
+        let mut upsampler_scratch = core::mem::take(&mut self.upsampler_scratch);
+        let result = self.decode_mcu_ycbcr_baseline_inner::<B>(
+            output,
+            &mut progressive_mcus,
+            &mut upsampler_scratch,
+        );
         self.progressive_mcus_buffer = progressive_mcus;
+        self.upsampler_scratch = upsampler_scratch;
         result
     }
 
@@ -93,7 +98,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     #[inline(never)]
     fn decode_mcu_ycbcr_baseline_inner<B: BitStream>(
         &mut self, output: &mut McuDecodeOutput<'_, '_>,
-        progressive_mcus: &mut [Vec<i16>; MAX_COMPONENTS]
+        progressive_mcus: &mut [Vec<i16>; MAX_COMPONENTS], upsampler_scratch_space: &mut Vec<i16>,
     ) -> Result<(), DecodeErrors> {
         setup_component_params(self)?;
 
@@ -233,7 +238,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             stream.restore_snapshot(checkpoint.bitstream_state);
         }
 
-        let is_hv = usize::from(self.is_interleaved);
+        let is_hv = usize::from(self.is_interleaved && !raw_mode);
         let upsampler_scratch_size = is_hv
             * self
                 .components
@@ -242,7 +247,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 .max()
                 .unwrap_or(0)
             * 8;
-        let mut upsampler_scratch_space = vec![0; upsampler_scratch_size];
+        upsampler_scratch_space.clear();
+        upsampler_scratch_space.resize(upsampler_scratch_size, 0);
 
         'sos: loop {
             let scan_mcu_height = if all_components_in_first_scan {
@@ -373,7 +379,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                                         width,
                                         padded_width,
                                         &mut pixels_written,
-                                        &mut upsampler_scratch_space,
+                                        upsampler_scratch_space,
                                     )?;
                                     self.pixels_decoded = pixels_written;
                                     if let Some(remaining) = pixels.get_mut(pixels_written..) {
@@ -432,7 +438,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                                 width,
                                 padded_width,
                                 &mut pixels_written,
-                                &mut upsampler_scratch_space,
+                                upsampler_scratch_space,
                             )?;
                             self.pixels_decoded = pixels_written;
                         }
@@ -609,7 +615,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let mcu_height = self.mcu_y;
 
         // Size of our output image(width*height)
-        let is_hv = usize::from(self.is_interleaved);
+        let raw_mode = output.is_raw();
+        let is_hv = usize::from(self.is_interleaved && !raw_mode);
         let upsampler_scratch_size = is_hv
             * self
                 .components
@@ -622,8 +629,6 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let padded_width = calculate_padded_width(width, self.info.sample_ratio);
 
         let mut upsampler_scratch_space = vec![0; upsampler_scratch_size];
-
-        let raw_mode = output.is_raw();
 
         for (pos, comp) in self.components.iter_mut().enumerate() {
             // Mark only needed components for computing output colors.
