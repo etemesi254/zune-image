@@ -961,8 +961,9 @@ where
                 "converted scanline staging size overflow"
             ))?;
         let mut staging = core::mem::take(&mut self.decoder.scanline_state.staging);
-        staging.clear();
-        staging.resize(staging_len, 0);
+        if staging.len() != staging_len {
+            staging.resize(staging_len, 0);
+        }
         let result = self.decode_scanline_stripe(&mut staging, row_bytes);
         self.decoder.scanline_state.staging = staging;
         let status = result?;

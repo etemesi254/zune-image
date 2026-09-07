@@ -140,4 +140,6 @@ fn main() {
 
     assert!(one_row.peak_live_bytes < full.peak_live_bytes);
     assert!(direct.peak_live_bytes < full.peak_live_bytes);
+    assert!(one_row.allocations <= full.allocations + 4);
+    assert!(direct.allocations <= full.allocations + 4);
 }
