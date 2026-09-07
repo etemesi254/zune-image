@@ -172,6 +172,55 @@ fn pull_rows_support_custom_strides_and_report_component_rows() {
 }
 
 #[test]
+fn recreated_session_continues_from_the_next_imcu_row() {
+    let bytes = include_bytes!("../../../test-images/jpeg/2029.jpg");
+
+    let mut expected_decoder = JpegDecoder::new(ZCursor::new(bytes));
+    expected_decoder.decode_headers().unwrap();
+    let mut expected_session = expected_decoder.raw_output();
+    let layout = expected_session.layout().unwrap();
+    let count = expected_session.num_components().unwrap();
+    let strides: Vec<usize> = layout[..count].iter().map(|plane| plane.width).collect();
+    let make_storage = || {
+        layout[..count]
+            .iter()
+            .map(|plane| vec![0; plane.width * plane.vertical_sampling_factor * 8])
+            .collect::<Vec<Vec<u8>>>()
+    };
+    let mut expected_first = make_storage();
+    let mut expected_first_refs: Vec<&mut [u8]> =
+        expected_first.iter_mut().map(Vec::as_mut_slice).collect();
+    expected_session
+        .decode_next_imcu_row(&mut expected_first_refs, &strides)
+        .unwrap();
+    let mut expected_second = make_storage();
+    let mut expected_second_refs: Vec<&mut [u8]> =
+        expected_second.iter_mut().map(Vec::as_mut_slice).collect();
+    let expected_status = expected_session
+        .decode_next_imcu_row(&mut expected_second_refs, &strides)
+        .unwrap();
+
+    let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
+    decoder.decode_headers().unwrap();
+    let mut first = make_storage();
+    {
+        let mut session = decoder.raw_output();
+        let mut refs: Vec<&mut [u8]> = first.iter_mut().map(Vec::as_mut_slice).collect();
+        session.decode_next_imcu_row(&mut refs, &strides).unwrap();
+    }
+    let mut second = make_storage();
+    let actual_status = {
+        let mut session = decoder.raw_output();
+        let mut refs: Vec<&mut [u8]> = second.iter_mut().map(Vec::as_mut_slice).collect();
+        session.decode_next_imcu_row(&mut refs, &strides).unwrap()
+    };
+
+    assert_eq!(first, expected_first);
+    assert_eq!(actual_status, expected_status);
+    assert_eq!(second, expected_second);
+}
+
+#[test]
 fn completion_is_sticky_and_new_session_replays() {
     let bytes = include_bytes!("../../../test-images/jpeg/2029.jpg");
     let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
