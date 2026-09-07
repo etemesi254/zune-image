@@ -689,6 +689,36 @@ fn completed_scanline_sequence_can_replay() {
 }
 
 #[test]
+fn recreated_session_continues_from_the_next_scanline() {
+    let bytes = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let expected = JpegDecoder::new(ZCursor::new(bytes)).decode().unwrap();
+    let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
+
+    let row_bytes = {
+        let mut scanlines = decoder.scanline_output();
+        assert_eq!(scanlines.start().unwrap(), ScanlineStatus::Ready);
+        let row_bytes = scanlines.output_row_bytes().unwrap();
+        let mut first = vec![0; row_bytes];
+        assert_eq!(
+            scanlines.read_scanlines(&mut first, row_bytes).unwrap(),
+            ScanlineReadStatus::RowsProcessed { rows: 1 }
+        );
+        assert_eq!(&first, &expected[..row_bytes]);
+        row_bytes
+    };
+
+    let mut scanlines = decoder.scanline_output();
+    assert_eq!(scanlines.start().unwrap(), ScanlineStatus::Ready);
+    assert_eq!(scanlines.output_scanline(), 1);
+    let mut second = vec![0; row_bytes];
+    assert_eq!(
+        scanlines.read_scanlines(&mut second, row_bytes).unwrap(),
+        ScanlineReadStatus::RowsProcessed { rows: 1 }
+    );
+    assert_eq!(&second, &expected[row_bytes..2 * row_bytes]);
+}
+
+#[test]
 fn incremental_scanline_parity() {
     assert_incremental_scanlines_match_decode(
         "baseline",
