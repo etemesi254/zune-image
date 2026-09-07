@@ -416,6 +416,12 @@ pub(crate) fn parse_start_of_frame<T: ZByteReaderTrait>(
 
         trace!("Image components : {num_components}");
 
+        if usize::from(num_components) > MAX_COMPONENTS {
+            return Err(DecodeErrors::SofError(format!(
+                "Invalid number of components in start of frame {num_components}, expected in range 1..={MAX_COMPONENTS}"
+            )));
+        }
+
         // Build components list locally; commit only when the whole body parses.
         let mut components = Vec::with_capacity(num_components as usize);
         let mut temp = [0; 3];
