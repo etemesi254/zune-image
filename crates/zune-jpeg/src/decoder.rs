@@ -646,6 +646,11 @@ where
 
     /// Decode the next sequential raw iMCU row into caller-provided planes.
     ///
+    /// Interleaved baseline images decode and deliver one iMCU row at a time.
+    /// Progressive and multi-SOS images must first buffer all coefficient data
+    /// needed for final samples; their rows are still pulled sequentially, but
+    /// compressed input consumption is not row-streaming.
+    ///
     /// Each stride must be at least the corresponding logical plane width.
     /// Each plane must be large enough for
     /// `stride * vertical_sampling_factor * 8` bytes. The returned
