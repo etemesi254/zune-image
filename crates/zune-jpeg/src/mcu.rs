@@ -466,7 +466,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                                 width,
                                 padded_width,
                                 &mut stripe_written,
-                                upsampler_scratch_space
+                                upsampler_scratch_space,
                             )?;
                             scanlines.rows_written = stripe_written / scanlines.stride;
                         }
