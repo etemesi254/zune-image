@@ -433,8 +433,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                                     // after it stay neutral, as a row that begins
                                     // past the end does.
                                     if !stream.consumed_past_end() {
+                                        let output_stride = width
+                                            * self.options.jpeg_get_out_colorspace().num_components();
                                         self.post_process(
                                             pixels,
+                                            output_stride,
                                             i,
                                             mcu_height,
                                             width,
@@ -451,6 +454,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                                 McuDecodeOutput::RawPlanes(raw_planes) => {
                                     self.copy_raw_planes_for_mcu_stripe(i, raw_planes)?;
                                 }
+                                McuDecodeOutput::Scanlines(_) => return Err(e),
                             }
                         } else if let Some(pixels) = output.pixels_mut() {
                             pixels.fill(128);
