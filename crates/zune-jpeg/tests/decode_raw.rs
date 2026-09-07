@@ -64,6 +64,50 @@ fn decode_raw_into_owned(bytes: &[u8]) -> Vec<Vec<u8>> {
 }
 
 #[test]
+fn decode_raw_matches_libjpeg_turbo_with_idct_tolerance() {
+    // Logical samples produced by libjpeg-turbo 2.1.5 through
+    // jpeg_read_raw_data. Rows in this 16x16 fixture are constant, keeping
+    // the independent oracle compact while still checking every sample.
+    let expected_rows = [
+        [
+            76, 74, 70, 66, 64, 60, 56, 54, 51, 49, 45, 41, 39, 35, 31, 29,
+        ],
+        [
+            85, 95, 108, 120, 129, 141, 154, 164, 176, 186, 200, 211, 221, 232, 245, 255,
+        ],
+        [
+            255, 247, 235, 225, 218, 208, 196, 187, 176, 167, 155, 145, 138, 128, 116, 107,
+        ],
+    ];
+    let bytes = include_bytes!("../../../test-images/jpeg/tiny_non_interleaved_444.jpg");
+    let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
+    decoder.decode_headers().unwrap();
+    let mut raw = decoder.raw_output();
+    let layout = raw.layout().unwrap();
+    let mut planes: Vec<Vec<u8>> = (0..3)
+        .map(|index| vec![0; layout[index].byte_size])
+        .collect();
+    let mut refs: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
+    raw.decode_into(&mut refs).unwrap();
+
+    for (plane_index, expected) in expected_rows.iter().enumerate() {
+        assert_eq!(
+            (layout[plane_index].width, layout[plane_index].height),
+            (16, 16)
+        );
+        for (row, expected_sample) in expected.iter().enumerate() {
+            for column in 0..16 {
+                let actual = planes[plane_index][row * layout[plane_index].stride + column];
+                assert!(
+                    actual.abs_diff(*expected_sample) <= 2,
+                    "plane {plane_index} sample ({column},{row}) differs from libjpeg-turbo: {actual} vs {expected_sample}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn decode_raw_rejects_wrong_plane_count() {
     let bytes = include_bytes!("../../../test-images/jpeg/2029.jpg");
     let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
