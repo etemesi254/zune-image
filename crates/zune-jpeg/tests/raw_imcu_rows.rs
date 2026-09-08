@@ -6,13 +6,78 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::cell::Cell;
+use std::io::{BufRead, Read, Seek, SeekFrom};
+use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use zune_core::bytestream::ZCursor;
 use zune_core::options::DecoderOptions;
 use zune_jpeg::errors::DecodeErrors;
 use zune_jpeg::{JpegDecoder, RawImcuRowStatus};
+
+struct GrowableCursor<'a> {
+    data: &'a [u8],
+    position: usize,
+    limit: Rc<Cell<usize>>,
+}
+
+impl<'a> GrowableCursor<'a> {
+    fn new(data: &'a [u8], limit: Rc<Cell<usize>>) -> Self {
+        Self {
+            data,
+            position: 0,
+            limit,
+        }
+    }
+
+    fn visible(&self) -> usize {
+        self.limit.get().min(self.data.len())
+    }
+}
+
+impl Read for GrowableCursor<'_> {
+    fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
+        let visible = self.visible();
+        if self.position >= visible {
+            return Ok(0);
+        }
+        let count = output.len().min(visible - self.position);
+        output[..count].copy_from_slice(&self.data[self.position..self.position + count]);
+        self.position += count;
+        Ok(count)
+    }
+}
+
+impl BufRead for GrowableCursor<'_> {
+    fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
+        let visible = self.visible();
+        Ok(&self.data[self.position.min(visible)..visible])
+    }
+
+    fn consume(&mut self, amount: usize) {
+        self.position += amount;
+    }
+}
+
+impl Seek for GrowableCursor<'_> {
+    fn seek(&mut self, position: SeekFrom) -> std::io::Result<u64> {
+        let next = match position {
+            SeekFrom::Start(value) => value as i64,
+            SeekFrom::Current(value) => self.position as i64 + value,
+            SeekFrom::End(value) => self.visible() as i64 + value,
+        };
+        if next < 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "seek before start",
+            ));
+        }
+        self.position = next as usize;
+        Ok(self.position as u64)
+    }
+}
 
 fn decode_whole(bytes: &[u8]) -> (Vec<Vec<u8>>, [zune_jpeg::PlaneInfo; 4], usize) {
     let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
@@ -171,6 +236,398 @@ fn pull_rows_support_custom_strides_and_report_component_rows() {
     }
 }
 
+fn pull_required_len(rows: usize, stride: usize, width: usize) -> usize {
+    if rows == 0 {
+        0
+    } else {
+        (rows - 1) * stride + width
+    }
+}
+
+fn with_luma_sampling(data: &[u8], sampling: u8) -> Vec<u8> {
+    let mut bytes = data.to_vec();
+    let sof = bytes
+        .windows(2)
+        .position(|marker| marker == [0xff, 0xc0])
+        .expect("baseline SOF marker");
+    bytes[sof + 11] = sampling;
+    bytes
+}
+
+fn assert_exact_sized_pull_matches_whole(bytes: &[u8]) {
+    const GUARD: usize = 17;
+    const SENTINEL: u8 = 0xCD;
+
+    let (whole, layout, count) = decode_whole(bytes);
+    let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
+    decoder.decode_headers().unwrap();
+    let mut raw = decoder.raw_output();
+    let strides: Vec<usize> = layout[..count]
+        .iter()
+        .map(|plane| plane.width + 13)
+        .collect();
+    let mut component_rows = [0usize; 4];
+
+    loop {
+        let rows: Vec<usize> = layout[..count]
+            .iter()
+            .enumerate()
+            .map(|(index, plane)| {
+                (plane.height - component_rows[index]).min(plane.vertical_sampling_factor * 8)
+            })
+            .collect();
+        let required: Vec<usize> = layout[..count]
+            .iter()
+            .enumerate()
+            .map(|(index, plane)| pull_required_len(rows[index], strides[index], plane.width))
+            .collect();
+        let mut storage: Vec<Vec<u8>> = required
+            .iter()
+            .map(|length| vec![SENTINEL; length + GUARD])
+            .collect();
+        let mut refs: Vec<&mut [u8]> = storage.iter_mut().map(Vec::as_mut_slice).collect();
+
+        match raw.decode_next_imcu_row(&mut refs, &strides).unwrap() {
+            RawImcuRowStatus::RowReady { rows_written } => {
+                for index in 0..count {
+                    assert_eq!(rows_written[index], rows[index]);
+                    for row in 0..rows[index] {
+                        let actual_start = row * strides[index];
+                        let expected_start = (component_rows[index] + row) * layout[index].stride;
+                        assert_eq!(
+                            &storage[index][actual_start..actual_start + layout[index].width],
+                            &whole[index][expected_start..expected_start + layout[index].width]
+                        );
+                        if row + 1 < rows[index] {
+                            assert!(storage[index]
+                                [actual_start + layout[index].width..(row + 1) * strides[index]]
+                                .iter()
+                                .all(|byte| *byte == SENTINEL));
+                        }
+                    }
+                    assert!(storage[index][required[index]..]
+                        .iter()
+                        .all(|byte| *byte == SENTINEL));
+                    component_rows[index] += rows_written[index];
+                }
+            }
+            RawImcuRowStatus::Complete => break,
+            RawImcuRowStatus::NeedMoreInput => panic!("one-shot input suspended"),
+            _ => unreachable!("unknown raw iMCU-row status"),
+        }
+    }
+
+    for index in 0..count {
+        assert_eq!(component_rows[index], layout[index].height);
+    }
+}
+
+fn assert_incremental_pull_is_atomic(
+    name: &str, data: &[u8], step: usize, minimum_suspensions: usize,
+) {
+    const GUARD: usize = 17;
+    const SENTINEL: u8 = 0xCD;
+
+    let (whole, _, _) = decode_whole(data);
+    let limit = Rc::new(Cell::new(0));
+    let cursor = GrowableCursor::new(data, Rc::clone(&limit));
+    let mut decoder = JpegDecoder::new(cursor);
+    let mut available = 0;
+    loop {
+        available = (available + step).min(data.len());
+        limit.set(available);
+        match decoder.decode_headers() {
+            Ok(()) => break,
+            Err(ref error) if error.is_recoverable_eof() => {
+                assert!(
+                    available < data.len(),
+                    "{name}: headers suspended with full input"
+                );
+            }
+            Err(error) => panic!("{name}: header error at {available}: {error:?}"),
+        }
+    }
+
+    let mut raw = decoder.raw_output();
+    let layout = raw.layout().unwrap();
+    let count = raw.num_components().unwrap();
+    let strides: Vec<usize> = layout[..count]
+        .iter()
+        .map(|plane| plane.width + 7)
+        .collect();
+    let mut component_rows = [0usize; 4];
+    let mut suspensions = 0;
+
+    loop {
+        let rows: Vec<usize> = layout[..count]
+            .iter()
+            .enumerate()
+            .map(|(index, plane)| {
+                (plane.height - component_rows[index]).min(plane.vertical_sampling_factor * 8)
+            })
+            .collect();
+        let required: Vec<usize> = layout[..count]
+            .iter()
+            .enumerate()
+            .map(|(index, plane)| pull_required_len(rows[index], strides[index], plane.width))
+            .collect();
+        let mut storage: Vec<Vec<u8>> = required
+            .iter()
+            .map(|length| vec![SENTINEL; length + GUARD])
+            .collect();
+        let mut refs: Vec<&mut [u8]> = storage.iter_mut().map(Vec::as_mut_slice).collect();
+
+        match raw.decode_next_imcu_row(&mut refs, &strides).unwrap() {
+            RawImcuRowStatus::NeedMoreInput => {
+                suspensions += 1;
+                assert!(storage.iter().flatten().all(|byte| *byte == SENTINEL));
+                assert!(available < data.len(), "{name}: suspended with full input");
+                available = (available + step).min(data.len());
+                limit.set(available);
+            }
+            RawImcuRowStatus::RowReady { rows_written } => {
+                for index in 0..count {
+                    assert_eq!(rows_written[index], rows[index]);
+                    for row in 0..rows_written[index] {
+                        let actual_start = row * strides[index];
+                        let expected_start = (component_rows[index] + row) * layout[index].stride;
+                        assert_eq!(
+                            &storage[index][actual_start..actual_start + layout[index].width],
+                            &whole[index][expected_start..expected_start + layout[index].width],
+                            "{name}: component {index}, row {}",
+                            component_rows[index] + row
+                        );
+                    }
+                    assert!(storage[index][required[index]..]
+                        .iter()
+                        .all(|byte| *byte == SENTINEL));
+                    component_rows[index] += rows_written[index];
+                }
+            }
+            RawImcuRowStatus::Complete => break,
+            _ => unreachable!("unknown raw iMCU-row status"),
+        }
+    }
+
+    assert!(
+        suspensions >= minimum_suspensions,
+        "{name}: expected at least {minimum_suspensions} suspensions, got {suspensions}"
+    );
+    for index in 0..count {
+        assert_eq!(component_rows[index], layout[index].height);
+    }
+}
+
+#[test]
+fn exact_minimum_lengths_cover_sampling_modes_and_final_stripes() {
+    for bytes in [
+        &include_bytes!("../../../test-images/jpeg/non_interleaved_444_64x64.jpg")[..],
+        &include_bytes!("../../../test-images/jpeg/non_interleaved_440_64x64.jpg")[..],
+        &include_bytes!("../../../test-images/jpeg/non_interleaved_422_65x65.jpg")[..],
+        &include_bytes!("../../../test-images/jpeg/non_interleaved_420_64x64.jpg")[..],
+        &include_bytes!("../../../test-images/jpeg/fox410.jpg")[..],
+    ] {
+        assert_exact_sized_pull_matches_whole(bytes);
+    }
+
+    let sampling_411 = with_luma_sampling(
+        include_bytes!("../../../test-images/jpeg/non_interleaved_444_64x64.jpg"),
+        0x41,
+    );
+    assert_exact_sized_pull_matches_whole(&sampling_411);
+}
+
+#[test]
+fn suspension_cut_points_are_atomic_and_retry_exactly() {
+    assert_incremental_pull_is_atomic(
+        "baseline_bytewise",
+        include_bytes!("../../../test-images/jpeg/app14/baseline_rgb_interleaved.jpg"),
+        1,
+        100,
+    );
+    assert_incremental_pull_is_atomic(
+        "progressive_restart",
+        include_bytes!("../../../test-images/jpeg/progressive_restart_420.jpg"),
+        1,
+        100,
+    );
+    assert_incremental_pull_is_atomic(
+        "multi_sos",
+        include_bytes!("../../../test-images/jpeg/non_interleaved_420_64x64.jpg"),
+        1,
+        10,
+    );
+}
+
+#[test]
+#[cfg(feature = "arith")]
+fn arithmetic_suspension_cut_points_are_atomic_and_retry_exactly() {
+    assert_incremental_pull_is_atomic(
+        "arithmetic_restart",
+        include_bytes!("../../../test-images/jpeg/arith/seq-restart.jpg"),
+        1,
+        10,
+    );
+    assert_incremental_pull_is_atomic(
+        "arithmetic_progressive",
+        include_bytes!("../../../test-images/jpeg/arith/prog.jpg"),
+        1,
+        10,
+    );
+}
+
+#[test]
+fn exact_minimum_plane_lengths_succeed() {
+    let bytes = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
+    decoder.decode_headers().unwrap();
+    let mut raw = decoder.raw_output();
+    let layout = raw.layout().unwrap();
+    let count = raw.num_components().unwrap();
+    let strides: Vec<usize> = layout[..count]
+        .iter()
+        .map(|plane| plane.width + 13)
+        .collect();
+    let expected_rows: Vec<usize> = layout[..count]
+        .iter()
+        .map(|plane| plane.vertical_sampling_factor * 8)
+        .collect();
+    let mut storage: Vec<Vec<u8>> = layout[..count]
+        .iter()
+        .enumerate()
+        .map(|(index, plane)| {
+            vec![0xCD; pull_required_len(expected_rows[index], strides[index], plane.width)]
+        })
+        .collect();
+    let mut refs: Vec<&mut [u8]> = storage.iter_mut().map(Vec::as_mut_slice).collect();
+
+    let RawImcuRowStatus::RowReady { rows_written } =
+        raw.decode_next_imcu_row(&mut refs, &strides).unwrap()
+    else {
+        panic!("first iMCU row was not ready")
+    };
+    assert_eq!(&rows_written[..count], expected_rows);
+}
+
+#[test]
+fn one_byte_short_of_minimum_is_rejected() {
+    let bytes = include_bytes!("../../../test-images/jpeg/2029.jpg");
+
+    for short_index in 0..3 {
+        let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
+        decoder.decode_headers().unwrap();
+        let mut raw = decoder.raw_output();
+        let layout = raw.layout().unwrap();
+        let count = raw.num_components().unwrap();
+        let strides: Vec<usize> = layout[..count]
+            .iter()
+            .map(|plane| plane.width + 13)
+            .collect();
+        let rows: Vec<usize> = layout[..count]
+            .iter()
+            .map(|plane| plane.vertical_sampling_factor * 8)
+            .collect();
+        let required: Vec<usize> = layout[..count]
+            .iter()
+            .enumerate()
+            .map(|(index, plane)| pull_required_len(rows[index], strides[index], plane.width))
+            .collect();
+        let mut storage: Vec<Vec<u8>> = required
+            .iter()
+            .enumerate()
+            .map(|(index, length)| vec![0xCD; length - usize::from(index == short_index)])
+            .collect();
+        let mut refs: Vec<&mut [u8]> = storage.iter_mut().map(Vec::as_mut_slice).collect();
+
+        assert!(matches!(
+            raw.decode_next_imcu_row(&mut refs, &strides),
+            Err(DecodeErrors::TooSmallOutput(needed, actual))
+                if needed == required[short_index] && actual + 1 == needed
+        ));
+        assert!(storage.iter().flatten().all(|byte| *byte == 0xCD));
+    }
+}
+
+#[test]
+fn overflowing_minimum_length_is_rejected() {
+    let bytes = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
+    decoder.decode_headers().unwrap();
+    let mut raw = decoder.raw_output();
+    let layout = raw.layout().unwrap();
+    let count = raw.num_components().unwrap();
+    let mut strides: Vec<usize> = layout[..count].iter().map(|plane| plane.width).collect();
+    strides[0] = usize::MAX;
+    let mut storage: Vec<Vec<u8>> = (0..count).map(|_| Vec::new()).collect();
+    let mut refs: Vec<&mut [u8]> = storage.iter_mut().map(Vec::as_mut_slice).collect();
+
+    assert!(matches!(
+        raw.decode_next_imcu_row(&mut refs, &strides),
+        Err(DecodeErrors::FormatStatic(
+            "raw iMCU-row plane size overflow"
+        ))
+    ));
+}
+
+#[test]
+fn one_byte_short_of_final_clipped_stripe_is_rejected() {
+    let bytes = include_bytes!("../../../test-images/jpeg/non_interleaved_422_65x65.jpg");
+    let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
+    decoder.decode_headers().unwrap();
+    let mut raw = decoder.raw_output();
+    let layout = raw.layout().unwrap();
+    let count = raw.num_components().unwrap();
+    let strides: Vec<usize> = layout[..count]
+        .iter()
+        .map(|plane| plane.width + 13)
+        .collect();
+    let mut component_rows = [0usize; 4];
+
+    loop {
+        let rows: Vec<usize> = layout[..count]
+            .iter()
+            .enumerate()
+            .map(|(index, plane)| {
+                (plane.height - component_rows[index]).min(plane.vertical_sampling_factor * 8)
+            })
+            .collect();
+        let required: Vec<usize> = layout[..count]
+            .iter()
+            .enumerate()
+            .map(|(index, plane)| pull_required_len(rows[index], strides[index], plane.width))
+            .collect();
+        let final_stripe = rows
+            .iter()
+            .enumerate()
+            .all(|(index, rows)| component_rows[index] + rows == layout[index].height);
+        let mut storage: Vec<Vec<u8>> = required
+            .iter()
+            .enumerate()
+            .map(|(index, length)| vec![0xCD; length - usize::from(final_stripe && index == 0)])
+            .collect();
+        let mut refs: Vec<&mut [u8]> = storage.iter_mut().map(Vec::as_mut_slice).collect();
+
+        if final_stripe {
+            assert!(matches!(
+                raw.decode_next_imcu_row(&mut refs, &strides),
+                Err(DecodeErrors::TooSmallOutput(needed, actual))
+                    if needed == required[0] && actual + 1 == needed
+            ));
+            assert!(storage.iter().flatten().all(|byte| *byte == 0xCD));
+            break;
+        }
+
+        let RawImcuRowStatus::RowReady { rows_written } =
+            raw.decode_next_imcu_row(&mut refs, &strides).unwrap()
+        else {
+            panic!("non-final stripe was not ready")
+        };
+        for index in 0..count {
+            component_rows[index] += rows_written[index];
+        }
+    }
+}
+
 #[test]
 fn recreated_session_continues_from_the_next_imcu_row() {
     let bytes = include_bytes!("../../../test-images/jpeg/2029.jpg");
@@ -252,6 +709,16 @@ fn completion_is_sticky_and_new_session_replays() {
         raw.decode_next_imcu_row(&mut empty, &[]).unwrap(),
         RawImcuRowStatus::Complete
     );
+    let mut exhausted_storage: Vec<Vec<u8>> = (0..count).map(|_| Vec::new()).collect();
+    let mut exhausted_planes: Vec<&mut [u8]> = exhausted_storage
+        .iter_mut()
+        .map(Vec::as_mut_slice)
+        .collect();
+    assert_eq!(
+        raw.decode_next_imcu_row(&mut exhausted_planes, &strides)
+            .unwrap(),
+        RawImcuRowStatus::Complete
+    );
     drop(raw);
 
     let mut replay = decoder.raw_output();
@@ -289,6 +756,64 @@ fn cancellation_does_not_publish_a_row() {
     let error = raw.decode_next_imcu_row(&mut refs, &strides).unwrap_err();
     assert!(matches!(error, DecodeErrors::Cancelled));
     assert!(storage.iter().flatten().all(|byte| *byte == 0xCD));
+}
+
+#[test]
+fn cancellation_during_a_stripe_is_atomic_and_retryable() {
+    let bytes = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let (whole, layout, count) = decode_whole(bytes);
+    let polls = Arc::new(AtomicUsize::new(0));
+    let cancel_after = Arc::new(AtomicUsize::new(1));
+    let check_polls = Arc::clone(&polls);
+    let check_cancel_after = Arc::clone(&cancel_after);
+    let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
+    decoder.decode_headers().unwrap();
+    decoder.set_cancel(move || {
+        check_polls.fetch_add(1, Ordering::SeqCst) >= check_cancel_after.load(Ordering::SeqCst)
+    });
+    decoder.set_cancel_interval(1);
+    let mut raw = decoder.raw_output();
+    let strides: Vec<usize> = layout[..count]
+        .iter()
+        .map(|plane| plane.width + 9)
+        .collect();
+    let rows: Vec<usize> = layout[..count]
+        .iter()
+        .map(|plane| plane.vertical_sampling_factor * 8)
+        .collect();
+    let required: Vec<usize> = layout[..count]
+        .iter()
+        .enumerate()
+        .map(|(index, plane)| pull_required_len(rows[index], strides[index], plane.width))
+        .collect();
+    let mut cancelled: Vec<Vec<u8>> = required.iter().map(|length| vec![0xCD; *length]).collect();
+    let mut cancelled_refs: Vec<&mut [u8]> = cancelled.iter_mut().map(Vec::as_mut_slice).collect();
+
+    assert!(matches!(
+        raw.decode_next_imcu_row(&mut cancelled_refs, &strides),
+        Err(DecodeErrors::Cancelled)
+    ));
+    assert!(polls.load(Ordering::SeqCst) > 1);
+    assert!(cancelled.iter().flatten().all(|byte| *byte == 0xCD));
+
+    cancel_after.store(usize::MAX, Ordering::SeqCst);
+    let mut retry: Vec<Vec<u8>> = required.iter().map(|length| vec![0; *length]).collect();
+    let mut retry_refs: Vec<&mut [u8]> = retry.iter_mut().map(Vec::as_mut_slice).collect();
+    let RawImcuRowStatus::RowReady { rows_written } =
+        raw.decode_next_imcu_row(&mut retry_refs, &strides).unwrap()
+    else {
+        panic!("retry did not produce the first stripe")
+    };
+    for index in 0..count {
+        assert_eq!(rows_written[index], rows[index]);
+        for row in 0..rows[index] {
+            assert_eq!(
+                &retry[index][row * strides[index]..row * strides[index] + layout[index].width],
+                &whole[index]
+                    [row * layout[index].stride..row * layout[index].stride + layout[index].width]
+            );
+        }
+    }
 }
 
 #[test]
