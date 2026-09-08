@@ -11,13 +11,14 @@
 //! Verifies that `is_recoverable_eof()` is reported on truncated input
 //! and that retrying with more data produces correct output.
 
-use zune_core::bytestream::ZCursor;
+use zune_core::bytestream::{ZByteReaderTrait, ZCursor};
+use zune_core::colorspace::ColorSpace;
 use zune_core::options::DecoderOptions;
 use zune_jpeg::errors::DecodeErrors;
-use zune_jpeg::JpegDecoder;
+use zune_jpeg::{JpegDecoder, RawDecodeSession, RawImcuRowStatus};
 
 use std::cell::{Cell, RefCell};
-use std::io::{BufRead, Read, Seek, SeekFrom};
+use std::io::{BufRead, Cursor, Read, Seek, SeekFrom};
 use std::rc::Rc;
 
 /// A cursor over a byte slice with an adjustable visibility limit.
@@ -104,6 +105,44 @@ impl Seek for GrowableCursor<'_> {
             seek_log.borrow_mut().push(self.position);
         }
         Ok(self.position as u64)
+    }
+}
+
+struct PositionFailCursor<'a> {
+    inner:       Cursor<&'a [u8]>,
+    calls:       Rc<Cell<usize>>,
+    fail_on_call: Rc<Cell<usize>>
+}
+
+impl Read for PositionFailCursor<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.inner.read(buf)
+    }
+}
+
+impl BufRead for PositionFailCursor<'_> {
+    fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
+        self.inner.fill_buf()
+    }
+
+    fn consume(&mut self, amt: usize) {
+        self.inner.consume(amt);
+    }
+}
+
+impl Seek for PositionFailCursor<'_> {
+    fn seek(&mut self, position: SeekFrom) -> std::io::Result<u64> {
+        if position == SeekFrom::Current(0) {
+            let call = self.calls.get() + 1;
+            self.calls.set(call);
+            if self.fail_on_call.get() == call {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "injected position failure"
+                ));
+            }
+        }
+        self.inner.seek(position)
     }
 }
 
@@ -220,6 +259,353 @@ fn assert_decode_into_replay_matches_oneshot(name: &str, data: &[u8]) {
     assert_pixels_match(&replay, &expected, name, data.len());
 }
 
+fn allocate_raw_planes<T>(raw: &RawDecodeSession<'_, T>) -> Vec<Vec<u8>>
+where
+    T: ZByteReaderTrait
+{
+    let layout = raw.layout().unwrap();
+    let n_components = raw.num_components().unwrap();
+    (0..n_components)
+        .map(|index| vec![0u8; layout[index].byte_size])
+        .collect()
+}
+
+fn decode_raw_into_existing<T>(
+    raw: &mut RawDecodeSession<'_, T>, planes: &mut [Vec<u8>]
+) -> Result<(), zune_jpeg::errors::DecodeErrors>
+where
+    T: ZByteReaderTrait
+{
+    let mut plane_refs: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
+    raw.decode_into(&mut plane_refs)
+}
+
+fn allocate_raw_strided_planes<T>(raw: &RawDecodeSession<'_, T>) -> (Vec<Vec<u8>>, Vec<usize>)
+where
+    T: ZByteReaderTrait
+{
+    let layout = raw.layout().unwrap();
+    let n_components = raw.num_components().unwrap();
+    let strides: Vec<usize> = (0..n_components)
+        .map(|index| layout[index].width + 5)
+        .collect();
+    let planes = (0..n_components)
+        .map(|index| vec![0xAAu8; strides[index] * layout[index].height])
+        .collect();
+    (planes, strides)
+}
+
+fn decode_raw_strided_into_existing<T>(
+    raw: &mut RawDecodeSession<'_, T>, planes: &mut [Vec<u8>], strides: &[usize]
+) -> Result<(), zune_jpeg::errors::DecodeErrors>
+where
+    T: ZByteReaderTrait
+{
+    let mut plane_refs: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
+    raw.decode_into_strided(&mut plane_refs, strides)
+}
+
+fn decode_raw_oneshot(data: &[u8]) -> Vec<Vec<u8>> {
+    let mut decoder = JpegDecoder::new(ZCursor::new(data));
+    decoder
+        .decode_headers()
+        .expect("one-shot raw headers failed");
+    let mut raw = decoder.raw_output();
+    let mut planes = allocate_raw_planes(&raw);
+    decode_raw_into_existing(&mut raw, &mut planes).expect("one-shot raw decode failed");
+    planes
+}
+
+fn assert_raw_planes_match(actual: &[Vec<u8>], expected: &[Vec<u8>], name: &str, available: usize) {
+    assert_eq!(
+        actual.len(),
+        expected.len(),
+        "{name}: incremental and one-shot raw plane counts differ"
+    );
+
+    for (plane_index, (actual_plane, expected_plane)) in actual.iter().zip(expected).enumerate() {
+        assert_eq!(
+            actual_plane.len(),
+            expected_plane.len(),
+            "{name}: raw plane {plane_index} lengths differ"
+        );
+        if let Some(index) = actual_plane
+            .iter()
+            .zip(expected_plane)
+            .position(|(left, right)| left != right)
+        {
+            let start = index.saturating_sub(8);
+            let end = (index + 9).min(actual_plane.len());
+            panic!(
+                "{name}: first raw plane {plane_index} mismatch at {index} with {available} bytes visible: incremental={}, one-shot={}, incremental window={:?}, one-shot window={:?}",
+                actual_plane[index],
+                expected_plane[index],
+                &actual_plane[start..end],
+                &expected_plane[start..end]
+            );
+        }
+    }
+}
+
+fn assert_raw_strided_planes_match_padded(
+    actual: &[Vec<u8>], strides: &[usize], expected: &[Vec<u8>], name: &str, data: &[u8],
+    available: usize
+) {
+    let mut decoder = JpegDecoder::new(ZCursor::new(data));
+    decoder.decode_headers().unwrap();
+    let raw = decoder.raw_output();
+    let layout = raw.layout().unwrap();
+    let n_components = raw.num_components().unwrap();
+
+    assert_eq!(
+        actual.len(),
+        n_components,
+        "{name}: strided plane count differs"
+    );
+    assert_eq!(strides.len(), n_components, "{name}: stride count differs");
+    assert_eq!(
+        expected.len(),
+        n_components,
+        "{name}: padded plane count differs"
+    );
+
+    for index in 0..n_components {
+        let plane = layout[index];
+        assert_eq!(
+            actual[index].len(),
+            strides[index] * plane.height,
+            "{name}: strided plane {index} length differs"
+        );
+        for y in 0..plane.height {
+            for x in 0..plane.width {
+                let actual_value = actual[index][y * strides[index] + x];
+                let expected_value = expected[index][y * plane.stride + x];
+                assert_eq!(
+                    actual_value, expected_value,
+                    "{name}: strided raw plane {index} mismatch at ({x},{y}) with {available} bytes visible"
+                );
+            }
+            for x in plane.width..strides[index] {
+                assert_eq!(
+                    actual[index][y * strides[index] + x],
+                    0xAA,
+                    "{name}: strided padding modified in plane {index} at ({x},{y})"
+                );
+            }
+        }
+    }
+}
+
+fn assert_incremental_raw_decode_matches_oneshot(name: &str, data: &[u8], step: usize) {
+    assert!(step > 0, "incremental step must be non-zero");
+
+    let expected = decode_raw_oneshot(data);
+    let limit = Rc::new(Cell::new(0_usize));
+    let cursor = GrowableCursor::new(data, Rc::clone(&limit));
+    let mut decoder = JpegDecoder::new(cursor);
+
+    let mut available = 0_usize;
+
+    loop {
+        available = (available + step).min(data.len());
+        limit.set(available);
+
+        match decoder.decode_headers() {
+            Ok(()) => break,
+            Err(ref err) if err.is_recoverable_eof() => {
+                assert!(
+                    available < data.len(),
+                    "raw headers still need more data with the full input visible"
+                );
+            }
+            Err(err) => panic!("unexpected raw header error at byte {available}: {err:?}")
+        }
+    }
+
+    let mut raw = decoder.raw_output();
+    let mut planes = allocate_raw_planes(&raw);
+
+    loop {
+        match decode_raw_into_existing(&mut raw, &mut planes) {
+            Ok(()) => {
+                assert_raw_planes_match(&planes, &expected, name, available);
+                return;
+            }
+            Err(ref err) if err.is_recoverable_eof() => {
+                assert!(
+                    available < data.len(),
+                    "raw scan still needs more data with the full input visible"
+                );
+                available = (available + step).min(data.len());
+                limit.set(available);
+            }
+            Err(err) => panic!("unexpected raw scan error at byte {available}: {err:?}")
+        }
+    }
+}
+
+fn assert_incremental_raw_strided_decode_matches_oneshot(name: &str, data: &[u8], step: usize) {
+    assert!(step > 0, "incremental step must be non-zero");
+
+    let expected = decode_raw_oneshot(data);
+    let limit = Rc::new(Cell::new(0_usize));
+    let cursor = GrowableCursor::new(data, Rc::clone(&limit));
+    let mut decoder = JpegDecoder::new(cursor);
+
+    let mut available = 0_usize;
+
+    loop {
+        available = (available + step).min(data.len());
+        limit.set(available);
+
+        match decoder.decode_headers() {
+            Ok(()) => break,
+            Err(ref err) if err.is_recoverable_eof() => {
+                assert!(
+                    available < data.len(),
+                    "raw strided headers still need more data with the full input visible"
+                );
+            }
+            Err(err) => {
+                panic!("unexpected raw strided header error at byte {available}: {err:?}")
+            }
+        }
+    }
+
+    let mut raw = decoder.raw_output();
+    let (mut planes, strides) = allocate_raw_strided_planes(&raw);
+
+    loop {
+        match decode_raw_strided_into_existing(&mut raw, &mut planes, &strides) {
+            Ok(()) => {
+                assert_raw_strided_planes_match_padded(
+                    &planes, &strides, &expected, name, data, available
+                );
+                return;
+            }
+            Err(ref err) if err.is_recoverable_eof() => {
+                assert!(
+                    available < data.len(),
+                    "raw strided scan still needs more data with the full input visible"
+                );
+                available = (available + step).min(data.len());
+                limit.set(available);
+            }
+            Err(err) => panic!("unexpected raw strided scan error at byte {available}: {err:?}")
+        }
+    }
+}
+
+fn assert_incremental_raw_pull_matches_oneshot(name: &str, data: &[u8], step: usize) {
+    let expected = decode_raw_oneshot(data);
+    let limit = Rc::new(Cell::new(0usize));
+    let cursor = GrowableCursor::new(data, Rc::clone(&limit));
+    let mut decoder = JpegDecoder::new(cursor);
+    let mut available = 0usize;
+
+    loop {
+        available = (available + step).min(data.len());
+        limit.set(available);
+        match decoder.decode_headers() {
+            Ok(()) => break,
+            Err(error) if error.is_recoverable_eof() => continue,
+            Err(error) => panic!("{name}: unexpected header error: {error:?}")
+        }
+    }
+
+    let mut raw = decoder.raw_output();
+    let layout = raw.layout().unwrap();
+    let count = raw.num_components().unwrap();
+    let strides: Vec<usize> = layout[..count].iter().map(|plane| plane.width).collect();
+    let mut actual: Vec<Vec<u8>> = layout[..count]
+        .iter()
+        .map(|plane| vec![0; plane.width * plane.height])
+        .collect();
+    let mut rows_emitted = [0usize; 4];
+    let mut suspended_before_first_row = false;
+
+    loop {
+        let mut stripe_storage: Vec<Vec<u8>> = layout[..count]
+            .iter()
+            .map(|plane| vec![0xCD; plane.width * plane.vertical_sampling_factor * 8])
+            .collect();
+        let mut refs: Vec<&mut [u8]> = stripe_storage.iter_mut().map(Vec::as_mut_slice).collect();
+
+        match raw.decode_next_imcu_row(&mut refs, &strides).unwrap() {
+            RawImcuRowStatus::RowReady { rows_written } => {
+                for index in 0..count {
+                    let bytes = rows_written[index] * strides[index];
+                    let dst = rows_emitted[index] * strides[index];
+                    actual[index][dst..dst + bytes]
+                        .copy_from_slice(&stripe_storage[index][..bytes]);
+                    rows_emitted[index] += rows_written[index];
+                }
+            }
+            RawImcuRowStatus::NeedMoreInput => {
+                assert!(
+                    stripe_storage.iter().flatten().all(|byte| *byte == 0xCD),
+                    "{name}: suspended pull modified caller storage"
+                );
+                if rows_emitted[..count].iter().all(|rows| *rows == 0) {
+                    suspended_before_first_row = true;
+                }
+                assert!(available < data.len(), "{name}: suspended with full input");
+                available = (available + step).min(data.len());
+                limit.set(available);
+            }
+            RawImcuRowStatus::Complete => {
+                assert!(
+                    suspended_before_first_row,
+                    "{name}: test did not suspend before publishing its first row"
+                );
+                assert_raw_strided_planes_match_padded(
+                    &actual, &strides, &expected, name, data, available
+                );
+                return;
+            }
+            _ => unreachable!("unknown raw iMCU-row status")
+        }
+    }
+}
+
+fn assert_decode_raw_replay_matches_oneshot(name: &str, data: &[u8]) {
+    let expected = decode_raw_oneshot(data);
+
+    let mut decoder = JpegDecoder::new(ZCursor::new(data));
+    decoder.decode_headers().unwrap();
+    let mut raw = decoder.raw_output();
+    let mut first = allocate_raw_planes(&raw);
+    decode_raw_into_existing(&mut raw, &mut first).unwrap();
+    assert_raw_planes_match(&first, &expected, name, data.len());
+
+    let mut replay = allocate_raw_planes(&raw);
+    decode_raw_into_existing(&mut raw, &mut replay).unwrap();
+    assert_raw_planes_match(&replay, &expected, name, data.len());
+}
+
+fn assert_decode_raw_strided_replay_matches_oneshot(name: &str, data: &[u8]) {
+    let expected = decode_raw_oneshot(data);
+
+    let mut decoder = JpegDecoder::new(ZCursor::new(data));
+    decoder.decode_headers().unwrap();
+    let mut raw = decoder.raw_output();
+    let (mut first, strides) = allocate_raw_strided_planes(&raw);
+    decode_raw_strided_into_existing(&mut raw, &mut first, &strides).unwrap();
+    assert_raw_strided_planes_match_padded(&first, &strides, &expected, name, data, data.len());
+
+    let (mut replay, replay_strides) = allocate_raw_strided_planes(&raw);
+    assert_eq!(replay_strides, strides);
+    decode_raw_strided_into_existing(&mut raw, &mut replay, &replay_strides).unwrap();
+    assert_raw_strided_planes_match_padded(
+        &replay,
+        &replay_strides,
+        &expected,
+        name,
+        data,
+        data.len()
+    );
+}
+
 /// Feeding the entire file at once via decode_headers + decode_into must
 /// produce byte-identical output to decode() — no regressions.
 #[test]
@@ -242,6 +628,30 @@ fn decode_into_replay_after_success_matches_oneshot() {
     );
     assert_decode_into_replay_matches_oneshot(
         "progressive_replay",
+        include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg")
+    );
+}
+
+#[test]
+fn decode_raw_replay_after_success_matches_oneshot() {
+    assert_decode_raw_replay_matches_oneshot(
+        "baseline_raw_replay",
+        include_bytes!("../../../test-images/jpeg/synthetic_image.jpg")
+    );
+    assert_decode_raw_replay_matches_oneshot(
+        "progressive_raw_replay",
+        include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg")
+    );
+}
+
+#[test]
+fn decode_raw_strided_replay_after_success_matches_oneshot() {
+    assert_decode_raw_strided_replay_matches_oneshot(
+        "baseline_raw_strided_replay",
+        include_bytes!("../../../test-images/jpeg/fox410.jpg")
+    );
+    assert_decode_raw_strided_replay_matches_oneshot(
+        "progressive_raw_strided_replay",
         include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg")
     );
 }
@@ -1451,6 +1861,20 @@ fn progressive_repeated_dc_eof_falls_back_to_scan_boundary() {
 }
 
 #[test]
+fn raw_incremental_parity() {
+    assert_incremental_raw_decode_matches_oneshot(
+        "synthetic_image_raw",
+        include_bytes!("../../../test-images/jpeg/synthetic_image.jpg"),
+        37
+    );
+    assert_incremental_raw_decode_matches_oneshot(
+        "down_sampled_grayscale_prog_raw",
+        include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg"),
+        31
+    );
+}
+
+#[test]
 fn progressive_unsafe_scans_replay_from_scan_boundary() {
     let data = include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg");
     let expected = decode_oneshot(data);
@@ -1568,6 +1992,102 @@ fn progressive_arithmetic_restart_replays_dc_scan_boundary() {
 }
 
 #[test]
+fn raw_strided_incremental_parity() {
+    assert_incremental_raw_strided_decode_matches_oneshot(
+        "fox410_raw_strided",
+        include_bytes!("../../../test-images/jpeg/fox410.jpg"),
+        4096
+    );
+    assert_incremental_raw_strided_decode_matches_oneshot(
+        "down_sampled_grayscale_prog_raw_strided",
+        include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg"),
+        31
+    );
+}
+
+#[test]
+fn raw_pull_incremental_parity() {
+    assert_incremental_raw_pull_matches_oneshot(
+        "baseline_pull",
+        include_bytes!("../../../test-images/jpeg/synthetic_image.jpg"),
+        37
+    );
+    assert_incremental_raw_pull_matches_oneshot(
+        "progressive_pull",
+        include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg"),
+        31
+    );
+    assert_incremental_raw_pull_matches_oneshot(
+        "restart_pull",
+        include_bytes!("../../../test-images/jpeg/four_components.jpg"),
+        97
+    );
+    assert_incremental_raw_pull_matches_oneshot(
+        "multi_sos_pull",
+        include_bytes!("../../../test-images/jpeg/non_interleaved_420_64x64.jpg"),
+        31
+    );
+}
+
+#[test]
+fn raw_pull_checkpoint_failure_is_atomic() {
+    let data = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let calls = Rc::new(Cell::new(0usize));
+    let fail_on_call = Rc::new(Cell::new(0usize));
+    let cursor = PositionFailCursor {
+        inner: Cursor::new(data.as_slice()),
+        calls: Rc::clone(&calls),
+        fail_on_call: Rc::clone(&fail_on_call)
+    };
+    let mut decoder = JpegDecoder::new(cursor);
+    decoder.decode_headers().unwrap();
+    calls.set(0);
+    fail_on_call.set(2);
+
+    let mut raw = decoder.raw_output();
+    let layout = raw.layout().unwrap();
+    let count = raw.num_components().unwrap();
+    let strides: Vec<usize> = layout[..count].iter().map(|plane| plane.width).collect();
+    let mut storage: Vec<Vec<u8>> = layout[..count]
+        .iter()
+        .map(|plane| vec![0xCD; plane.width * plane.vertical_sampling_factor * 8])
+        .collect();
+    let mut refs: Vec<&mut [u8]> = storage.iter_mut().map(Vec::as_mut_slice).collect();
+    assert_eq!(
+        raw.decode_next_imcu_row(&mut refs, &strides).unwrap(),
+        RawImcuRowStatus::NeedMoreInput
+    );
+    assert!(storage.iter().flatten().all(|byte| *byte == 0xCD));
+
+    fail_on_call.set(0);
+    let mut retry_storage: Vec<Vec<u8>> = layout[..count]
+        .iter()
+        .map(|plane| vec![0; plane.width * plane.vertical_sampling_factor * 8])
+        .collect();
+    let mut retry_refs: Vec<&mut [u8]> =
+        retry_storage.iter_mut().map(Vec::as_mut_slice).collect();
+    assert!(matches!(
+        raw.decode_next_imcu_row(&mut retry_refs, &strides).unwrap(),
+        RawImcuRowStatus::RowReady { .. }
+    ));
+}
+
+#[test]
+#[cfg(feature = "arith")]
+fn arithmetic_raw_pull_incremental_parity() {
+    assert_incremental_raw_pull_matches_oneshot(
+        "arithmetic_restart_pull",
+        include_bytes!("../../../test-images/jpeg/arith/seq-restart.jpg"),
+        23
+    );
+    assert_incremental_raw_pull_matches_oneshot(
+        "arithmetic_progressive_pull",
+        include_bytes!("../../../test-images/jpeg/arith/prog.jpg"),
+        23
+    );
+}
+
+#[test]
 #[cfg(feature = "arith")]
 fn arithmetic_incremental_parity() {
     assert_incremental_decode_matrix(&[
@@ -1636,6 +2156,41 @@ fn arithmetic_restart_resume_uses_rst_checkpoint() {
         "retry should seek to first RST checkpoint at 857, got {seeks:?}"
     );
     assert_pixels_match(&out, &expected, "arith_seq_restart_checkpoint", data.len());
+}
+
+#[test]
+#[cfg(feature = "arith")]
+fn arithmetic_restart_raw_resume_uses_rst_checkpoint() {
+    let data = include_bytes!("../../../test-images/jpeg/arith/seq-restart.jpg");
+    let expected = decode_raw_oneshot(data);
+    let limit = Rc::new(Cell::new(874_usize));
+    let seek_log = Rc::new(RefCell::new(Vec::new()));
+    let cursor = GrowableCursor::with_seek_log(data, Rc::clone(&limit), Rc::clone(&seek_log));
+    let mut decoder = JpegDecoder::new(cursor);
+
+    decoder
+        .decode_headers()
+        .expect("headers should be visible before first raw RST retry");
+    let mut raw = decoder.raw_output();
+    let mut planes = allocate_raw_planes(&raw);
+    let err = decode_raw_into_existing(&mut raw, &mut planes)
+        .expect_err("truncated raw scan after first RST should be recoverable");
+    assert!(
+        err.is_recoverable_eof(),
+        "expected recoverable EOF, got {err:?}"
+    );
+
+    seek_log.borrow_mut().clear();
+    limit.set(data.len());
+    decode_raw_into_existing(&mut raw, &mut planes)
+        .expect("full input should resume raw decode from RST checkpoint");
+
+    let seeks = seek_log.borrow();
+    assert!(
+        seeks.contains(&857),
+        "raw retry should seek to first RST checkpoint at 857, got {seeks:?}"
+    );
+    assert_raw_planes_match(&planes, &expected, "arith_seq_restart_raw_checkpoint", data.len());
 }
 
 /// Sanity check: byte-by-byte incremental decode of a normal image (no
@@ -2365,6 +2920,124 @@ fn per_row_checkpoint_avoids_full_scan_replay() {
         "per-row checkpoint should resume past entropy_start ({entropy_start}), \
          but sought to {resume_pos} — indicates full scan replay instead of row resume"
     );
+}
+
+fn checkpointed_pixel_decoder<'a>(
+    data: &'a [u8], cutoff: usize, options: DecoderOptions
+) -> (JpegDecoder<GrowableCursor<'a>>, Rc<Cell<usize>>) {
+    let limit = Rc::new(Cell::new(cutoff));
+    let cursor = GrowableCursor::new(data, Rc::clone(&limit));
+    let mut decoder = JpegDecoder::new_with_options(cursor, options);
+    decoder.set_incremental_mode(true);
+    decoder.decode_headers().unwrap();
+    let mut output = vec![0; decoder.output_buffer_size().unwrap()];
+    for _ in 0..2 {
+        let error = decoder.decode_into(&mut output).unwrap_err();
+        assert!(error.is_recoverable_eof());
+    }
+    assert!(decoder.decoded_scanlines().unwrap_or(0) > 0);
+    (decoder, limit)
+}
+
+#[test]
+fn switching_checkpointed_pixel_decode_to_whole_raw_replays_from_start() {
+    let data = include_bytes!("../../../test-images/jpeg/sampling_factors.jpg");
+    let entropy_start = entropy_start(data);
+    let cutoff = entropy_start + (data.len() - entropy_start) * 60 / 100;
+    let expected = decode_raw_oneshot(data);
+    let (mut decoder, limit) =
+        checkpointed_pixel_decoder(data, cutoff, DecoderOptions::default());
+    limit.set(data.len());
+
+    let mut raw = decoder.raw_output();
+    let mut actual = allocate_raw_planes(&raw);
+    decode_raw_into_existing(&mut raw, &mut actual).unwrap();
+    assert_raw_planes_match(&actual, &expected, "pixel_to_whole_raw", data.len());
+}
+
+#[test]
+fn switching_checkpointed_pixel_decode_to_raw_pull_replays_from_start() {
+    let data = include_bytes!("../../../test-images/jpeg/sampling_factors.jpg");
+    let entropy_start = entropy_start(data);
+    let cutoff = entropy_start + (data.len() - entropy_start) * 60 / 100;
+    let expected = decode_raw_oneshot(data);
+    let (mut decoder, limit) =
+        checkpointed_pixel_decoder(data, cutoff, DecoderOptions::default());
+    limit.set(data.len());
+
+    let mut raw = decoder.raw_output();
+    let layout = raw.layout().unwrap();
+    let count = raw.num_components().unwrap();
+    let strides: Vec<_> = layout[..count].iter().map(|plane| plane.width).collect();
+    let mut storage: Vec<Vec<u8>> = layout[..count]
+        .iter()
+        .map(|plane| vec![0; plane.width * plane.vertical_sampling_factor * 8])
+        .collect();
+    let mut planes: Vec<&mut [u8]> = storage.iter_mut().map(Vec::as_mut_slice).collect();
+    let rows_written = match raw
+        .decode_next_imcu_row(&mut planes, &strides)
+        .unwrap()
+    {
+        RawImcuRowStatus::RowReady { rows_written } => rows_written,
+        _ => panic!("raw pull did not replay its first stripe")
+    };
+    for index in 0..count {
+        for row in 0..rows_written[index] {
+            assert_eq!(
+                &storage[index][row * strides[index]..(row + 1) * strides[index]],
+                &expected[index]
+                    [row * layout[index].stride..row * layout[index].stride + strides[index]]
+            );
+        }
+    }
+}
+
+#[test]
+fn changing_options_replays_pixel_output_and_invalidates_progress() {
+    let baseline = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let luma = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::Luma);
+    let expected = decode_oneshot(baseline);
+    let entropy_start = entropy_start(baseline);
+    let cutoff = entropy_start + (baseline.len() - entropy_start) * 60 / 100;
+    let (mut decoder, limit) = checkpointed_pixel_decoder(baseline, cutoff, luma);
+    limit.set(baseline.len());
+    decoder.set_options(DecoderOptions::default());
+    assert_eq!(decoder.decoded_output_bytes(), Some(0));
+    assert_eq!(decoder.decoded_scanlines(), Some(0));
+    let mut output = vec![0; expected.len()];
+    decoder.decode_into(&mut output).unwrap();
+    assert_eq!(output, expected);
+
+    let progressive =
+        include_bytes!("../../../test-images/jpeg/rebuilt_relax_fill_bytes_before_marker.jpg");
+    let scans = progressive_sos_scans(progressive);
+    let cutoff = scans[1].data_start + 1;
+    let limit = Rc::new(Cell::new(cutoff));
+    let cursor = GrowableCursor::new(progressive, Rc::clone(&limit));
+    let mut decoder = JpegDecoder::new_with_options(cursor, luma);
+    decoder.set_incremental_mode(true);
+    decoder.decode_headers().unwrap();
+    let mut preview = vec![0; decoder.output_buffer_size().unwrap()];
+    let error = decoder.decode_into(&mut preview).unwrap_err();
+    assert!(error.is_recoverable_eof());
+    let committed_scans = decoder.decoded_scans().unwrap();
+    assert!(committed_scans > 0);
+    assert!(decoder.decoded_preview_output_bytes().unwrap_or(0) > 0);
+
+    let rgba = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::RGBA);
+    decoder.set_options(rgba);
+    assert_eq!(decoder.decoded_output_bytes(), Some(0));
+    assert_eq!(decoder.decoded_scanlines(), Some(0));
+    assert_eq!(decoder.decoded_scans(), Some(committed_scans));
+    assert_eq!(decoder.decoded_preview_output_bytes(), Some(0));
+    assert_eq!(decoder.decoded_preview_scanlines(), Some(0));
+    limit.set(progressive.len());
+    let expected = JpegDecoder::new_with_options(ZCursor::new(progressive), rgba)
+        .decode()
+        .unwrap();
+    let mut output = vec![0; expected.len()];
+    decoder.decode_into(&mut output).unwrap();
+    assert_eq!(output, expected);
 }
 
 #[test]

@@ -49,8 +49,57 @@ use crate::upsampler::{
 /// Maximum components
 pub(crate) const MAX_COMPONENTS: usize = 4;
 
+/// DCT block side, in samples. JPEG always uses 8x8 blocks.
+pub(crate) const DCT_BLOCK_SIZE: usize = 8;
+
 /// Maximum image dimensions supported.
 pub(crate) const MAX_DIMENSIONS: usize = 1 << 27;
+
+/// Geometry of a single component plane for raw post-IDCT output.
+///
+/// Mirrors the padded buffer layout libjpeg-turbo's `jpeg_read_raw_data` expects:
+/// each component owns a plane sized to `stride * allocated_height` bytes,
+/// with both dimensions rounded up to DCT-block boundaries
+/// (`DCTSIZE = 8`). The logical `width`/`height` describe the meaningful
+/// sample area inside that buffer; trailing padding columns and rows
+/// contain implementation-defined data and should be ignored by the
+/// caller. The sampling-factor fields preserve the exact SOF values so
+/// callers do not need to infer subsampling from rounded plane dimensions.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct PlaneInfo {
+    /// Horizontal sampling factor from the component's SOF entry.
+    pub horizontal_sampling_factor: usize,
+    /// Vertical sampling factor from the component's SOF entry.
+    pub vertical_sampling_factor:   usize,
+    /// Logical component width in samples.
+    /// `ceil(image_width * h_samp / h_max)`.
+    pub width:                      usize,
+    /// Logical component height in samples.
+    /// `ceil(image_height * v_samp / v_max)`.
+    pub height:                     usize,
+    /// Allocated plane width (row stride) in bytes.
+    /// `ceil(width / 8) * 8`.
+    pub stride:                     usize,
+    /// Allocated plane height in rows.
+    /// `ceil(height / 8) * 8`.
+    pub allocated_height:           usize,
+    /// Required slice length for this plane: `stride * allocated_height`.
+    pub byte_size:                  usize
+}
+
+/// Round `n` up to the next multiple of `align` (which must be non-zero).
+/// Returns `None` on overflow.
+#[inline]
+fn round_up_pow2(n: usize, align: usize) -> Option<usize> {
+    debug_assert!(align != 0);
+    let rem = n % align;
+    if rem == 0 {
+        Some(n)
+    } else {
+        n.checked_add(align - rem)
+    }
+}
 
 /// Color conversion function that can convert YCbCr colorspace to RGB(A/X) for
 /// 16 values
@@ -354,6 +403,8 @@ pub struct JpegDecoder<T> {
     /// capacity. Safe first-DC scans also keep its contents so a later retry can
     /// resume from a fine checkpoint without committing partial scan data.
     pub(crate) progressive_scan_buffer: [Vec<i16>; MAX_COMPONENTS],
+    /// Reusable baseline upsampling scratch retained across pull calls.
+    pub(crate) upsampler_scratch: Vec<i16>,
     /// Number of progressive scans committed into `progressive_mcus_buffer`.
     pub(crate) progressive_completed_scans: usize,
     /// Number of committed progressive scans currently rendered as preview
@@ -398,7 +449,705 @@ pub struct JpegDecoder<T> {
     /// scan's entropy data. The MCU decode loop will intercept that marker
     /// and store the real height; if it never arrives, decoding returns an
     /// error.
-    pub(crate) expects_dnl: bool
+    pub(crate) expects_dnl: bool,
+    /// Sequential raw iMCU-row progress shared across borrowing sessions.
+    raw_pull_state: RawPullState
+}
+
+/// Output target for one MCU decode call.
+pub(crate) enum McuDecodeOutput<'planes, 'buf> {
+    Pixels(&'planes mut [u8]),
+    RawPlanes(RawPlanesSink<'planes, 'buf>)
+}
+
+impl McuDecodeOutput<'_, '_> {
+    pub(crate) const fn is_raw(&self) -> bool {
+        match self {
+            Self::Pixels(_) => false,
+            Self::RawPlanes(_) => true
+        }
+    }
+
+    pub(crate) fn pixels_mut(&mut self) -> Option<&mut [u8]> {
+        match self {
+            Self::Pixels(pixels) => Some(pixels),
+            Self::RawPlanes(_) => None
+        }
+    }
+
+    pub(crate) const fn requested_raw_stripe(&self) -> Option<usize> {
+        match self {
+            Self::RawPlanes(sink) => sink.requested_stripe,
+            Self::Pixels(_) => None
+        }
+    }
+
+    pub(crate) fn mark_raw_source_complete(&mut self) {
+        if let Self::RawPlanes(sink) = self {
+            sink.source_complete = true;
+        }
+    }
+}
+
+/// Caller-provided raw planar buffers for one decode call.
+pub(crate) struct RawPlanesSink<'planes, 'buf> {
+    /// Caller plane buffers, one per component.
+    pub(crate) planes:           &'planes mut [&'buf mut [u8]],
+    /// Total byte length of each caller buffer.
+    pub(crate) lengths:          [usize; MAX_COMPONENTS],
+    /// Bytes between successive destination rows (used for strided output).
+    pub(crate) target_strides:   [usize; MAX_COMPONENTS],
+    /// Maximum bytes to write per destination row.
+    pub(crate) target_widths:    [usize; MAX_COMPONENTS],
+    /// Number of destination rows per plane.
+    pub(crate) target_heights:   [usize; MAX_COMPONENTS],
+    /// Number of valid components.
+    pub(crate) n_components:     usize,
+    /// Pull mode requests exactly this sequential iMCU row.
+    pub(crate) requested_stripe: Option<usize>,
+    /// Logical rows copied for each component in pull mode.
+    pub(crate) rows_written:     [usize; MAX_COMPONENTS],
+    /// Whether a complete requested stripe was copied.
+    pub(crate) stripe_ready:     bool,
+    /// Whether entropy/coefficient production has completed.
+    pub(crate) source_complete:  bool
+}
+
+/// Result of requesting the next sequential raw iMCU row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RawImcuRowStatus {
+    /// One complete iMCU row was written to the caller's planes.
+    RowReady {
+        /// Logical rows written for each component in SOF declaration order.
+        /// Entries after [`RawDecodeSession::num_components`] are zero.
+        rows_written: [usize; MAX_COMPONENTS]
+    },
+    /// The next iMCU row could not be completed with the currently visible input.
+    NeedMoreInput,
+    /// All raw component rows have been emitted.
+    Complete
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RawPullPhase {
+    Start,
+    StreamingBaseline,
+    BufferedRows,
+    Complete
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RawPullOwner {
+    None,
+    Pull,
+    WholeImage
+}
+
+struct RawPullState {
+    owner:                    RawPullOwner,
+    phase:                    RawPullPhase,
+    next_stripe:              usize,
+    entropy_tables:           Option<EntropyTables>,
+    layout:                   Option<[PlaneInfo; MAX_COMPONENTS]>,
+    rows_per_stripe:          [usize; MAX_COMPONENTS],
+    buffered_source_complete: bool
+}
+
+struct RawPullTargets {
+    lengths:        [usize; MAX_COMPONENTS],
+    strides:        [usize; MAX_COMPONENTS],
+    widths:         [usize; MAX_COMPONENTS],
+    heights:        [usize; MAX_COMPONENTS]
+}
+
+impl Default for RawPullState {
+    fn default() -> Self {
+        Self {
+            owner:                    RawPullOwner::None,
+            phase:                    RawPullPhase::Start,
+            next_stripe:              0,
+            entropy_tables:           None,
+            layout:                   None,
+            rows_per_stripe:          [0; MAX_COMPONENTS],
+            buffered_source_complete: false
+        }
+    }
+}
+
+/// Exclusive borrowing session for whole-image raw component output.
+///
+/// Create a session with [`JpegDecoder::raw_output`] after decoding headers.
+/// While the session exists, its exclusive borrow prevents switching to pixel
+/// output or changing decoder options during a raw retry sequence. Entropy,
+/// MCU, checkpoint, and replay state remain owned by the borrowed decoder.
+///
+/// Unlike [`JpegDecoder::decode`] and [`JpegDecoder::decode_into`], raw output
+/// skips upsampling and color conversion and returns one post-IDCT plane per
+/// JPEG component. The configured output colorspace is therefore ignored.
+pub struct RawDecodeSession<'decoder, T> {
+    decoder: &'decoder mut JpegDecoder<T>,
+    previous_incremental_mode: bool,
+}
+
+impl<T> Drop for RawDecodeSession<'_, T> {
+    fn drop(&mut self) {
+        self.decoder.incremental_mode = self.previous_incremental_mode;
+    }
+}
+
+impl<T> RawDecodeSession<'_, T>
+where
+    T: ZByteReaderTrait
+{
+    /// Number of components in SOF declaration order.
+    ///
+    /// Returns `None` when headers have not been decoded yet.
+    #[must_use]
+    pub fn num_components(&self) -> Option<usize> {
+        self.decoder.raw_num_components()
+    }
+
+    /// Component selector bytes from the SOF marker, in declaration order.
+    ///
+    /// Common YCbCr files usually use `[1, 2, 3]`, while RGB files may use
+    /// `[b'R', b'G', b'B']`. Selectors are returned exactly as encoded so
+    /// callers can identify nonstandard component layouts.
+    ///
+    /// Returns `None` when headers have not been decoded yet or contain no
+    /// components.
+    #[must_use]
+    pub fn component_ids(&self) -> Option<Vec<u8>> {
+        self.decoder.raw_component_ids()
+    }
+
+    /// Per-component raw plane geometry and sampling metadata.
+    ///
+    /// Indices `0..num_components()` are populated in SOF declaration order;
+    /// trailing entries are [`PlaneInfo::default`]. The sampling-factor fields
+    /// preserve the exact SOF values, so callers can identify subsampling
+    /// without inferring it from rounded dimensions.
+    ///
+    /// ```text
+    /// width            = ceil(image_width  * h_samp / h_max)
+    /// height           = ceil(image_height * v_samp / v_max)
+    /// stride           = ceil(width  / 8) * 8
+    /// allocated_height = ceil(height / 8) * 8
+    /// byte_size        = stride * allocated_height
+    /// ```
+    ///
+    /// Returns `None` when headers have not been decoded or layout arithmetic
+    /// overflows `usize`.
+    #[must_use]
+    pub fn layout(&self) -> Option<[PlaneInfo; MAX_COMPONENTS]> {
+        self.decoder
+            .raw_pull_state
+            .layout
+            .or_else(|| self.decoder.raw_planar_layout())
+    }
+
+    /// Decode the next sequential raw iMCU row into caller-provided planes.
+    ///
+    /// Interleaved baseline images decode and deliver one iMCU row at a time.
+    /// Progressive and multi-SOS images must first buffer all coefficient data
+    /// needed for final samples; their rows are still pulled sequentially, but
+    /// compressed input consumption is not row-streaming.
+    ///
+    /// Each stride must be at least the corresponding logical plane width. For
+    /// a component that will return `rows` rows, its plane must contain at least
+    /// `(rows - 1) * stride + width` bytes, or zero bytes when `rows == 0`.
+    /// Padding is addressable only between logical rows; no padding is required
+    /// after the final row. The returned `rows_written` count identifies the
+    /// meaningful prefix; the final iMCU row is clipped to the logical component
+    /// height. Components that exhaust their logical height before other
+    /// components report zero rows on later calls.
+    ///
+    /// A recoverable input suspension returns [`RawImcuRowStatus::NeedMoreInput`]
+    /// and leaves caller planes untouched. Expose more input through the same
+    /// decoder stream, then retry with the same session and plane layout. The
+    /// caller cannot select a stripe index.
+    ///
+    /// Images whose SOF height is zero and whose line count is supplied later
+    /// by a DNL marker are currently rejected because the caller-visible plane
+    /// geometry is not known when the pull sequence begins.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use zune_core::bytestream::ZCursor;
+    /// use zune_jpeg::{JpegDecoder, RawImcuRowStatus};
+    ///
+    /// let data = std::fs::read("photo.jpg").unwrap();
+    /// let mut decoder = JpegDecoder::new(ZCursor::new(&data));
+    /// decoder.decode_headers().unwrap();
+    /// let mut raw = decoder.raw_output();
+    /// let layout = raw.layout().unwrap();
+    /// let count = raw.num_components().unwrap();
+    /// let strides: Vec<usize> = layout[..count]
+    ///     .iter()
+    ///     .map(|plane| plane.width)
+    ///     .collect();
+    ///
+    /// loop {
+    ///     let mut storage: Vec<Vec<u8>> = layout[..count]
+    ///         .iter()
+    ///         .map(|plane| vec![0; plane.width * plane.vertical_sampling_factor * 8])
+    ///         .collect();
+    ///     let mut planes: Vec<&mut [u8]> =
+    ///         storage.iter_mut().map(Vec::as_mut_slice).collect();
+    ///     match raw.decode_next_imcu_row(&mut planes, &strides).unwrap() {
+    ///         RawImcuRowStatus::RowReady { rows_written } => {
+    ///             // Consume `rows_written[index]` rows from each plane.
+    ///             let _ = rows_written;
+    ///         }
+    ///         RawImcuRowStatus::NeedMoreInput => break,
+    ///         RawImcuRowStatus::Complete => break,
+    ///         _ => unreachable!()
+    ///     }
+    /// }
+    /// ```
+    ///
+    /// # Errors
+    /// Returns [`DecodeErrors::Format`] for invalid plane counts or strides,
+    /// [`DecodeErrors::TooSmallOutput`] for an undersized plane, or a
+    /// non-recoverable decode error.
+    pub fn decode_next_imcu_row(
+        &mut self, planes: &mut [&mut [u8]], strides: &[usize]
+    ) -> Result<RawImcuRowStatus, DecodeErrors> {
+        self.decode_next_imcu_row_for(RawPullOwner::Pull, planes, strides)
+    }
+
+    fn decode_next_imcu_row_for(
+        &mut self, owner: RawPullOwner, planes: &mut [&mut [u8]], strides: &[usize]
+    ) -> Result<RawImcuRowStatus, DecodeErrors> {
+        if self.decoder.raw_pull_state.phase == RawPullPhase::Complete {
+            return Ok(RawImcuRowStatus::Complete);
+        }
+
+        let layout = self.pull_layout()?;
+        let n = self.decoder.components.len();
+        if self.decoder.expects_dnl {
+            return Err(DecodeErrors::FormatStatic(
+                "raw output does not support DNL images"
+            ));
+        }
+        if planes.len() != n || strides.len() != n {
+            return Err(DecodeErrors::Format(format!(
+                "raw iMCU-row output expected {n} plane(s) and stride(s), got {} plane(s) and {} stride(s)",
+                planes.len(),
+                strides.len()
+            )));
+        }
+
+        let total_stripes = self.decoder.raw_imcu_row_count(&layout, n);
+        if self.decoder.raw_pull_state.next_stripe >= total_stripes {
+            self.decoder.finish_raw_pull_source();
+            self.decoder.raw_pull_state.phase = RawPullPhase::Complete;
+            return Ok(RawImcuRowStatus::Complete);
+        }
+
+        let targets = self.pull_targets(planes, strides, &layout, n)?;
+        match self.decoder.raw_pull_state.owner {
+            RawPullOwner::None => self.decoder.raw_pull_state.owner = owner,
+            active if active == owner => {}
+            _ => {
+                return Err(DecodeErrors::FormatStatic(
+                    "cannot switch raw output API during an active decode sequence"
+                ))
+            }
+        }
+        let requested_stripe = self.decoder.raw_pull_state.next_stripe;
+        let raw_planes = RawPlanesSink {
+            planes,
+            lengths: targets.lengths,
+            target_strides: targets.strides,
+            target_widths: targets.widths,
+            target_heights: targets.heights,
+            n_components: n,
+            requested_stripe: Some(requested_stripe),
+            rows_written: [0; MAX_COMPONENTS],
+            stripe_ready: false,
+            source_complete: false
+        };
+        let mut output = McuDecodeOutput::RawPlanes(raw_planes);
+
+        if let Err(error) = self.decode_pull_phase(&mut output, &layout, n) {
+            if error.is_recoverable_eof() {
+                return Ok(RawImcuRowStatus::NeedMoreInput);
+            }
+            return Err(error);
+        }
+
+        let sink = match output {
+            McuDecodeOutput::RawPlanes(sink) => sink,
+            McuDecodeOutput::Pixels(_) => unreachable!()
+        };
+        if sink.source_complete {
+            self.decoder.raw_pull_state.buffered_source_complete = true;
+            self.decoder.finish_raw_pull_source();
+        }
+        if !sink.stripe_ready {
+            self.decoder.raw_pull_state.phase = RawPullPhase::Complete;
+            return Ok(RawImcuRowStatus::Complete);
+        }
+
+        self.decoder.raw_pull_state.next_stripe += 1;
+        for (index, rows) in sink.rows_written.iter().copied().enumerate().take(n) {
+            if rows != 0 && self.decoder.raw_pull_state.rows_per_stripe[index] == 0 {
+                self.decoder.raw_pull_state.rows_per_stripe[index] = rows;
+            }
+        }
+        if self.decoder.raw_pull_state.phase == RawPullPhase::StreamingBaseline
+            && self.decoder.is_arithmetic
+        {
+            self.decoder.raw_pull_state.entropy_tables = Some(self.decoder.entropy_tables.clone());
+        }
+        Ok(RawImcuRowStatus::RowReady {
+            rows_written: sink.rows_written
+        })
+    }
+
+    fn pull_layout(&mut self) -> Result<[PlaneInfo; MAX_COMPONENTS], DecodeErrors> {
+        if let Some(layout) = self.decoder.raw_pull_state.layout {
+            return Ok(layout);
+        }
+        let layout = self.decoder.raw_planar_layout().ok_or(
+            DecodeErrors::FormatStatic("raw layout unavailable before headers are decoded")
+        )?;
+        self.decoder.raw_pull_state.layout = Some(layout);
+        Ok(layout)
+    }
+
+    fn pull_targets(
+        &self, planes: &[&mut [u8]], strides: &[usize],
+        layout: &[PlaneInfo; MAX_COMPONENTS], n: usize
+    ) -> Result<RawPullTargets, DecodeErrors> {
+        let mut targets = RawPullTargets {
+            lengths: [0; MAX_COMPONENTS],
+            strides: [0; MAX_COMPONENTS],
+            widths: [0; MAX_COMPONENTS],
+            heights: [0; MAX_COMPONENTS]
+        };
+        for i in 0..n {
+            if strides[i] < layout[i].width {
+                return Err(DecodeErrors::Format(format!(
+                    "stride[{i}] = {} is smaller than logical width {}",
+                    strides[i], layout[i].width
+                )));
+            }
+            let configured_rows = self.decoder.raw_pull_state.rows_per_stripe[i];
+            let stripe_rows = if configured_rows == 0 {
+                layout[i].vertical_sampling_factor * DCT_BLOCK_SIZE
+            } else {
+                configured_rows
+            };
+            let row_start = self.decoder.raw_pull_state.next_stripe * stripe_rows;
+            let rows = layout[i].height.saturating_sub(row_start).min(stripe_rows);
+            let need = if rows == 0 {
+                0
+            } else {
+                (rows - 1)
+                    .checked_mul(strides[i])
+                    .and_then(|offset| offset.checked_add(layout[i].width))
+                    .ok_or(DecodeErrors::FormatStatic(
+                        "raw iMCU-row plane size overflow",
+                    ))?
+            };
+            if planes[i].len() < need {
+                return Err(DecodeErrors::TooSmallOutput(need, planes[i].len()));
+            }
+            targets.lengths[i] = planes[i].len();
+            targets.strides[i] = strides[i];
+            targets.widths[i] = layout[i].width;
+            targets.heights[i] = rows;
+        }
+        Ok(targets)
+    }
+
+    fn decode_pull_phase(
+        &mut self, output: &mut McuDecodeOutput<'_, '_>,
+        layout: &[PlaneInfo; MAX_COMPONENTS], n: usize
+    ) -> Result<(), DecodeErrors> {
+        match self.decoder.raw_pull_state.phase {
+            RawPullPhase::Start => self.start_pull(output, layout, n),
+            RawPullPhase::StreamingBaseline => {
+                self.prepare_pull_scan()?;
+                #[cfg(feature = "arith")]
+                self.restore_arithmetic_pull_context()?;
+                self.decoder.decode_mcu_output(output)
+            }
+            RawPullPhase::BufferedRows => {
+                if self.decoder.raw_pull_state.buffered_source_complete {
+                    self.decoder.render_buffered_raw_stripe(output)
+                } else {
+                    self.prepare_pull_scan()?;
+                    self.decode_buffered_source_and_render(output, layout, n)
+                }
+            }
+            RawPullPhase::Complete => unreachable!()
+        }
+    }
+
+    fn start_pull(
+        &mut self, output: &mut McuDecodeOutput<'_, '_>,
+        layout: &[PlaneInfo; MAX_COMPONENTS], n: usize
+    ) -> Result<(), DecodeErrors> {
+        self.prepare_pull_scan()?;
+        let buffered = self.decoder.is_progressive
+            || usize::from(self.decoder.num_scans) != self.decoder.components.len();
+        self.decoder.raw_pull_state.phase = if buffered {
+            RawPullPhase::BufferedRows
+        } else {
+            RawPullPhase::StreamingBaseline
+        };
+        if buffered {
+            self.decode_buffered_source_and_render(output, layout, n)
+        } else {
+            self.decoder.decode_mcu_output(output)
+        }
+    }
+
+    fn prepare_pull_scan(&mut self) -> Result<(), DecodeErrors> {
+        self.decoder.prepare_for_scan_decode()?;
+        self.decoder.mcu_checkpoints_enabled = true;
+        Ok(())
+    }
+
+    fn decode_buffered_source_and_render(
+        &mut self, output: &mut McuDecodeOutput<'_, '_>,
+        layout: &[PlaneInfo; MAX_COMPONENTS], n: usize
+    ) -> Result<(), DecodeErrors> {
+        let stripe = self.decoder.raw_pull_state.next_stripe;
+        self.decoder.decode_buffered_raw_source(stripe, layout, n)?;
+        self.decoder.raw_pull_state.buffered_source_complete = true;
+        self.decoder.render_buffered_raw_stripe(output)
+    }
+
+    #[cfg(feature = "arith")]
+    fn restore_arithmetic_pull_context(&mut self) -> Result<(), DecodeErrors> {
+        if !self.decoder.is_arithmetic {
+            return Ok(());
+        }
+        let resumes_completed_row = match self.decoder.scan_checkpoint() {
+            Some(checkpoint) => matches!(
+                checkpoint.bitstream_state,
+                BitstreamStateSnapshot::Arithmetic(_)
+            ),
+            None => false
+        };
+        if resumes_completed_row {
+            let tables = self
+                .decoder
+                .raw_pull_state
+                .entropy_tables
+                .as_ref()
+                .ok_or(DecodeErrors::FormatStatic(
+                    "missing arithmetic contexts for raw iMCU-row resume"
+                ))?;
+            self.decoder.entropy_tables = tables.clone();
+        }
+        Ok(())
+    }
+
+    /// Decode the complete image into DCT-block-padded component planes.
+    ///
+    /// Plane contents and geometry are compatible with libjpeg-turbo raw
+    /// output. This whole-image convenience method is not operationally
+    /// equivalent to one call to `jpeg_read_raw_data`, which returns one iMCU
+    /// row at a time.
+    ///
+    /// Supply one mutable plane per component in SOF declaration order. Each
+    /// plane must contain at least the corresponding [`PlaneInfo::byte_size`]
+    /// bytes from [`Self::layout`]. The configured output colorspace is
+    /// ignored. Samples within each plane's logical `width * height` area are
+    /// meaningful; trailing DCT padding is implementation-defined.
+    ///
+    /// On a recoverable EOF, call this method again on the same session after
+    /// exposing more input. Successful calls can also be replayed and produce
+    /// bit-identical planes.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use zune_core::bytestream::ZCursor;
+    /// use zune_jpeg::JpegDecoder;
+    ///
+    /// let data = std::fs::read("photo.jpg").unwrap();
+    /// let mut decoder = JpegDecoder::new(ZCursor::new(&data));
+    /// decoder.decode_headers().unwrap();
+    /// let mut raw = decoder.raw_output();
+    /// let layout = raw.layout().unwrap();
+    /// let count = raw.num_components().unwrap();
+    /// let mut buffers: Vec<Vec<u8>> = (0..count)
+    ///     .map(|index| vec![0; layout[index].byte_size])
+    ///     .collect();
+    /// let mut planes: Vec<&mut [u8]> =
+    ///     buffers.iter_mut().map(Vec::as_mut_slice).collect();
+    /// raw.decode_into(&mut planes).unwrap();
+    /// ```
+    ///
+    /// # Errors
+    /// Returns [`DecodeErrors::TooSmallOutput`] for an undersized plane,
+    /// [`DecodeErrors::Format`] for the wrong plane count, or an error from
+    /// the underlying decode pipeline.
+    pub fn decode_into(&mut self, planes: &mut [&mut [u8]]) -> Result<(), DecodeErrors> {
+        if self.decoder.expects_dnl {
+            return Err(DecodeErrors::FormatStatic(
+                "raw output does not support DNL images"
+            ));
+        }
+        if self.decoder.raw_pull_state.phase == RawPullPhase::Complete {
+            self.decoder.raw_pull_state = RawPullState::default();
+        }
+        let layout = self.layout().ok_or(DecodeErrors::FormatStatic(
+            "raw layout unavailable before headers are decoded"
+        ))?;
+        let count = self.num_components().ok_or(DecodeErrors::FormatStatic(
+            "raw components unavailable before headers are decoded"
+        ))?;
+        if planes.len() != count {
+            return Err(DecodeErrors::Format(format!(
+                "RawDecodeSession::decode_into expected {count} plane buffer(s), got {}",
+                planes.len()
+            )));
+        }
+        for (index, plane) in planes.iter().enumerate() {
+            if plane.len() < layout[index].byte_size {
+                return Err(DecodeErrors::TooSmallOutput(
+                    layout[index].byte_size,
+                    plane.len()
+                ));
+            }
+        }
+        let strides: Vec<usize> = layout[..count].iter().map(|plane| plane.stride).collect();
+        self.decode_whole_with_strides(planes, &strides, &layout)
+    }
+
+    /// Decode the complete image into component planes with caller row strides.
+    ///
+    /// Logical plane contents and geometry are compatible with libjpeg-turbo
+    /// raw output. This whole-image convenience method is not operationally
+    /// equivalent to one call to `jpeg_read_raw_data`, which returns one iMCU
+    /// row at a time. Only each plane's logical `width * height` area is
+    /// written; stride padding is left untouched.
+    ///
+    /// Supply one mutable plane and stride per component in SOF declaration
+    /// order. Each stride must be at least the corresponding logical
+    /// [`PlaneInfo::width`], and each plane must contain at least
+    /// `stride * PlaneInfo::height` bytes.
+    ///
+    /// On a recoverable EOF, call this method again on the same session after
+    /// exposing more input. Successful calls can also be replayed and produce
+    /// bit-identical logical samples.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use zune_core::bytestream::ZCursor;
+    /// use zune_jpeg::JpegDecoder;
+    ///
+    /// let data = std::fs::read("photo.jpg").unwrap();
+    /// let mut decoder = JpegDecoder::new(ZCursor::new(&data));
+    /// decoder.decode_headers().unwrap();
+    /// let mut raw = decoder.raw_output();
+    /// let layout = raw.layout().unwrap();
+    /// let count = raw.num_components().unwrap();
+    /// let strides: Vec<usize> = (0..count)
+    ///     .map(|index| layout[index].width.div_ceil(64) * 64)
+    ///     .collect();
+    /// let mut buffers: Vec<Vec<u8>> = (0..count)
+    ///     .map(|index| vec![0; strides[index] * layout[index].height])
+    ///     .collect();
+    /// let mut planes: Vec<&mut [u8]> =
+    ///     buffers.iter_mut().map(Vec::as_mut_slice).collect();
+    /// raw.decode_into_strided(&mut planes, &strides).unwrap();
+    /// ```
+    ///
+    /// # Errors
+    /// Returns [`DecodeErrors::TooSmallOutput`] for an undersized plane,
+    /// [`DecodeErrors::Format`] for invalid plane counts or strides, or an
+    /// error from the underlying decode pipeline.
+    pub fn decode_into_strided(
+        &mut self, planes: &mut [&mut [u8]], strides: &[usize]
+    ) -> Result<(), DecodeErrors> {
+        if self.decoder.expects_dnl {
+            return Err(DecodeErrors::FormatStatic(
+                "raw output does not support DNL images"
+            ));
+        }
+        if self.decoder.raw_pull_state.phase == RawPullPhase::Complete {
+            self.decoder.raw_pull_state = RawPullState::default();
+        }
+        let layout = self.layout().ok_or(DecodeErrors::FormatStatic(
+            "raw layout unavailable before headers are decoded"
+        ))?;
+        let count = self.num_components().ok_or(DecodeErrors::FormatStatic(
+            "raw components unavailable before headers are decoded"
+        ))?;
+        if planes.len() != count || strides.len() != count {
+            return Err(DecodeErrors::Format(format!(
+                "RawDecodeSession::decode_into_strided expected {count} plane(s) and stride(s), got {} plane(s) and {} stride(s)",
+                planes.len(),
+                strides.len()
+            )));
+        }
+        for index in 0..count {
+            if strides[index] < layout[index].width {
+                return Err(DecodeErrors::Format(format!(
+                    "stride[{index}] = {} is smaller than logical width {}",
+                    strides[index], layout[index].width
+                )));
+            }
+            let need = strides[index]
+                .checked_mul(layout[index].height)
+                .ok_or(DecodeErrors::FormatStatic("plane size overflow"))?;
+            if planes[index].len() < need {
+                return Err(DecodeErrors::TooSmallOutput(need, planes[index].len()));
+            }
+        }
+        self.decode_whole_with_strides(planes, strides, &layout)
+    }
+
+    fn decode_whole_with_strides(
+        &mut self, planes: &mut [&mut [u8]], strides: &[usize],
+        layout: &[PlaneInfo; MAX_COMPONENTS]
+    ) -> Result<(), DecodeErrors> {
+        let count = planes.len();
+        loop {
+            let stripe = self.decoder.raw_pull_state.next_stripe;
+            if self.decoder.raw_pull_state.phase == RawPullPhase::Complete {
+                self.decoder.finish_raw_pull_source();
+                return Ok(());
+            }
+            let mut stripe_planes: Vec<&mut [u8]> = planes
+                .iter_mut()
+                .enumerate()
+                .map(|(index, plane)| {
+                    let configured_rows = self.decoder.raw_pull_state.rows_per_stripe[index];
+                    let stripe_rows = if configured_rows == 0 {
+                        layout[index].vertical_sampling_factor * DCT_BLOCK_SIZE
+                    } else {
+                        configured_rows
+                    };
+                    let row_start = stripe * stripe_rows;
+                    let rows = layout[index]
+                        .height
+                        .saturating_sub(row_start)
+                        .min(stripe_rows);
+                    let start = (row_start * strides[index]).min(plane.len());
+                    let end = start + rows * strides[index];
+                    &mut plane[start..end]
+                })
+                .collect();
+
+            match self.decode_next_imcu_row_for(
+                RawPullOwner::WholeImage,
+                &mut stripe_planes,
+                &strides[..count]
+            )? {
+                RawImcuRowStatus::RowReady { .. } => {}
+                RawImcuRowStatus::NeedMoreInput => return Err(DecodeErrors::ExhaustedData),
+                RawImcuRowStatus::Complete => return Ok(())
+            }
+        }
+    }
 }
 
 impl<T> JpegDecoder<T>
@@ -628,6 +1377,14 @@ where
         }
     }
 
+    fn clear_scan_checkpoints(&mut self) {
+        if let Some(state) = self.scan_state.as_deref_mut() {
+            state.scan_checkpoint = None;
+            state.progressive_checkpoint = None;
+            state.progressive_fine_checkpoint = None;
+        }
+    }
+
     // Match output colorspace; we only care for ycbcr to rgb/rgba here, in
     // case one is using another colorspace may god help you.
     fn set_color_convert_from_options(&mut self) {
@@ -712,11 +1469,13 @@ where
             scan_decode_attempted:       false,
             progressive_mcus_buffer:     core::array::from_fn(|_| Vec::new()),
             progressive_scan_buffer: core::array::from_fn(|_| Vec::new()),
+            upsampler_scratch: Vec::new(),
             progressive_completed_scans: 0,
             progressive_displayed_scans: 0,
             progressive_render_incomplete: false,
             marker_body_scratch:         Vec::new(),
-            expects_dnl:                 false
+            expects_dnl:                 false,
+            raw_pull_state:              RawPullState::default()
         }
     }
     /// Decode a buffer already in memory
@@ -727,6 +1486,7 @@ where
     /// # Errors
     /// See DecodeErrors for an explanation
     pub fn decode(&mut self) -> Result<Vec<u8>, DecodeErrors> {
+        self.abort_raw_pull_sequence();
         self.decode_headers()?;
         self.ensure_supported_encoding()?;
 
@@ -933,6 +1693,141 @@ where
         Some((decoded_output_bytes / row_stride).min(usize::from(self.height())))
     }
 
+    /// Begin an exclusive raw component-output session.
+    ///
+    /// Decode headers first when the caller needs to query
+    /// [`RawDecodeSession::layout`] or component metadata before allocating
+    /// output planes. The session borrows this decoder mutably, preventing
+    /// pixel output or option changes until the session is dropped.
+    pub fn raw_output(&mut self) -> RawDecodeSession<'_, T> {
+        if self.raw_pull_state.phase == RawPullPhase::Complete {
+            self.raw_pull_state = RawPullState::default();
+        }
+        if self.raw_pull_state.owner == RawPullOwner::None {
+            self.clear_scan_checkpoints();
+        }
+        let previous_incremental_mode = self.incremental_mode;
+        self.incremental_mode = true;
+        RawDecodeSession {
+            decoder: self,
+            previous_incremental_mode,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn raw_buffer_capacities(
+        &self
+    ) -> ([usize; MAX_COMPONENTS], [usize; MAX_COMPONENTS]) {
+        (
+            core::array::from_fn(|index| {
+                self.components
+                    .get(index)
+                    .map_or(0, |component| component.raw_coeff.capacity())
+            }),
+            core::array::from_fn(|index| self.progressive_mcus_buffer[index].capacity())
+        )
+    }
+
+    /// Number of components present in the JPEG scan (1..=4).
+    ///
+    /// Valid only after [`decode_headers`](Self::decode_headers).
+    ///
+    /// # Returns
+    /// - `Some(n)`: number of components in the input scan
+    /// - `None`: headers have not been decoded yet
+    #[must_use]
+    fn raw_num_components(&self) -> Option<usize> {
+        if self.headers_decoded {
+            Some(self.components.len())
+        } else {
+            None
+        }
+    }
+
+    /// Per-component plane geometry for raw planar output.
+    ///
+    /// Returns one [`PlaneInfo`] per component in declaration order
+    /// (Y, Cb, Cr for YCbCr; Y for grayscale; C, M, Y, K for CMYK; etc.).
+    /// Indices `0..num_components()` are populated; trailing entries are
+    /// the default zero-sized [`PlaneInfo`].
+    /// [`PlaneInfo::horizontal_sampling_factor`] and
+    /// [`PlaneInfo::vertical_sampling_factor`] expose each component's exact
+    /// SOF sampling factors.
+    ///
+    /// Plane dimensions are computed using the same rules as libjpeg-turbo's
+    /// `jpeg_read_raw_data`:
+    ///
+    /// ```text
+    /// comp_width       = ceil(image_width  * h_samp / h_max)
+    /// comp_height      = ceil(image_height * v_samp / v_max)
+    /// stride           = ceil(comp_width  / 8) * 8
+    /// allocated_height = ceil(comp_height / 8) * 8
+    /// byte_size        = stride * allocated_height
+    /// ```
+    ///
+    /// Valid only after [`decode_headers`](Self::decode_headers).
+    ///
+    /// # Returns
+    /// - `Some([PlaneInfo; MAX_COMPONENTS])`: per-component layout
+    /// - `None`: headers have not been decoded yet, or layout overflows `usize`
+    #[must_use]
+    fn raw_planar_layout(&self) -> Option<[PlaneInfo; MAX_COMPONENTS]> {
+        if !self.headers_decoded || self.components.is_empty() {
+            return None;
+        }
+        let img_w = usize::from(self.width());
+        let img_h = usize::from(self.height());
+        // `self.h_max` / `self.v_max` aren't populated until `decode()` runs
+        // `setup_component_params`, so derive the maxima directly from the
+        // parsed component list (which is available right after
+        // `decode_headers`).
+        let mut h_max = 1usize;
+        let mut v_max = 1usize;
+        for comp in &self.components {
+            if comp.horizontal_sample > h_max {
+                h_max = comp.horizontal_sample;
+            }
+            if comp.vertical_sample > v_max {
+                v_max = comp.vertical_sample;
+            }
+        }
+        let mut out = [PlaneInfo::default(); MAX_COMPONENTS];
+        for (slot, comp) in out.iter_mut().zip(self.components.iter()) {
+            let comp_w = img_w.checked_mul(comp.horizontal_sample)?.div_ceil(h_max);
+            let comp_h = img_h.checked_mul(comp.vertical_sample)?.div_ceil(v_max);
+            let stride = round_up_pow2(comp_w, DCT_BLOCK_SIZE)?;
+            let allocated_height = round_up_pow2(comp_h, DCT_BLOCK_SIZE)?;
+            let byte_size = stride.checked_mul(allocated_height)?;
+            *slot = PlaneInfo {
+                horizontal_sampling_factor: comp.horizontal_sample,
+                vertical_sampling_factor: comp.vertical_sample,
+                width: comp_w,
+                height: comp_h,
+                stride,
+                allocated_height,
+                byte_size
+            };
+        }
+        Some(out)
+    }
+
+    fn raw_imcu_row_count(&self, layout: &[PlaneInfo; MAX_COMPONENTS], n: usize) -> usize {
+        layout[..n]
+            .iter()
+            .enumerate()
+            .map(|(index, plane)| {
+                let configured_rows = self.raw_pull_state.rows_per_stripe[index];
+                let rows = if configured_rows == 0 {
+                    plane.vertical_sampling_factor * DCT_BLOCK_SIZE
+                } else {
+                    configured_rows
+                };
+                plane.height.div_ceil(rows)
+            })
+            .max()
+            .unwrap_or(0)
+    }
+
     /// Get an immutable reference to the decoder options
     /// for the decoder instance
     ///
@@ -1057,7 +1952,16 @@ where
     }
 
     pub fn set_options(&mut self, options: DecoderOptions) {
+        self.abort_raw_pull_sequence();
+        self.clear_scan_checkpoints();
         self.options = options;
+        self.coeff = 1;
+        self.pixels_decoded = 0;
+        self.progressive_displayed_scans = 0;
+        self.set_color_convert_from_options();
+        self.idct_func = choose_idct_func(&self.options);
+        self.idct_4x4_func = choose_idct_4x4_func(&self.options);
+        self.idct_1x1_func = choose_idct_1x1_func(&self.options);
     }
     #[allow(clippy::cast_possible_truncation)]
     fn reassemble_extended_xmp(&mut self) {
@@ -1689,7 +2593,7 @@ where
     ///
     ///
     #[allow(clippy::too_many_lines)]
-    pub fn decode_into(&mut self, out: &mut [u8]) -> Result<(), DecodeErrors> {
+    fn prepare_for_scan_decode(&mut self) -> Result<(), DecodeErrors> {
         // Pull the scan-resume state out into owned locals so the restore
         // below can freely mutate `self`. When headers haven't completed
         // yet, `scan_plan` is `None` and we just run header decoding below.
@@ -1890,17 +2794,6 @@ where
 
         self.ensure_supported_encoding()?;
 
-        let expected_size = self.output_buffer_size().unwrap();
-
-        if out.len() < expected_size {
-            // too small of a size
-            return Err(DecodeErrors::TooSmallOutput(expected_size, out.len()));
-        }
-
-        // ensure we don't touch anyone else's scratch space
-        let out_len = core::cmp::min(out.len(), expected_size);
-        let out = &mut out[0..out_len];
-
         // By default, enable per-row checkpointing only after a previous
         // scan decode attempt has run. Incremental mode opts into the same
         // checkpoints on the first scan attempt so a streaming caller avoids
@@ -1915,25 +2808,13 @@ where
         }
         self.scan_decode_attempted = true;
 
-        let result: Result<(), DecodeErrors>;
-        if self.is_arithmetic {
-            #[cfg(feature = "arith")]
-            {
-                result = if self.is_progressive {
-                    self.decode_mcu_ycbcr_progressive::<BitStreamArithmetic>(out)
-                } else {
-                    self.decode_mcu_ycbcr_baseline::<BitStreamArithmetic>(out)
-                };
-            }
-            #[cfg(not(feature = "arith"))]
-            unreachable!();
-        } else if self.is_progressive {
-            result = self.decode_mcu_ycbcr_progressive::<BitStreamHuffman>(out);
-        } else {
-            result = self.decode_mcu_ycbcr_baseline::<BitStreamHuffman>(out);
-        }
+        Ok(())
+    }
 
-        match result {
+    fn decode_mcu_output_with_success_cleanup(
+        &mut self, output: &mut McuDecodeOutput<'_, '_>
+    ) -> Result<(), DecodeErrors> {
+        match self.decode_mcu_output(output) {
             Ok(()) => {
                 // Drop the scan checkpoint so a post-success replay starts
                 // from scan-start with zeroed DC predictors instead of
@@ -1946,7 +2827,9 @@ where
                     state.scan_checkpoint = None;
                     state.progressive_checkpoint = None;
                 }
-                self.pixels_decoded = expected_size;
+                if let Some(pixels) = output.pixels_mut() {
+                    self.pixels_decoded = pixels.len();
+                }
                 if self.is_progressive {
                     self.progressive_displayed_scans = self.progressive_completed_scans;
                 }
@@ -1954,6 +2837,206 @@ where
             }
             Err(e) => Err(e)
         }
+    }
+
+    pub fn decode_into(&mut self, out: &mut [u8]) -> Result<(), DecodeErrors> {
+        self.abort_raw_pull_sequence();
+        self.prepare_for_scan_decode()?;
+
+        let expected_size = self.output_buffer_size().unwrap();
+
+        if out.len() < expected_size {
+            // too small of a size
+            return Err(DecodeErrors::TooSmallOutput(expected_size, out.len()));
+        }
+
+        // ensure we don't touch anyone else's scratch space
+        let out_len = core::cmp::min(out.len(), expected_size);
+        let out = &mut out[0..out_len];
+
+        let mut output = McuDecodeOutput::Pixels(out);
+        self.decode_mcu_output_with_success_cleanup(&mut output)
+    }
+
+    fn decode_mcu_output(
+        &mut self, output: &mut McuDecodeOutput<'_, '_>
+    ) -> Result<(), DecodeErrors> {
+        if self.is_arithmetic {
+            #[cfg(feature = "arith")]
+            {
+                if self.is_progressive {
+                    self.decode_mcu_ycbcr_progressive::<BitStreamArithmetic>(output)
+                } else {
+                    self.decode_mcu_ycbcr_baseline::<BitStreamArithmetic>(output)
+                }
+            }
+            #[cfg(not(feature = "arith"))]
+            unreachable!();
+        } else if self.is_progressive {
+            self.decode_mcu_ycbcr_progressive::<BitStreamHuffman>(output)
+        } else {
+            self.decode_mcu_ycbcr_baseline::<BitStreamHuffman>(output)
+        }
+    }
+
+    fn render_buffered_raw_stripe(
+        &mut self, output: &mut McuDecodeOutput<'_, '_>
+    ) -> Result<(), DecodeErrors> {
+        if self.is_progressive {
+            self.render_buffered_progressive_raw_stripe(output)
+        } else {
+            self.render_buffered_baseline_raw_stripe(output)
+        }
+    }
+
+    fn decode_buffered_raw_source(
+        &mut self, requested_stripe: usize, layout: &[PlaneInfo; MAX_COMPONENTS], n: usize
+    ) -> Result<(), DecodeErrors> {
+        let mut buffers: Vec<Vec<u8>> = layout[..n]
+            .iter()
+            .map(|plane| {
+                let rows = plane.vertical_sampling_factor * DCT_BLOCK_SIZE;
+                vec![0; plane.width * rows]
+            })
+            .collect();
+        let mut planes: Vec<&mut [u8]> = buffers.iter_mut().map(Vec::as_mut_slice).collect();
+        let mut lengths = [0usize; MAX_COMPONENTS];
+        let mut target_strides = [0usize; MAX_COMPONENTS];
+        let mut target_widths = [0usize; MAX_COMPONENTS];
+        let mut target_heights = [0usize; MAX_COMPONENTS];
+        for index in 0..n {
+            lengths[index] = planes[index].len();
+            target_strides[index] = layout[index].width;
+            target_widths[index] = layout[index].width;
+            target_heights[index] = layout[index].vertical_sampling_factor * DCT_BLOCK_SIZE;
+        }
+        let sink = RawPlanesSink {
+            planes: &mut planes,
+            lengths,
+            target_strides,
+            target_widths,
+            target_heights,
+            n_components: n,
+            requested_stripe: Some(requested_stripe),
+            rows_written: [0; MAX_COMPONENTS],
+            stripe_ready: false,
+            source_complete: false
+        };
+        let mut output = McuDecodeOutput::RawPlanes(sink);
+        self.decode_mcu_output(&mut output)
+    }
+
+    fn finish_raw_pull_source(&mut self) {
+        self.clear_scan_checkpoints();
+        if self.is_progressive {
+            self.progressive_displayed_scans = self.progressive_completed_scans;
+        }
+    }
+
+    fn abort_raw_pull_sequence(&mut self) {
+        if self.raw_pull_state.owner == RawPullOwner::None {
+            return;
+        }
+        self.raw_pull_state = RawPullState::default();
+        self.clear_scan_checkpoints();
+    }
+
+    fn raw_component_ids(&self) -> Option<Vec<u8>> {
+        if !self.headers_decoded || self.components.is_empty() {
+            return None;
+        }
+        Some(self.components.iter().map(|component| component.id).collect())
+    }
+
+    /// Copy one MCU stripe (`mcu_stripe_index`) of post-IDCT samples from
+    /// each component's `raw_coeff` into the caller-provided plane buffers.
+    ///
+    /// Called from the baseline / progressive paths in place of
+    /// `post_process()` when decoding raw planes.
+    ///
+    /// The IDCT outputs are already clamped to `[0, 255]` so the `i16 -> u8`
+    /// truncation here is exact.
+    pub(crate) fn copy_raw_planes_for_mcu_stripe(
+        &self, mcu_stripe_index: usize, sink: &mut RawPlanesSink<'_, '_>
+    ) -> Result<(), DecodeErrors> {
+        if let Some(requested_stripe) = sink.requested_stripe {
+            if requested_stripe != mcu_stripe_index {
+                return Err(DecodeErrors::FormatStatic(
+                    "raw iMCU-row output advanced out of sequence"
+                ));
+            }
+        }
+
+        for (idx, comp) in self.components.iter().enumerate() {
+            if idx >= sink.n_components {
+                break;
+            }
+            let target_stride = sink.target_strides[idx];
+            let target_width = sink.target_widths[idx];
+            let target_height = sink.target_heights[idx];
+
+            let stripe_rows = comp.vertical_sample * DCT_BLOCK_SIZE;
+            let source_row_start = mcu_stripe_index * stripe_rows;
+            let row_start = if sink.requested_stripe.is_some() { 0 } else { source_row_start };
+            // Clip rows to the plane height.
+            if row_start >= target_height {
+                continue;
+            }
+            let src_stride = comp.width_stride;
+            let available_source_rows = comp.raw_coeff.len() / src_stride;
+            let logical_rows = if let Some(requested_stripe) = sink.requested_stripe {
+                if self.expects_dnl {
+                    target_height
+                } else {
+                    self.raw_planar_layout().map_or(target_height, |layout| {
+                        layout[idx]
+                            .height
+                            .saturating_sub(requested_stripe * available_source_rows)
+                            .min(target_height)
+                    })
+                }
+            } else {
+                target_height - row_start
+            };
+            let rows_to_copy = if sink.requested_stripe.is_some() {
+                core::cmp::min(logical_rows, available_source_rows)
+            } else {
+                core::cmp::min(
+                    core::cmp::min(stripe_rows, target_height - row_start),
+                    available_source_rows
+                )
+            };
+            sink.rows_written[idx] = rows_to_copy;
+
+            let copy_w = core::cmp::min(src_stride, core::cmp::min(target_width, target_stride));
+            let len = sink.lengths[idx];
+
+            for r in 0..rows_to_copy {
+                let src_row_start = r * src_stride;
+                let src_row_end = src_row_start + copy_w;
+                if src_row_end > comp.raw_coeff.len() {
+                    return Err(DecodeErrors::FormatStatic(
+                        "raw_coeff shorter than expected for MCU stripe"
+                    ));
+                }
+                let src = &comp.raw_coeff[src_row_start..src_row_end];
+
+                let dst_offset = (row_start + r) * target_stride;
+                let dst_end = dst_offset + copy_w;
+                if dst_end > len {
+                    return Err(DecodeErrors::TooSmallOutput(dst_end, len));
+                }
+                let dst = &mut sink.planes[idx][dst_offset..dst_end];
+                for (sample, dst) in src.iter().zip(dst.iter_mut()) {
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                    {
+                        *dst = *sample as u8;
+                    }
+                }
+            }
+        }
+        sink.stripe_ready = true;
+        Ok(())
     }
 
     /// Read only headers from a jpeg image buffer
@@ -2171,5 +3254,109 @@ impl ImageInfo {
     #[allow(dead_code)]
     pub(crate) fn set_y(&mut self, sample: u16) {
         self.y_density = sample;
+    }
+}
+
+#[cfg(test)]
+mod planar_layout_helpers {
+    use zune_core::bytestream::ZCursor;
+    use zune_core::colorspace::ColorSpace;
+    use zune_core::options::DecoderOptions;
+
+    use crate::color_convert::choose_ycbcr_to_rgb_convert_func;
+    use crate::idct::{choose_idct_1x1_func, choose_idct_4x4_func, choose_idct_func};
+    use super::{round_up_pow2, JpegDecoder, RawImcuRowStatus};
+
+    #[test]
+    fn div_ceil_basic() {
+        assert_eq!(0usize.div_ceil(8), 0);
+        assert_eq!(1usize.div_ceil(8), 1);
+        assert_eq!(8usize.div_ceil(8), 1);
+        assert_eq!(9usize.div_ceil(8), 2);
+        assert_eq!(64usize.div_ceil(8), 8);
+        assert_eq!(65usize.div_ceil(8), 9);
+        assert_eq!(101usize.div_ceil(8), 13);
+    }
+
+    #[test]
+    fn round_up_pow2_basic() {
+        assert_eq!(round_up_pow2(0, 8), Some(0));
+        assert_eq!(round_up_pow2(1, 8), Some(8));
+        assert_eq!(round_up_pow2(8, 8), Some(8));
+        assert_eq!(round_up_pow2(9, 8), Some(16));
+        assert_eq!(round_up_pow2(64, 8), Some(64));
+        assert_eq!(round_up_pow2(101, 8), Some(104));
+    }
+
+    #[test]
+    fn round_up_pow2_overflow() {
+        assert_eq!(round_up_pow2(usize::MAX, 8), None);
+    }
+
+    #[test]
+    fn set_options_refreshes_cached_dispatch() {
+        for (initial, replacement) in [
+            (DecoderOptions::new_fast(), DecoderOptions::new_safe()),
+            (DecoderOptions::new_safe(), DecoderOptions::new_fast())
+        ] {
+            let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&[]), initial);
+            decoder.set_options(replacement);
+            assert_eq!(decoder.idct_func as usize, choose_idct_func(&replacement) as usize);
+            assert_eq!(
+                decoder.idct_4x4_func as usize,
+                choose_idct_4x4_func(&replacement) as usize
+            );
+            assert_eq!(
+                decoder.idct_1x1_func as usize,
+                choose_idct_1x1_func(&replacement) as usize
+            );
+        }
+
+        for colorspace in [
+            ColorSpace::RGB,
+            ColorSpace::BGR,
+            ColorSpace::RGBA,
+            ColorSpace::BGRA
+        ] {
+            let replacement = DecoderOptions::default().jpeg_set_out_colorspace(colorspace);
+            let mut decoder = JpegDecoder::new(ZCursor::new(&[]));
+            decoder.set_options(replacement);
+            assert_eq!(
+                decoder.color_convert_16 as usize,
+                choose_ycbcr_to_rgb_convert_func(colorspace, &replacement).unwrap() as usize
+            );
+        }
+    }
+
+    #[test]
+    fn baseline_pull_memory_is_stripe_bounded() {
+        let data = include_bytes!("../../../test-images/jpeg/2029.jpg");
+        let mut decoder = JpegDecoder::new(ZCursor::new(data));
+        decoder.decode_headers().unwrap();
+        let mut raw = decoder.raw_output();
+        let layout = raw.layout().unwrap();
+        let count = raw.num_components().unwrap();
+        let strides: Vec<usize> = layout[..count].iter().map(|plane| plane.width).collect();
+        let mut buffers: Vec<Vec<u8>> = layout[..count]
+            .iter()
+            .map(|plane| vec![0; plane.width * plane.vertical_sampling_factor * 8])
+            .collect();
+        let mut planes: Vec<&mut [u8]> = buffers.iter_mut().map(Vec::as_mut_slice).collect();
+        assert!(matches!(
+            raw.decode_next_imcu_row(&mut planes, &strides).unwrap(),
+            RawImcuRowStatus::RowReady { .. }
+        ));
+        drop(raw);
+
+        let (stripe_buffers, full_buffers) = decoder.raw_buffer_capacities();
+        assert!(full_buffers[..count].iter().all(|length| *length == 0));
+        for index in 0..count {
+            let rows = layout[index].vertical_sampling_factor * 8;
+            assert!(
+                stripe_buffers[index] <= (layout[index].stride + 8) * rows,
+                "component {index} exceeded one-iMCU-row scratch bound"
+            );
+            assert!(stripe_buffers[index] < layout[index].byte_size);
+        }
     }
 }
