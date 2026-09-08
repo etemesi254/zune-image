@@ -653,13 +653,14 @@ where
     /// needed for final samples; their rows are still pulled sequentially, but
     /// compressed input consumption is not row-streaming.
     ///
-    /// Each stride must be at least the corresponding logical plane width.
-    /// Each plane must be large enough for
-    /// `stride * vertical_sampling_factor * 8` bytes. The returned
-    /// `rows_written` count identifies the meaningful prefix; the final iMCU
-    /// row is clipped to the logical component height. Components that exhaust
-    /// their logical height before other components report zero rows on later
-    /// calls.
+    /// Each stride must be at least the corresponding logical plane width. For
+    /// a component that will return `rows` rows, its plane must contain at least
+    /// `(rows - 1) * stride + width` bytes, or zero bytes when `rows == 0`.
+    /// Padding is addressable only between logical rows; no padding is required
+    /// after the final row. The returned `rows_written` count identifies the
+    /// meaningful prefix; the final iMCU row is clipped to the logical component
+    /// height. Components that exhaust their logical height before other
+    /// components report zero rows on later calls.
     ///
     /// A recoverable input suspension returns [`RawImcuRowStatus::NeedMoreInput`]
     /// and leaves caller planes untouched. Expose more input through the same
@@ -841,11 +842,16 @@ where
             };
             let row_start = self.decoder.raw_pull_state.next_stripe * stripe_rows;
             let rows = layout[i].height.saturating_sub(row_start).min(stripe_rows);
-            let need = strides[i]
-                .checked_mul(rows)
-                .ok_or(DecodeErrors::FormatStatic(
-                    "raw iMCU-row plane size overflow"
-                ))?;
+            let need = if rows == 0 {
+                0
+            } else {
+                (rows - 1)
+                    .checked_mul(strides[i])
+                    .and_then(|offset| offset.checked_add(layout[i].width))
+                    .ok_or(DecodeErrors::FormatStatic(
+                        "raw iMCU-row plane size overflow",
+                    ))?
+            };
             if planes[i].len() < need {
                 return Err(DecodeErrors::TooSmallOutput(need, planes[i].len()));
             }
