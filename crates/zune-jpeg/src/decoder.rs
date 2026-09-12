@@ -1239,6 +1239,7 @@ where
 
     fn resolve_input_colorspace(&mut self) -> Result<(), DecodeErrors> {
         self.input_colorspace = match self.adobe_transform {
+            Some(0) if self.components.len() == 1 => ColorSpace::Luma,
             Some(0) if self.components.len() == 3 => ColorSpace::RGB,
             Some(0) => ColorSpace::CMYK,
             Some(1) => ColorSpace::YCbCr,
