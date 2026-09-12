@@ -81,6 +81,15 @@ pub(crate) fn color_convert(
                 output
             );
         }
+        (ColorSpace::YCCK, ColorSpace::CMYK) => {
+            color_convert_ycck_to_cmyk(
+                unprocessed,
+                width,
+                padded_width,
+                color_convert_16,
+                output
+            );
+        }
         (ColorSpace::CMYK, ColorSpace::RGB) => {
             color_convert_cymk_to_rgb::<3>(unprocessed, width, padded_width, output);
         }
@@ -250,6 +259,45 @@ fn color_convert_ycck_to_rgb<const NUM_COMPONENTS: usize>(
             pix[0] = blinn_8x8(255 - pix[0], m);
             pix[1] = blinn_8x8(255 - pix[1], m);
             pix[2] = blinn_8x8(255 - pix[2], m);
+        }
+    }
+}
+
+/// Convert a YCCK image to CMYK.
+///
+/// Adobe writes YCCK by inverting CMY and running it through the YCbCr transform, leaving K
+/// alone. Undoing that gives back CMYK: convert YCbCr to RGB, invert those three, and copy K.
+///
+/// Unlike the YCCK to RGB path this does not multiply by K. That step composites the image onto
+/// white, which a caller asking for CMYK wants to do itself.
+///
+/// The YCbCr conversion runs into a three component scratch buffer because `color_convert_16`
+/// only ever writes RGB-sized pixels; asking it for a four component stride would interleave
+/// the channels wrongly.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn color_convert_ycck_to_cmyk(
+    mcu_block: &[&[i16]; MAX_COMPONENTS], width: usize, padded_width: usize,
+    color_convert_16: ColorConvert16Ptr, output: &mut [u8]
+) {
+    let mut rgb = vec![0_u8; width * 3 * (output.len() / (width * 4))];
+    color_convert_ycbcr(
+        mcu_block,
+        width,
+        padded_width,
+        ColorSpace::RGB,
+        color_convert_16,
+        &mut rgb
+    );
+    for ((pix_w, rgb_w), k_w) in output
+        .chunks_exact_mut(width * 4)
+        .zip(rgb.chunks_exact(width * 3))
+        .zip(mcu_block[3].chunks_exact(padded_width))
+    {
+        for ((pix, src), k) in pix_w.chunks_exact_mut(4).zip(rgb_w.chunks_exact(3)).zip(k_w) {
+            pix[0] = 255 - src[0];
+            pix[1] = 255 - src[1];
+            pix[2] = 255 - src[2];
+            pix[3] = (*k) as u8;
         }
     }
 }

@@ -216,6 +216,29 @@ fn four_component_transform_zero_remains_cmyk() {
 }
 
 #[test]
+fn ycck_decodes_to_cmyk_without_inverting() {
+    // Adobe stores YCCK with CMY inverted, so decoding to CMYK has to undo that. libjpeg reads
+    // this fixture as CMYK [240, 58, 21, 216]; before YCCK to CMYK existed the only way out was
+    // RGB, which returns the inverted tone.
+    let data = include_bytes!("../../../test-images/jpeg/four_components.jpg");
+    let mut decoder = JpegDecoder::new(ZCursor::new(data));
+    decoder.decode_headers().unwrap();
+    assert_eq!(decoder.input_colorspace(), Some(ColorSpace::YCCK));
+
+    let options = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::CMYK);
+    let mut decoder = JpegDecoder::new_with_options(ZCursor::new(data), options);
+    let output = decoder.decode().expect("YCCK to CMYK decode failed");
+
+    let pixels = output.len() / 4;
+    assert_eq!(pixels, 1318 * 611);
+    let mean = |channel: usize| {
+        output.chunks_exact(4).map(|p| u64::from(p[channel])).sum::<u64>() / pixels as u64
+    };
+    // A light image: little magenta or yellow, heavy cyan and black.
+    assert_eq!([mean(0), mean(1), mean(2), mean(3)], [240, 58, 21, 216]);
+}
+
+#[test]
 fn transform_one_is_ycbcr_and_transform_two_is_ycck() {
     let transform_one = with_adobe_transform(
         include_bytes!("../../../test-images/jpeg/app14/baseline_ycbcr.jpg"),
