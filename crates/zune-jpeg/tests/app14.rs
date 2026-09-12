@@ -216,6 +216,27 @@ fn four_component_transform_zero_remains_cmyk() {
 }
 
 #[test]
+fn single_component_transform_zero_remains_luma() {
+    let data = include_bytes!("../../../test-images/jpeg/app14/single_component_transform_zero.jpg");
+
+    for strict in [false, true] {
+        let options = DecoderOptions::default()
+            .set_strict_mode(strict)
+            .jpeg_set_out_colorspace(ColorSpace::Luma);
+        let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&data), options);
+        decoder.decode_headers().unwrap();
+        assert_eq!(decoder.dimensions(), Some((1019, 616)));
+        assert_eq!(decoder.input_colorspace(), Some(ColorSpace::Luma));
+
+        let output_size = decoder.output_buffer_size().unwrap();
+        assert_eq!(output_size, 1019 * 616);
+        let output = decoder.decode().unwrap();
+        assert_eq!(decoder.input_colorspace(), Some(ColorSpace::Luma));
+        assert_eq!(output.len(), output_size);
+    }
+}
+
+#[test]
 fn transform_one_is_ycbcr_and_transform_two_is_ycck() {
     let transform_one = with_adobe_transform(
         include_bytes!("../../../test-images/jpeg/app14/baseline_ycbcr.jpg"),
