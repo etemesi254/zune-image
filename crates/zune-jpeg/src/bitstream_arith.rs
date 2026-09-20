@@ -877,7 +877,7 @@ impl BitStream for BitStreamArithmetic {
     }
 
     fn decode_mcu_ac_first<T>(
-        &mut self, reader: &mut ZReader<T>, ac_table: &mut ArithACTables, block: &mut [i16; 64],
+        &mut self, reader: &mut ZReader<T>, ac_table: &mut ArithACTables, block: &mut [i16; 64], _mask: &mut u64,
     ) -> Result<bool, DecodeErrors>
     where
         T: ZByteReaderTrait,
@@ -923,7 +923,7 @@ impl BitStream for BitStreamArithmetic {
 
     #[allow(clippy::too_many_lines, clippy::op_ref)]
     fn decode_mcu_ac_refine<T>(
-        &mut self, reader: &mut ZReader<T>, ac_table: &mut ArithACTables, block: &mut [i16; 64],
+        &mut self, reader: &mut ZReader<T>, ac_table: &mut ArithACTables, block: &mut [i16; 64], _mask: &mut u64,
     ) -> Result<bool, DecodeErrors>
     where
         T: ZByteReaderTrait,
