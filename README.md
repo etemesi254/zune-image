@@ -21,7 +21,7 @@ The set of codecs aim to have the following features in order of priority:
 
 - Fast
     - Fast image decoders and encoders: `zune-*` image decoders are some of the fastest,
-      see [benchmarks](https://etemesi254.github.io/posts/Zune-Benchmarks/).
+      see [benchmarks](./benchmarks/benchmark-results.md).
     - Image filters are also optimized for speed.
     - Benchmarks are prevalent to catch regressions, with crates like [zune-imageprocs](/crates/zune-imageprocs)
       containing micro-benchmarks for filters.
