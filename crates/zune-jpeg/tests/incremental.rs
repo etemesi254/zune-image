@@ -239,7 +239,7 @@ where
     T: ZByteReaderTrait
 {
     let mut plane_refs: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
-    raw.decode_into(&mut plane_refs)
+    raw.decode_into_planes(&mut plane_refs)
 }
 
 fn allocate_raw_strided_planes<T>(raw: &RawDecodeSession<'_, T>) -> (Vec<Vec<u8>>, Vec<usize>)
@@ -264,7 +264,7 @@ where
     T: ZByteReaderTrait
 {
     let mut plane_refs: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
-    raw.decode_into_strided(&mut plane_refs, strides)
+    raw.decode_into_planes_strided(&mut plane_refs, strides)
 }
 
 fn decode_raw_oneshot(data: &[u8]) -> Vec<Vec<u8>> {
