@@ -117,6 +117,7 @@ pub(crate) struct HuffmanBitstreamState {
     pub(crate) buffer:         u64,
     pub(crate) aligned_buffer: u64,
     pub(crate) bits_left:      u8,
+    pub(crate) reader_position: usize,
     pub(crate) marker:         Option<Marker>,
     pub(crate) overread_by:    usize,
     pub(crate) seen_eoi:       bool,
@@ -225,6 +226,14 @@ pub(crate) trait BitStream {
     /// Tell us the bits left the two buffer
     fn bits_left(&self) -> u8;
 
+    /// Absolute source position corresponding to the buffered entropy state.
+    fn checkpoint_position(&self) -> Option<usize> {
+        None
+    }
+
+    /// Initialize the entropy source position at a scan or restart boundary.
+    fn set_checkpoint_position(&mut self, _position: usize) {}
+
     /// Whether this bitstream type supports per-MCU checkpoint/restore.
     /// Huffman coding supports it; arithmetic coding does not (the A/C/CT
     /// registers are coupled to statistical context tables).
@@ -257,6 +266,8 @@ pub(crate) struct BitStreamHuffman {
     aligned_buffer:      u64,
     /// Tell us the bits left the two buffer
     bits_left:           u8,
+    /// Absolute reader position after bytes prefetched into the bit buffer.
+    reader_position:     usize,
     /// Did we find a marker(RST/EOF) during decoding?
     marker:              Option<Marker>,
     /// An i16 with the bit corresponding to successive_low set to 1, others 0.
@@ -463,6 +474,7 @@ impl BitStream for BitStreamHuffman {
             buffer:              0,
             aligned_buffer:      0,
             bits_left:           0,
+            reader_position:     0,
             marker:              None,
             successive_low_mask: 1,
             spec_start:          0,
@@ -482,6 +494,7 @@ impl BitStream for BitStreamHuffman {
             buffer:              0,
             aligned_buffer:      0,
             bits_left:           0,
+            reader_position:     0,
             marker:              None,
             successive_low_mask: 1i16 << al,
             spec_start:          spec_start,
@@ -514,6 +527,16 @@ impl BitStream for BitStreamHuffman {
     }
 
     #[inline(always)]
+    fn checkpoint_position(&self) -> Option<usize> {
+        Some(self.reader_position)
+    }
+
+    #[inline(always)]
+    fn set_checkpoint_position(&mut self, position: usize) {
+        self.reader_position = position;
+    }
+
+    #[inline(always)]
     fn supports_mcu_checkpoint() -> bool {
         true
     }
@@ -524,6 +547,7 @@ impl BitStream for BitStreamHuffman {
             buffer:         self.buffer,
             aligned_buffer: self.aligned_buffer,
             bits_left:      self.bits_left,
+            reader_position: self.reader_position,
             marker:         self.marker,
             overread_by:    self.overread_by,
             seen_eoi:       self.seen_eoi,
@@ -536,6 +560,7 @@ impl BitStream for BitStreamHuffman {
         self.buffer = state.buffer;
         self.aligned_buffer = state.aligned_buffer;
         self.bits_left = state.bits_left;
+        self.reader_position = state.reader_position;
         self.marker = state.marker;
         self.overread_by = state.overread_by;
         self.seen_eoi = state.seen_eoi;
@@ -578,6 +603,7 @@ impl BitStream for BitStreamHuffman {
             ($buffer:expr,$byte:expr,$bits_left:expr) => {
                 // read a byte from the stream
                 $byte = u64::from(reader.read_u8());
+                self.reader_position += 1;
                 self.overread_by += usize::from(reader.eof()?);
                 // append to the buffer
                 // JPEG is a MSB type buffer so that means we append this
@@ -589,11 +615,13 @@ impl BitStream for BitStreamHuffman {
                 if $byte == 0xff {
                     // read next byte
                     let mut next_byte = u64::from(reader.read_u8());
+                    self.reader_position += 1;
                     // Byte snuffing, if we encounter byte snuff, we skip the byte
                     if next_byte != 0x00 {
                         // skip that byte we read
                         while next_byte == 0xFF {
                             next_byte = u64::from(reader.read_u8());
+                            self.reader_position += 1;
                         }
 
                         if next_byte != 0x00 {
@@ -657,6 +685,7 @@ impl BitStream for BitStreamHuffman {
             // byte at a time read
 
             if let Ok(bytes) = reader.read_fixed_bytes_or_error::<4>() {
+                self.reader_position += 4;
                 // we have 4 bytes to spare, read the 4 bytes into a temporary buffer
                 // create buffer
                 let msb_buf = u32::from_be_bytes(bytes);
@@ -670,6 +699,7 @@ impl BitStream for BitStreamHuffman {
                 }
 
                 reader.rewind(4)?;
+                self.reader_position -= 4;
             }
             // This serves two reasons,
             // 1: Make clippy shut up
@@ -856,8 +886,13 @@ impl BitStream for BitStreamHuffman {
             }
         }
 
-        if self.get_bit() == 1 {
-            *block = block.wrapping_add(self.successive_low_mask);
+        let bit = self.successive_low_mask;
+        if self.get_bit() == 1 && (*block & bit) == 0 {
+            if *block >= 0 {
+                *block = block.wrapping_add(bit);
+            } else {
+                *block = block.wrapping_sub(bit);
+            }
         }
 
         Ok(())
