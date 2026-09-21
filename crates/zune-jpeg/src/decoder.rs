@@ -557,9 +557,7 @@ where
     }
 
     /// Decode the complete image into DCT-block-padded component planes.
-    ///
-    /// Plane contents and geometry are compatible with libjpeg-turbo raw
-    /// output. This whole-image convenience method is not operationally
+    /// This whole-image convenience method is not operationally
     /// equivalent to one call to `jpeg_read_raw_data`, which returns one iMCU
     /// row at a time.
     ///
@@ -589,14 +587,14 @@ where
     ///     .collect();
     /// let mut planes: Vec<&mut [u8]> =
     ///     buffers.iter_mut().map(Vec::as_mut_slice).collect();
-    /// raw.decode_into(&mut planes).unwrap();
+    /// raw.decode_into_planes(&mut planes).unwrap();
     /// ```
     ///
     /// # Errors
     /// Returns [`DecodeErrors::TooSmallOutput`] for an undersized plane,
     /// [`DecodeErrors::Format`] for the wrong plane count, or an error from
     /// the underlying decode pipeline.
-    pub fn decode_into(&mut self, planes: &mut [&mut [u8]]) -> Result<(), DecodeErrors> {
+    pub fn decode_into_planes(&mut self, planes: &mut [&mut [u8]]) -> Result<(), DecodeErrors> {
         self.decoder.decode_raw_into(planes)
     }
 
@@ -636,14 +634,14 @@ where
     ///     .collect();
     /// let mut planes: Vec<&mut [u8]> =
     ///     buffers.iter_mut().map(Vec::as_mut_slice).collect();
-    /// raw.decode_into_strided(&mut planes, &strides).unwrap();
+    /// raw.decode_into_planes_strided(&mut planes, &strides).unwrap();
     /// ```
     ///
     /// # Errors
     /// Returns [`DecodeErrors::TooSmallOutput`] for an undersized plane,
     /// [`DecodeErrors::Format`] for invalid plane counts or strides, or an
     /// error from the underlying decode pipeline.
-    pub fn decode_into_strided(
+    pub fn decode_into_planes_strided(
         &mut self, planes: &mut [&mut [u8]], strides: &[usize]
     ) -> Result<(), DecodeErrors> {
         self.decoder.decode_raw_into_strided(planes, strides)
@@ -2337,7 +2335,7 @@ where
         }
     }
 
-    // Shared implementation for `RawDecodeSession::decode_into`.
+    // Shared implementation for `RawDecodeSession::decode_into_planes`.
     fn decode_raw_into(&mut self, planes: &mut [&mut [u8]]) -> Result<(), DecodeErrors> {
         if self.expects_dnl {
             return Err(DecodeErrors::FormatStatic(
@@ -2349,7 +2347,7 @@ where
         let n = self.components.len();
         if planes.len() != n {
             return Err(DecodeErrors::Format(format!(
-                "RawDecodeSession::decode_into expected {n} plane buffer(s), got {}",
+                "RawDecodeSession::decode_into_planes expected {n} plane buffer(s), got {}",
                 planes.len()
             )));
         }
@@ -2385,7 +2383,7 @@ where
         self.decode_mcu_output_with_success_cleanup(&mut output)
     }
 
-    // Shared implementation for `RawDecodeSession::decode_into_strided`.
+    // Shared implementation for `RawDecodeSession::decode_into_planes_strided`.
     fn decode_raw_into_strided(
         &mut self, planes: &mut [&mut [u8]], strides: &[usize]
     ) -> Result<(), DecodeErrors> {
@@ -2399,13 +2397,13 @@ where
         let n = self.components.len();
         if planes.len() != n {
             return Err(DecodeErrors::Format(format!(
-                "RawDecodeSession::decode_into_strided expected {n} plane buffer(s), got {}",
+                "RawDecodeSession::decode_into_planes_strided expected {n} plane buffer(s), got {}",
                 planes.len()
             )));
         }
         if strides.len() != n {
             return Err(DecodeErrors::Format(format!(
-                "RawDecodeSession::decode_into_strided expected {n} stride(s), got {}",
+                "RawDecodeSession::decode_into_planes_strided expected {n} stride(s), got {}",
                 strides.len()
             )));
         }

@@ -58,7 +58,7 @@ fn decode_raw_into_owned(bytes: &[u8]) -> Vec<Vec<u8>> {
     let mut planes: Vec<Vec<u8>> = (0..n).map(|i| vec![0u8; layout[i].byte_size]).collect();
     {
         let mut refs: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
-        raw.decode_into(&mut refs).expect("raw decode");
+        raw.decode_into_planes(&mut refs).expect("raw decode");
     }
     planes
 }
@@ -88,7 +88,7 @@ fn decode_raw_matches_libjpeg_turbo_with_idct_tolerance() {
         .map(|index| vec![0; layout[index].byte_size])
         .collect();
     let mut refs: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
-    raw.decode_into(&mut refs).unwrap();
+    raw.decode_into_planes(&mut refs).unwrap();
 
     for (plane_index, expected) in expected_rows.iter().enumerate() {
         assert_eq!(
@@ -118,7 +118,7 @@ fn decode_raw_rejects_wrong_plane_count() {
     let mut p0 = vec![0u8; layout[0].byte_size];
     let mut p1 = vec![0u8; layout[1].byte_size];
     let mut refs: [&mut [u8]; 2] = [&mut p0, &mut p1];
-    let err = raw.decode_into(&mut refs).unwrap_err();
+    let err = raw.decode_into_planes(&mut refs).unwrap_err();
     match err {
         DecodeErrors::Format(_) => {}
         other => panic!("expected Format error, got {other:?}")
@@ -136,7 +136,7 @@ fn decode_raw_rejects_too_small_plane() {
     let mut p1 = vec![0u8; layout[1].byte_size];
     let mut p2 = vec![0u8; layout[2].byte_size];
     let mut refs: [&mut [u8]; 3] = [&mut p0, &mut p1, &mut p2];
-    let err = raw.decode_into(&mut refs).unwrap_err();
+    let err = raw.decode_into_planes(&mut refs).unwrap_err();
     match err {
         DecodeErrors::TooSmallOutput(need, got) => {
             assert_eq!(need, layout[0].byte_size);
@@ -231,7 +231,7 @@ fn decode_raw_grayscale_progressive_single_plane() {
     let mut p = vec![0u8; layout[0].byte_size];
     {
         let mut refs: [&mut [u8]; 1] = [&mut p];
-        raw.decode_into(&mut refs).expect("raw progressive decode");
+        raw.decode_into_planes(&mut refs).expect("raw progressive decode");
     }
     let min = *p.iter().min().unwrap();
     let max = *p.iter().max().unwrap();
@@ -251,7 +251,7 @@ fn decode_raw_progressive_four_component() {
     let mut planes: Vec<Vec<u8>> = (0..n).map(|i| vec![0u8; layout[i].byte_size]).collect();
     {
         let mut refs: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
-        raw.decode_into(&mut refs).expect("raw decode");
+        raw.decode_into_planes(&mut refs).expect("raw decode");
     }
     for (i, plane) in planes.iter().enumerate() {
         assert_eq!(plane.len(), layout[i].byte_size);
@@ -271,7 +271,7 @@ fn decode_raw_works_after_explicit_decode_headers() {
     let n = raw.num_components().unwrap();
     let mut planes: Vec<Vec<u8>> = (0..n).map(|i| vec![0u8; layout[i].byte_size]).collect();
     let mut refs: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
-    raw.decode_into(&mut refs).unwrap();
+    raw.decode_into_planes(&mut refs).unwrap();
 }
 
 #[test]
@@ -297,7 +297,7 @@ fn decode_raw_ignores_out_colorspace_setting() {
     let mut planes: Vec<Vec<u8>> = (0..n).map(|i| vec![0u8; layout[i].byte_size]).collect();
     {
         let mut refs: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
-        raw.decode_into(&mut refs)
+        raw.decode_into_planes(&mut refs)
             .expect("decode_raw should succeed regardless of out_colorspace");
     }
     // All three planes must contain real decoded data, not zeros.
@@ -331,7 +331,7 @@ fn decode_raw_unaligned_dimensions_decode_succeeds() {
     let mut planes: Vec<Vec<u8>> = (0..n).map(|i| vec![0u8; layout[i].byte_size]).collect();
     {
         let mut refs: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
-        raw.decode_into(&mut refs).unwrap();
+        raw.decode_into_planes(&mut refs).unwrap();
     }
     // Spot-check: meaningful Y region (rows 0..806, cols 0..605) has data.
     let y = &planes[0];
@@ -395,7 +395,7 @@ fn assert_raw_content_matches_decode_within_upsample_tolerance(
     let mut planes: Vec<Vec<u8>> = (0..n).map(|i| vec![0u8; layout[i].byte_size]).collect();
     {
         let mut refs: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
-        raw.decode_into(&mut refs).unwrap();
+        raw.decode_into_planes(&mut refs).unwrap();
     }
 
     let y_up = nearest_upsample(
@@ -515,7 +515,7 @@ fn decode_raw_strided_logical_size_matches_padded_decode() {
         .collect();
     {
         let mut refs: Vec<&mut [u8]> = logical.iter_mut().map(Vec::as_mut_slice).collect();
-        raw.decode_into_strided(&mut refs, &strides).unwrap();
+        raw.decode_into_planes_strided(&mut refs, &strides).unwrap();
     }
 
     for i in 0..n {
@@ -556,7 +556,7 @@ fn decode_raw_strided_accepts_oversized_stride() {
         .collect();
     {
         let mut refs: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
-        raw.decode_into_strided(&mut refs, &strides).unwrap();
+        raw.decode_into_planes_strided(&mut refs, &strides).unwrap();
     }
 
     for i in 0..n {
@@ -603,7 +603,7 @@ fn decode_raw_strided_rejects_too_small_stride() {
         .map(|i| vec![0u8; strides[i].max(1) * layout[i].height])
         .collect();
     let mut refs: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
-    let err = raw.decode_into_strided(&mut refs, &strides).unwrap_err();
+    let err = raw.decode_into_planes_strided(&mut refs, &strides).unwrap_err();
     match err {
         DecodeErrors::Format(_) => {}
         other => panic!("expected Format error, got {other:?}")
@@ -626,7 +626,7 @@ fn decode_raw_strided_rejects_too_small_buffer() {
     // Truncate component 0 by one byte.
     planes[0].pop();
     let mut refs: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
-    let err = raw.decode_into_strided(&mut refs, &strides).unwrap_err();
+    let err = raw.decode_into_planes_strided(&mut refs, &strides).unwrap_err();
     match err {
         DecodeErrors::TooSmallOutput(_, _) => {}
         other => panic!("expected TooSmallOutput, got {other:?}")
@@ -660,7 +660,7 @@ fn decode_raw_strided_unaligned_dimensions_no_pad_writes() {
             .enumerate()
             .map(|(i, v)| &mut v[..buf_lens[i]])
             .collect();
-        raw.decode_into_strided(&mut refs, &strides).unwrap();
+        raw.decode_into_planes_strided(&mut refs, &strides).unwrap();
     }
 
     for i in 0..n {
@@ -710,13 +710,13 @@ fn dnl_whole_raw_apis_are_rejected_before_false_completion() {
     let mut planes = [];
 
     assert!(matches!(
-        raw.decode_into(&mut planes),
+        raw.decode_into_planes(&mut planes),
         Err(DecodeErrors::FormatStatic(
             "raw output does not support DNL images"
         ))
     ));
     assert!(matches!(
-        raw.decode_into_strided(&mut planes, &[]),
+        raw.decode_into_planes_strided(&mut planes, &[]),
         Err(DecodeErrors::FormatStatic(
             "raw output does not support DNL images"
         ))
