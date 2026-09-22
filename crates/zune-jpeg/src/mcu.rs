@@ -42,6 +42,8 @@ struct McuWidthContext<'a, B: BitStream> {
     stream: &'a mut B,
     // Full-image coefficient buffers for multi-SOS baseline scans.
     progressive: &'a mut [Vec<i16>; MAX_COMPONENTS],
+    // True when decoding the final data-unit row of the current scan.
+    is_last_row: bool,
 }
 
 impl<T: ZByteReaderTrait> JpegDecoder<T> {
@@ -341,6 +343,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         tmp: &mut tmp,
                         stream: &mut stream,
                         progressive: &mut *progressive_mcus,
+                        is_last_row: i + 1 >= scan_mcu_height,
                     };
                     if all_components_in_first_scan {
                         self.decode_mcu_width::<false, B>(&mut mcu_width_context)
@@ -705,6 +708,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let tmp: &mut [i32; 64] = &mut *context.tmp;
         let stream: &mut B = &mut *context.stream;
         let progressive: &mut [Vec<i16>; MAX_COMPONENTS] = &mut *context.progressive;
+        let is_last_row = context.is_last_row;
 
         let z_order = self.z_order;
         let z_scans = &z_order[..usize::from(self.num_scans)];
@@ -900,11 +904,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             }
         }
 
-        self.check_stream_marker_after_mcu_width(stream)
+        self.check_stream_marker_after_mcu_width(stream, is_last_row)
     }
 
     fn check_stream_marker_after_mcu_width<B: BitStream>(
-        &mut self, stream: &mut B,
+        &mut self, stream: &mut B, is_last_row: bool,
     ) -> Result<McuContinuation, DecodeErrors> {
         // After all interleaved components, that's an MCU
         // handle stream markers
@@ -916,7 +920,21 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         //
         // But libjpeg-turbo allows it because of some weird reason. so I'll also
         // allow it because of some weird reason.
+        let bits_left = stream.bits_left();
         if let Some(m) = stream.marker() {
+            let ends_scan = matches!(
+                m,
+                Marker::SOS
+                    | Marker::DAC
+                    | Marker::DHT
+                    | Marker::DQT
+                    | Marker::DRI
+                    | Marker::COM
+                    | Marker::APP(_)
+            );
+            if ends_scan && !is_last_row && bits_left > 0 {
+                return Ok(McuContinuation::Ok);
+            }
             if *m == Marker::EOI {
                 // acknowledge and ignore EOI marker.
                 stream.marker().take();
