@@ -219,3 +219,15 @@ fn decode_baseline_non_interleaved_420_color_balance() {
         total_pixels, valid_gray_count
     );
 }
+
+#[test]
+fn decode_non_interleaved_with_luma_last() {
+    let test_data =
+        include_bytes!("../../../test-images/jpeg/non_interleaved_luma_last_88x88.jpg");
+    let mut decoder = JpegDecoder::new(ZCursor::new(test_data));
+    let pixels = decoder
+        .decode()
+        .expect("Failed to decode non-interleaved JPEG with luma in the final scan");
+
+    assert_eq!(pixels.len(), 88 * 88 * 3);
+}

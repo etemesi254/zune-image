@@ -48,7 +48,13 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     /// Check for existence of DC and AC Huffman Tables
     pub(crate) fn check_tables<B: BitStream>(&mut self) -> Result<(), DecodeErrors> {
         // check that dc and AC tables exist outside the hot path
-        for component in &self.components {
+        let z_order = self.z_order;
+        for &component_index in &z_order[..usize::from(self.num_scans)] {
+            let Some(component) = self.components.get(component_index) else {
+                return Err(DecodeErrors::Format(format!(
+                    "Invalid component index {component_index} in scan"
+                )));
+            };
             let _ = B::get_dc_ac_tables(
                 &mut self.entropy_tables,
                 component.dc_huff_table,
@@ -143,8 +149,6 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let padded_width = calculate_padded_width(width, self.info.sample_ratio);
 
         let mut stream = B::new();
-
-        self.check_tables::<B>()?;
 
         let mut tmp = [0_i32; DCT_BLOCK];
 
@@ -245,6 +249,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let mut upsampler_scratch_space = vec![0; upsampler_scratch_size];
 
         'sos: loop {
+            // Later scans may use Huffman tables defined by inter-scan DHT markers.
+            self.check_tables::<B>()?;
+
             let scan_mcu_height = if all_components_in_first_scan {
                 mcu_height
             } else {
