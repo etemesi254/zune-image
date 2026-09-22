@@ -231,3 +231,21 @@ fn decode_non_interleaved_with_luma_last() {
 
     assert_eq!(pixels.len(), 88 * 88 * 3);
 }
+
+#[test]
+fn read_ahead_marker_does_not_drop_final_scan_row() {
+    let test_data =
+        include_bytes!("../../../test-images/jpeg/non_interleaved_marker_read_ahead_88x88.jpg");
+    let mut decoder = JpegDecoder::new(ZCursor::new(test_data));
+    let pixels = decoder.decode().expect("Failed to decode non-interleaved JPEG");
+
+    assert_eq!(pixels.len(), 88 * 88 * 3);
+    let bottom_rows = &pixels[(80 * 88 * 3)..];
+    let hash = bottom_rows.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x100_0000_01b3)
+    });
+    assert_eq!(
+        hash, 0x1a6e_8556_3a98_c3bc,
+        "final eight rows differ from the libjpeg-turbo reference"
+    );
+}
