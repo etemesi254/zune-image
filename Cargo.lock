@@ -2314,6 +2314,7 @@ dependencies = [
 name = "zune-benches"
 version = "0.1.0"
 dependencies = [
+ "core_affinity",
  "criterion",
  "fast_image_resize",
  "flate2",
