@@ -62,14 +62,21 @@ jobs:
         run: cargo criterion --message-format=json > pr.json
 
       # ----------------------------
-      # Fetch base branch benchmark
+      # Run base branch benchmark in an isolated worktree
       # ----------------------------
-      - name: Fetch dev branch benchmark
+      - name: Run base branch benchmark
         run: |
-          git fetch origin dev
-          git checkout origin/dev
-          cargo criterion --message-format=json > dev.json
-          git checkout ${{ github.sha }}
+          base_sha="${{ github.event.pull_request.base.sha }}"
+          base_worktree="${RUNNER_TEMP}/zune-image-benchmark-base"
+
+          git fetch --no-tags origin "${base_sha}"
+          git worktree add --detach "${base_worktree}" "${base_sha}"
+          trap 'git worktree remove --force "${base_worktree}"' EXIT
+
+          (
+            cd "${base_worktree}"
+            cargo criterion --message-format=json
+          ) > dev.json
 
       # ----------------------------
       # Compare results
@@ -107,4 +114,3 @@ jobs:
               repo: context.repo.repo,
               body
             });
-
