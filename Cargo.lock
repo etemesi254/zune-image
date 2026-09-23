@@ -2330,7 +2330,7 @@ dependencies = [
  "zune-image",
  "zune-imageprocs",
  "zune-inflate 0.2.0",
- "zune-jpeg 0.5.16-rc1",
+ "zune-jpeg 0.5.16-rc2",
  "zune-png",
  "zune-qoi",
 ]
@@ -2436,7 +2436,7 @@ dependencies = [
  "zune-farbfeld",
  "zune-hdr",
  "zune-heic",
- "zune-jpeg 0.5.16-rc1",
+ "zune-jpeg 0.5.16-rc2",
  "zune-jpegxl",
  "zune-png",
  "zune-ppm",
@@ -2493,7 +2493,7 @@ dependencies = [
 
 [[package]]
 name = "zune-jpeg"
-version = "0.5.16-rc1"
+version = "0.5.16-rc2"
 dependencies = [
  "zune-core 0.5.3",
 ]
@@ -2546,7 +2546,7 @@ dependencies = [
  "zune-bmp",
  "zune-core 0.5.3",
  "zune-inflate 0.2.0",
- "zune-jpeg 0.5.16-rc1",
+ "zune-jpeg 0.5.16-rc2",
  "zune-png",
  "zune-psd",
 ]
