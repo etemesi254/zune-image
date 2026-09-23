@@ -88,6 +88,8 @@ pub fn ycbcr_to_rgb_avx2(
 ) {
     // call this in another function to tell RUST to vectorize this
     // storing
+    // SAFETY: Runtime dispatch selects this converter only when AVX2 is available.
+    // Direct test calls perform the same feature check.
     unsafe {
         ycbcr_to_rgb_avx2_1::<false>(y, cb, cr, out, offset);
     }
@@ -97,6 +99,8 @@ pub fn ycbcr_to_rgb_avx2(
 pub fn ycbcr_to_bgr_avx2(
     y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], out: &mut [u8], offset: &mut usize
 ) {
+    // SAFETY: Runtime dispatch selects this converter only when AVX2 is available.
+    // Direct test calls perform the same feature check.
     unsafe {
         ycbcr_to_rgb_avx2_1::<true>(y, cb, cr, out, offset);
     }
@@ -252,6 +256,8 @@ unsafe fn ycbcr_to_rgb_baseline_no_clamp(
 pub fn ycbcr_to_rgba_avx2(
     y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], out: &mut [u8], offset: &mut usize
 ) {
+    // SAFETY: Runtime dispatch selects this converter only when AVX2 is available.
+    // Direct test calls perform the same feature check.
     unsafe {
         ycbcr_to_rgba_unsafe::<false>(y, cb, cr, out, offset);
     }
@@ -261,6 +267,8 @@ pub fn ycbcr_to_rgba_avx2(
 pub fn ycbcr_to_bgra_avx2(
     y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], out: &mut [u8], offset: &mut usize
 ) {
+    // SAFETY: Runtime dispatch selects this converter only when AVX2 is available.
+    // Direct test calls perform the same feature check.
     unsafe {
         ycbcr_to_rgba_unsafe::<true>(y, cb, cr, out, offset);
     }
