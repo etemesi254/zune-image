@@ -16,7 +16,7 @@ use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use zune_benches::sample_path;
 use zune_jpeg::zune_core::colorspace::ColorSpace;
 use zune_jpeg::zune_core::options::DecoderOptions;
-use zune_jpeg::JpegDecoder;
+use zune_jpeg::{JpegDecoder, RawImcuRowStatus};
 use zune_png::zune_core::bytestream::ZCursor;
 
 fn decode_jpeg(buf: &[u8]) -> Vec<u8> {
@@ -403,6 +403,60 @@ fn decode_streaming_mode(c: &mut Criterion) {
     });
 }
 
+fn decode_jpeg_raw_pull(buf: &[u8]) -> u64 {
+    let mut decoder = JpegDecoder::new(ZCursor::new(buf));
+    decoder.decode_headers().unwrap();
+    let mut raw = decoder.raw_output();
+    let layout = raw.layout().unwrap();
+    let count = raw.num_components().unwrap();
+    let strides: Vec<usize> = layout[..count]
+        .iter()
+        .map(|plane| plane.width + 13)
+        .collect();
+    let mut storage: Vec<Vec<u8>> = layout[..count]
+        .iter()
+        .enumerate()
+        .map(|(index, plane)| vec![0; strides[index] * plane.vertical_sampling_factor * 8])
+        .collect();
+    let mut checksum = 0_u64;
+
+    loop {
+        let mut planes: Vec<&mut [u8]> = storage.iter_mut().map(Vec::as_mut_slice).collect();
+        match raw.decode_next_imcu_row(&mut planes, &strides).unwrap() {
+            RawImcuRowStatus::RowReady { rows_written } => {
+                for index in 0..count {
+                    for row in 0..rows_written[index] {
+                        checksum = storage[index]
+                            [row * strides[index]..row * strides[index] + layout[index].width]
+                            .iter()
+                            .fold(checksum, |sum, byte| sum.wrapping_add(u64::from(*byte)));
+                    }
+                }
+            }
+            RawImcuRowStatus::Complete => break,
+            RawImcuRowStatus::NeedMoreInput => panic!("one-shot benchmark input suspended"),
+            _ => unreachable!(),
+        }
+    }
+    checksum
+}
+
+fn decode_raw_pull_output(c: &mut Criterion) {
+    let baseline =
+        read(sample_path().join("test-images/jpeg/benchmarks/speed_bench_hv_subsampling.jpg"))
+            .unwrap();
+    let progressive =
+        read(sample_path().join("test-images/jpeg/benchmarks/speed_bench_prog.jpg")).unwrap();
+    let mut group = c.benchmark_group("jpeg: raw iMCU-row output");
+
+    group.bench_function("baseline", |b| {
+        b.iter(|| black_box(decode_jpeg_raw_pull(baseline.as_slice())));
+    });
+    group.bench_function("progressive", |b| {
+        b.iter(|| black_box(decode_jpeg_raw_pull(progressive.as_slice())));
+    });
+}
+
 criterion_group!(name=benches;
       config={
       let c = Criterion::default();
@@ -412,6 +466,6 @@ criterion_group!(name=benches;
     decode_hv_samp,criterion_benchmark_grayscale,
     decode_hv_samp_prog,decode_h_samp_prog,decode_no_samp_prog,decode_v_samp_prog,
     decode_no_samp_opts,
-    decode_restart_full,decode_restart_resume,decode_streaming_mode);
+    decode_restart_full,decode_restart_resume,decode_streaming_mode,decode_raw_pull_output);
 
 criterion_main!(benches);
