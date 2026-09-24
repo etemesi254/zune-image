@@ -2736,9 +2736,6 @@ mod planar_layout_helpers {
     use zune_core::colorspace::ColorSpace;
     use zune_core::options::DecoderOptions;
 
-    use crate::color_convert::choose_ycbcr_to_rgb_convert_func;
-    use crate::idct::{choose_idct_1x1_func, choose_idct_4x4_func, choose_idct_func};
-
     use super::{round_up_pow2, JpegDecoder};
 
     #[test]
@@ -2768,22 +2765,19 @@ mod planar_layout_helpers {
     }
 
     #[test]
-    fn set_options_refreshes_cached_dispatch() {
+    fn set_options_matches_fresh_decoder() {
+        let data = include_bytes!("../../../test-images/jpeg/2029.jpg");
         for (initial, replacement) in [
             (DecoderOptions::new_fast(), DecoderOptions::new_safe()),
             (DecoderOptions::new_safe(), DecoderOptions::new_fast())
         ] {
-            let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&[]), initial);
-            decoder.set_options(replacement);
-            assert_eq!(decoder.idct_func as usize, choose_idct_func(&replacement) as usize);
-            assert_eq!(
-                decoder.idct_4x4_func as usize,
-                choose_idct_4x4_func(&replacement) as usize
-            );
-            assert_eq!(
-                decoder.idct_1x1_func as usize,
-                choose_idct_1x1_func(&replacement) as usize
-            );
+            let mut expected =
+                JpegDecoder::new_with_options(ZCursor::new(data), replacement);
+            let expected = expected.decode().unwrap();
+
+            let mut actual = JpegDecoder::new_with_options(ZCursor::new(data), initial);
+            actual.set_options(replacement);
+            assert_eq!(actual.decode().unwrap(), expected);
         }
 
         for colorspace in [
@@ -2793,12 +2787,13 @@ mod planar_layout_helpers {
             ColorSpace::BGRA
         ] {
             let replacement = DecoderOptions::default().jpeg_set_out_colorspace(colorspace);
-            let mut decoder = JpegDecoder::new(ZCursor::new(&[]));
-            decoder.set_options(replacement);
-            assert_eq!(
-                decoder.color_convert_16 as usize,
-                choose_ycbcr_to_rgb_convert_func(colorspace, &replacement).unwrap() as usize
-            );
+            let mut expected =
+                JpegDecoder::new_with_options(ZCursor::new(data), replacement);
+            let expected = expected.decode().unwrap();
+
+            let mut actual = JpegDecoder::new(ZCursor::new(data));
+            actual.set_options(replacement);
+            assert_eq!(actual.decode().unwrap(), expected, "{colorspace:?}");
         }
     }
 }
