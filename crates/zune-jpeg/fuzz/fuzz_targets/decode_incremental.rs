@@ -101,7 +101,7 @@ impl Seek for GrowableCursor<'_> {
 const MAX_INPUT_LEN: usize = 1 << 20; // 1 MiB
 
 /// Safety net against inputs that never resolve to a terminal status.
-const MAX_ITERATIONS: usize = 8192;
+const MAX_ITERATIONS: usize = 256;
 
 /// Pick a chunk size derived from input length so the full fuzz input
 /// remains a valid JPEG (no bytes consumed as metadata). Different corpus
@@ -120,11 +120,8 @@ fuzz_target!(|data: &[u8]| {
         return;
     }
 
-    let chunk = chunk_for((data.len() % 256) as u8);
     let payload = data;
-    if payload.len().div_ceil(chunk) > MAX_ITERATIONS {
-        return;
-    }
+    let chunk = chunk_for((data.len() % 256) as u8).max(payload.len().div_ceil(MAX_ITERATIONS));
 
     // Reference one-shot decode (own copy of the bytes in a separate
     // decoder). If it succeeds, we use it as ground truth; if it fails,
