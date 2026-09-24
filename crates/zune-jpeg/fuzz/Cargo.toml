@@ -37,3 +37,9 @@ name = "decode_incremental"
 path = "fuzz_targets/decode_incremental.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "decode_apis"
+path = "fuzz_targets/decode_apis.rs"
+test = false
+doc = false
