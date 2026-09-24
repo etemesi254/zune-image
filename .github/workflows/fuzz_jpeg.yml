@@ -2,34 +2,79 @@ name: Fuzz JPEG
 
 on:
   push:
-    branches: [ "main","dev" ]
+    branches: ["main", "dev"]
     paths:
-      - 'crates/zune-jpeg/**'
-  schedule:
-    - cron: '0 0 * * *'
+      - ".github/workflows/fuzz_jpeg.yml"
+      - "crates/zune-core/**"
+      - "crates/zune-jpeg/**"
+      - "fuzz-corpus/jpeg/**"
   pull_request:
-    branches: [ "main" ,"dev" ]
+    branches: ["main", "dev"]
     paths:
-      - 'crates/zune-jpeg/**'
+      - ".github/workflows/fuzz_jpeg.yml"
+      - "crates/zune-core/**"
+      - "crates/zune-jpeg/**"
+      - "fuzz-corpus/jpeg/**"
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
 
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
+  FUZZ_SECONDS: ${{ github.event_name == 'schedule' && '600' || '90' }}
 
 jobs:
-  build:
-
+  fuzz:
+    name: JPEG fuzz / ${{ matrix.target }}
     runs-on: ubuntu-latest
-
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: decode_buffer
+            corpus: fuzz-corpus/jpeg
+            timeout: 10
+          - target: decode_incremental
+            corpus: fuzz-corpus/jpeg
+            timeout: 30
+          - target: decode_apis
+            corpus: fuzz-corpus/jpeg
+            timeout: 10
+          - target: fuzz_idct
+            corpus: ""
+            timeout: 10
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@nightly
-
-      - name: Install
-        run: cargo install cargo-fuzz
-
-      - name: JPEG Fuzz testing.
-        run: cargo +nightly fuzz run --fuzz-dir crates/zune-jpeg/fuzz decode_buffer -j2 -- -timeout=10s -max_total_time=120  fuzz-corpus/jpeg
-
-      - name: JPEG incremental decode fuzz testing.
-        run: cargo +nightly fuzz run --fuzz-dir crates/zune-jpeg/fuzz decode_incremental -j2 -- -timeout=10s -max_total_time=120  fuzz-corpus/jpeg
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-09-01
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-fuzz
+        run: cargo +stable install cargo-fuzz --version 0.13.1 --locked
+      - name: Run fuzz target
+        shell: bash
+        run: |
+          artifact_dir="${GITHUB_WORKSPACE}/fuzz-artifacts/${{ matrix.target }}"
+          mkdir -p "${artifact_dir}"
+          corpus=()
+          if [[ -n "${{ matrix.corpus }}" ]]; then
+            corpus=("${{ matrix.corpus }}")
+          fi
+          cargo +nightly-2026-09-01 fuzz run \
+            --fuzz-dir crates/zune-jpeg/fuzz \
+            "${{ matrix.target }}" \
+            "${corpus[@]}" \
+            -- \
+            "-timeout=${{ matrix.timeout }}" \
+            "-max_total_time=${FUZZ_SECONDS}" \
+            "-artifact_prefix=${artifact_dir}/"
+      - name: Upload fuzz artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jpeg-fuzz-${{ matrix.target }}-${{ github.sha }}
+          path: fuzz-artifacts/${{ matrix.target }}/
+          if-no-files-found: ignore
