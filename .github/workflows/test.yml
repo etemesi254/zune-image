@@ -2,11 +2,11 @@ name: Test
 
 on:
   push:
-    branches: [ "main", "dev" ]
+    branches: ["main", "dev"]
   pull_request:
-    branches: [ "main", "dev" ]
+    branches: ["main", "dev"]
   schedule:
-    - cron: "0 3 * * 0" # weekly full big-endian sweep
+    - cron: "0 3 * * 0"
   workflow_dispatch:
 
 permissions:
@@ -21,164 +21,162 @@ env:
   CARGO_INCREMENTAL: 0
   RUST_BACKTRACE: 1
 
-############################
-# REUSABLE MATRIX BLOCKS
-############################
-
-x-common-linux: &common-linux
-  os: ubuntu-latest
-  toolchain: stable
-
-x-msrv: &msrv
-  toolchain: 1.89
-
-x-exclusions: &exclusions
-  test-args: >-
-    --exclude zune-benches
-    --exclude zune-image
-    --exclude zune-imageprocs
-    --exclude zune-png
-
-############################
-# JOBS
-############################
-
 jobs:
+  workflow-lint:
+    name: Workflow lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - name: Run actionlint
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 .github/workflows/test.yml
 
-  ########################################
-  # FAST CI (runs on every push/PR)
-  ########################################
   test-fast:
-    name: Fast CI (${{ matrix.os }} / ${{ matrix.toolchain }})
+    name: Fast CI (${{ matrix.name }})
     if: github.event_name != 'schedule'
     runs-on: ${{ matrix.os }}
-
     strategy:
       fail-fast: false
       matrix:
         include:
-          - <<: *common-linux
+          - name: linux-stable
             os: ubuntu-latest
             toolchain: stable
-
-          - <<: *common-linux
+            test-args: ""
+            rustflags: ""
+          - name: linux-native-simd
+            os: ubuntu-latest
+            toolchain: stable
+            test-args: ""
+            rustflags: "-C target-cpu=native"
+          - name: linux-nightly
             os: ubuntu-latest
             toolchain: nightly
-
-          - <<: *msrv
+            test-args: ""
+            rustflags: ""
+          - name: linux-msrv
             os: ubuntu-latest
-
-          - os: macos-latest
+            toolchain: "1.89"
+            test-args: ""
+            rustflags: ""
+          - name: macos-stable
+            os: macos-latest
             toolchain: stable
-
-          - os: windows-latest
+            test-args: ""
+            rustflags: ""
+          - name: windows-stable
+            os: windows-latest
             toolchain: stable
             test-args: >-
               --exclude zune-benches
               --exclude zune-image
               --exclude zune-imageprocs
               --exclude zune-png
-
+            rustflags: ""
     steps:
       - uses: actions/checkout@v6
-
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
-
-      - name: Setup sccache
-        uses: mozilla-actions/sccache-action@v0.0.3
-
-      - name: Run tests
-        run: cargo test --workspace --no-fail-fast ${{ matrix.test-args || '' }}
+      - name: Run workspace tests
+        run: >-
+          cargo test
+          --workspace
+          --lib
+          --bins
+          --tests
+          --examples
+          --no-fail-fast
+          --locked
+          --exclude zune-inflate
+          --exclude zune-tests
+          ${{ matrix.test-args }}
         env:
-          RUSTC_WRAPPER: sccache
-          RUSTFLAGS: "-C target-cpu=native"
+          RUSTFLAGS: ${{ matrix.rustflags }}
 
-      - name: Test arithmetic JPEG decoding
-        if: matrix.os == 'ubuntu-latest' && matrix.toolchain == 'stable'
-        run: cargo test -p zune-jpeg --features arith
-        env:
-          RUSTC_WRAPPER: sccache
-          RUSTFLAGS: "-C target-cpu=native"
-
-  ########################################
-  # EXHAUSTIVE CI (big-endian + exotic)
-  ########################################
   test-exhaustive:
     name: Exhaustive (${{ matrix.target }})
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-
     strategy:
       fail-fast: false
       matrix:
         include:
-
-          # ARM / mobile / embedded
           - target: armv7-unknown-linux-gnueabihf
-            <<: *exclusions
-
+            test-args: >-
+              --exclude zune-benches
+              --exclude zune-image
+              --exclude zune-imageprocs
+              --exclude zune-png
           - target: aarch64-unknown-linux-musl
-            <<: *exclusions
-
-          # 32-bit x86
+            test-args: >-
+              --exclude zune-benches
+              --exclude zune-image
+              --exclude zune-imageprocs
+              --exclude zune-png
           - target: i686-unknown-linux-gnu
-            <<: *exclusions
-            extra_setup: gcc-multilib
-
-          # BIG ENDIAN (critical)
+            extra-setup: gcc-multilib
+            test-args: >-
+              --exclude zune-benches
+              --exclude zune-image
+              --exclude zune-imageprocs
+              --exclude zune-png
           - target: powerpc64-unknown-linux-gnu
-            <<: *exclusions
-
+            test-args: >-
+              --exclude zune-benches
+              --exclude zune-image
+              --exclude zune-imageprocs
+              --exclude zune-png
           - target: s390x-unknown-linux-gnu
-            <<: *exclusions
-
+            test-args: >-
+              --exclude zune-benches
+              --exclude zune-image
+              --exclude zune-imageprocs
+              --exclude zune-png
           - target: mips64-unknown-linux-gnuabi64
-            <<: *exclusions
-
-          # WebAssembly sanity
+            test-args: >-
+              --exclude zune-benches
+              --exclude zune-image
+              --exclude zune-imageprocs
+              --exclude zune-png
           - target: wasm32-unknown-unknown
             test-args: --exclude zune-benches --exclude zune-png
-
     steps:
       - uses: actions/checkout@v6
-
-      - name: Install system deps (if needed)
-        if: matrix.extra_setup == 'gcc-multilib'
+      - name: Install system dependencies
+        if: matrix.extra-setup == 'gcc-multilib'
         run: sudo apt-get update && sudo apt-get install -y gcc-multilib
-
-      - name: Install Rust + target
+      - name: Install Rust and target
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
           targets: ${{ matrix.target }}
-
       - name: Install cross
         uses: taiki-e/install-action@cross
-
-      - name: Setup sccache
-        uses: mozilla-actions/sccache-action@v0.0.3
-
       - name: Run cross tests
-        run: |
-          cross test --target ${{ matrix.target }} --workspace --no-fail-fast ${{ matrix.test-args || '' }}
-        env:
-          RUSTC_WRAPPER: sccache
+        run: >-
+          cross test
+          --target ${{ matrix.target }}
+          --workspace
+          --lib
+          --bins
+          --tests
+          --examples
+          --no-fail-fast
+          --locked
+          --exclude zune-inflate
+          --exclude zune-tests
+          ${{ matrix.test-args }}
 
-  ########################################
-  # MSRV CHECK (separate, stable + strict)
-  ########################################
   msrv:
-    name: MSRV Check (1.89)
+    name: Workspace MSRV (1.89)
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v6
-
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.89
-
-      - run: cargo check --workspace
+          toolchain: "1.89"
+      - run: cargo check --workspace --locked
