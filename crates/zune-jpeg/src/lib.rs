@@ -212,7 +212,7 @@
 //! decoder.decode().unwrap();
 //! ```
 //!
-//! 3. Anything that implements [ZByteReaderTrait](zune_core::bytestream::traits::ZByteReaderTrait)
+//! 3. Anything that implements [`ZByteReaderTrait`](zune_core::bytestream::ZByteReaderTrait)
 //!
 //! ## Decode a JPEG file to RGBA format
 //!
