@@ -156,5 +156,61 @@
   {
     "name": "arith/prog-restart.jpg",
     "hash": 308699570423173762598813957121638158295
+  },
+  {
+    "name": "baseline_non_interleaved.jpg",
+    "hash": 220383056799104030475341856705149709277,
+    "comment": "Baseline non-interleaved scan regression"
+  },
+  {
+    "name": "non_interleaved_luma_last_88x88.jpg",
+    "hash": 230899805145446127519755498179913013246,
+    "comment": "Non-interleaved scans with luma declared last"
+  },
+  {
+    "name": "non_interleaved_marker_read_ahead_88x88.jpg",
+    "hash": 230899805145446127519755498179913013246,
+    "comment": "Read-ahead marker must not drop the final scan row"
+  },
+  {
+    "name": "non_interleaved_444_64x64.jpg",
+    "hash": 41839076399667866943213742144468659728
+  },
+  {
+    "name": "non_interleaved_422_64x64.jpg",
+    "hash": 41839076399667866943213742144468659728
+  },
+  {
+    "name": "non_interleaved_420_64x64.jpg",
+    "hash": 324822241890861232147151898857212069760
+  },
+  {
+    "name": "non_interleaved_440_64x64.jpg",
+    "hash": 324822241890861232147151898857212069760
+  },
+  {
+    "name": "non_interleaved_422_65x65.jpg",
+    "hash": 125392369964902515184048940464823668963,
+    "comment": "Odd dimensions and partial final MCU"
+  },
+  {
+    "name": "app14/baseline_rgb.jpg",
+    "hash": 139831103022478584221336932444455009305,
+    "comment": "APP14 transform-zero RGB"
+  },
+  {
+    "name": "app14/baseline_rgb_interleaved.jpg",
+    "hash": 139831103022478584221336932444455009305,
+    "comment": "Interleaved APP14 transform-zero RGB"
+  },
+  {
+    "name": "app14/single_component_transform_zero.jpg",
+    "hash": 329656582808320911505644169604535672546,
+    "comment": "Single-component APP14 remains luma"
+  },
+  {
+    "name": "app14/baseline_cmyk.jpg",
+    "hash": 28017601491891897541172391788177697883,
+    "comment": "Four-component APP14 transform-zero CMYK"
   }
 ]
