@@ -155,7 +155,7 @@ pub fn log100_sqrt10_from_linear(linear: f32) -> f32 {
 pub fn bt1361_from_linear(linear: f32) -> f32 {
     if linear < -0.25 {
         -0.25
-    } else if linear < 0.0 {
+    } else if linear < -0.018_053_968_510_807 / 4.0 {
         -0.274_824_206_702_36 * f32::powf(-4.0 * linear, 0.45) + 0.024_824_206_702_36
     } else if linear < 0.018_053_968_510_807 {
         linear * 4.5
@@ -171,7 +171,7 @@ pub fn bt1361_from_linear(linear: f32) -> f32 {
 pub fn bt1361_to_linear(gamma: f32) -> f32 {
     if gamma < -0.25 {
         -0.25
-    } else if gamma < 0.0 {
+    } else if gamma < 4.5 * -0.018_053_968_510_807 / 4.0 {
         f32::powf((gamma - 0.024_824_206_702_36) / -0.274_824_206_702_36, 1.0 / 0.45) / -4.0
     } else if gamma < 4.5 * 0.018_053_968_510_807 {
         gamma / 4.5
@@ -219,17 +219,17 @@ pub fn gamma2p8_to_linear(gamma: f32) -> f32 {
 }
 
 #[inline]
-/// Gamma transfer function for HLG
+/// Linear transfer function, the identity clamped to `[0, 1]`
 pub fn trc_linear(v: f32) -> f32 {
-    v.min(1.).min(0.)
+    v.min(1.).max(0.)
 }
 
 #[inline]
 /// Linear transfer function for Iec61966
 pub fn iec61966_to_linear(gamma: f32) -> f32 {
     if gamma < -4.5 * 0.018_053_968_510_807 {
-        f32::powf(
-            (-gamma + 0.099_296_826_809_44_f32) / -1.099_296_826_809_44_f32,
+        -f32::powf(
+            (-gamma + 0.099_296_826_809_44_f32) / 1.099_296_826_809_44_f32,
             1.0f32 / 0.45f32
         )
     } else if gamma < 4.5f32 * 0.018_053_968_510_807_f32 {
@@ -292,7 +292,7 @@ pub fn hlg_to_linear(gamma: f32) -> f32 {
     if v <= 0.5 {
         (v * v) / 3.0
     } else {
-        ((v - HLG_C) / HLG_A).exp() + HLG_B
+        (((v - HLG_C) / HLG_A).exp() + HLG_B) / 12.0
     }
 }
 
@@ -418,6 +418,75 @@ impl TransferFunction {
             TransferFunction::Iec61966 => iec619662_from_linear(v),
             TransferFunction::PQ => pq_from_linear(v),
             TransferFunction::HLG => hlg_from_linear(v),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ALL: [TransferFunction; 13] = [
+        TransferFunction::Srgb,
+        TransferFunction::Rec709,
+        TransferFunction::Gamma2p2,
+        TransferFunction::Gamma2p8,
+        TransferFunction::Smpte428,
+        TransferFunction::Log100,
+        TransferFunction::Log100Sqrt10,
+        TransferFunction::Bt1361,
+        TransferFunction::Smpte240,
+        TransferFunction::Iec61966,
+        TransferFunction::Linear,
+        TransferFunction::PQ,
+        TransferFunction::HLG
+    ];
+
+    #[test]
+    fn linearize_is_inverse_of_gamma() {
+        for tf in ALL {
+            for i in 1..=100 {
+                let v = i as f32 / 100.0;
+                let round_trip = tf.gamma(tf.linearize(v));
+                assert!((round_trip - v).abs() < 1e-4, "{tf:?}: {v} -> {round_trip}");
+            }
+        }
+    }
+
+    #[test]
+    fn linear_is_identity() {
+        for v in [0.0, 0.25, 0.5, 1.0] {
+            assert_eq!(TransferFunction::Linear.linearize(v), v);
+            assert_eq!(TransferFunction::Linear.gamma(v), v);
+        }
+    }
+
+    #[test]
+    fn hlg_to_linear_is_continuous() {
+        // Rec. ITU-R BT.2100: both segments give 1/12 at E' = 1/2, and E' = 1 gives 1
+        assert!((hlg_to_linear(0.5) - 1.0 / 12.0).abs() < 1e-6);
+        assert!((hlg_to_linear(0.5 + 1e-6) - 1.0 / 12.0).abs() < 1e-4);
+        assert!((hlg_to_linear(1.0) - 1.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn negative_extended_gamut_values_round_trip() {
+        // IEC 61966-2-4 and BT.1361 define the curve for negative values too
+        for l in [-0.25, -0.1, -0.02, -0.004, -0.001] {
+            let v = iec619662_from_linear(l);
+            let round_trip = iec61966_to_linear(v);
+            assert!(
+                (round_trip - l).abs() < 1e-5,
+                "Iec61966: {l} -> {v} -> {round_trip}"
+            );
+
+            let v = bt1361_from_linear(l);
+            assert!(v < 0.0, "Bt1361: {l} -> {v}");
+            let round_trip = bt1361_to_linear(v);
+            assert!(
+                (round_trip - l).abs() < 1e-5,
+                "Bt1361: {l} -> {v} -> {round_trip}"
+            );
         }
     }
 }

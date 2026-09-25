@@ -17,6 +17,12 @@
 use zune_core::bytestream::ZCursor;
 use zune_jpeg::JpegDecoder;
 
+fn pixel_digest(pixels: &[u8]) -> u64 {
+    pixels.iter().fold(0xcbf29ce484222325, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
+    })
+}
+
 /// Test decoding a non-interleaved 4:4:4 baseline JPEG (64x64).
 ///
 /// This test image has 3 separate SOS markers (one per Y, Cb, Cr component).
@@ -85,6 +91,7 @@ fn decode_non_interleaved_420_64x64() {
     assert_eq!(info.width, 64);
     assert_eq!(info.height, 64);
     assert_eq!(pixels.len(), 64 * 64 * 3);
+    assert_eq!(pixel_digest(&pixels), 0xcb8faa9b4c94a0e5);
 
     // All pixels should have color (no large black regions from failed upsampling)
     let non_black = pixels.chunks(3).filter(|c| c[0] > 5 || c[1] > 5 || c[2] > 5).count();
@@ -123,6 +130,7 @@ fn decode_non_interleaved_440_64x64() {
     assert_eq!(info.width, 64);
     assert_eq!(info.height, 64);
     assert_eq!(pixels.len(), 64 * 64 * 3);
+    assert_eq!(pixel_digest(&pixels), 0xcb8faa9b4c94a0e5);
 }
 
 /// Test that the existing sos_news.jpeg (non-interleaved) still works.
@@ -209,5 +217,35 @@ fn decode_baseline_non_interleaved_420_color_balance() {
         valid_gray_count, total_pixels,
         "Expected all {} pixels to be balanced gray, but only {} were valid.",
         total_pixels, valid_gray_count
+    );
+}
+
+#[test]
+fn decode_non_interleaved_with_luma_last() {
+    let test_data =
+        include_bytes!("../../../test-images/jpeg/non_interleaved_luma_last_88x88.jpg");
+    let mut decoder = JpegDecoder::new(ZCursor::new(test_data));
+    let pixels = decoder
+        .decode()
+        .expect("Failed to decode non-interleaved JPEG with luma in the final scan");
+
+    assert_eq!(pixels.len(), 88 * 88 * 3);
+}
+
+#[test]
+fn read_ahead_marker_does_not_drop_final_scan_row() {
+    let test_data =
+        include_bytes!("../../../test-images/jpeg/non_interleaved_marker_read_ahead_88x88.jpg");
+    let mut decoder = JpegDecoder::new(ZCursor::new(test_data));
+    let pixels = decoder.decode().expect("Failed to decode non-interleaved JPEG");
+
+    assert_eq!(pixels.len(), 88 * 88 * 3);
+    let bottom_rows = &pixels[(80 * 88 * 3)..];
+    let hash = bottom_rows.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x100_0000_01b3)
+    });
+    assert_eq!(
+        hash, 0x1a6e_8556_3a98_c3bc,
+        "final eight rows differ from the libjpeg-turbo reference"
     );
 }

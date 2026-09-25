@@ -149,13 +149,7 @@ where
         let transfer_curve = info
             .cicp_info
             .as_ref()
-            .map(|cicp| match cicp.transfer_function {
-                1 | 13 => ColorCharacteristics::sRGB,
-                8 => ColorCharacteristics::Linear,
-                16 => ColorCharacteristics::PQ,
-                18 => ColorCharacteristics::HLG,
-                v => ColorCharacteristics::Unknown(v),
-            });
+            .map(|cicp| cicp_transfer_characteristics(cicp.transfer_function));
 
         // 2. Map the cHRM chunk to ColorPrimaries struct
         let color_primaries = info.chrm_info.as_ref().map(|chrm| ColorPrimaries {
@@ -210,6 +204,28 @@ where
         }
 
         Ok(Some(metadata))
+    }
+}
+
+/// Map a cICP transfer characteristics code point to the transfer function
+/// it names, see Rec. ITU-T H.273, table 3.
+fn cicp_transfer_characteristics(value: u8) -> ColorCharacteristics {
+    match value {
+        // BT.709, BT.601 and BT.2020 (10 and 12 bit) use the same curve
+        1 | 6 | 14 | 15 => ColorCharacteristics::Rec709,
+        4 => ColorCharacteristics::Gamma2p2,
+        5 => ColorCharacteristics::Gamma2p8,
+        7 => ColorCharacteristics::Smpte240,
+        8 => ColorCharacteristics::Linear,
+        9 => ColorCharacteristics::Log100,
+        10 => ColorCharacteristics::Log100Sqrt10,
+        11 => ColorCharacteristics::Iec61966,
+        12 => ColorCharacteristics::Bt1361,
+        13 => ColorCharacteristics::sRGB,
+        16 => ColorCharacteristics::PQ,
+        17 => ColorCharacteristics::Smpte428,
+        18 => ColorCharacteristics::HLG,
+        v => ColorCharacteristics::Unknown(v),
     }
 }
 
@@ -350,13 +366,13 @@ where
 #[cfg(test)]
 mod tests {
     use zune_core::bytestream::ZCursor;
-    use zune_core::colorspace::ColorSpace;
+    use zune_core::colorspace::{ColorCharacteristics, ColorSpace};
     use zune_png::PngDecoder;
 
     use crate::codecs::png::PngEncoder;
     use crate::codecs::ImageFormat;
     use crate::image::Image;
-    use crate::traits::DecodeInto;
+    use crate::traits::{DecodeInto, DecoderTrait};
 
     fn create_png() -> Vec<u8> {
         let encoder = PngEncoder::new();
@@ -369,5 +385,50 @@ mod tests {
         let img = create_png();
         let mut decoder = PngDecoder::new(ZCursor::new(&img));
         decoder.decode_into(&mut output).unwrap();
+    }
+
+    fn crc32(data: &[u8]) -> u32 {
+        let mut crc = !0_u32;
+        for &byte in data {
+            crc ^= u32::from(byte);
+            for _ in 0..8 {
+                crc = (crc >> 1) ^ (0xEDB8_8320 & (crc & 1).wrapping_neg());
+            }
+        }
+        !crc
+    }
+
+    /// Insert a cICP chunk right after IHDR
+    fn create_png_with_cicp(transfer_characteristics: u8) -> Vec<u8> {
+        let png = create_png();
+        let mut chunk = b"cICP".to_vec();
+        chunk.extend_from_slice(&[1, transfer_characteristics, 0, 1]);
+        let crc = crc32(&chunk);
+
+        // signature (8) + IHDR length, type, data and crc (4 + 4 + 13 + 4)
+        let ihdr_end = 33;
+        let mut out = png[..ihdr_end].to_vec();
+        out.extend_from_slice(&4_u32.to_be_bytes());
+        out.extend_from_slice(&chunk);
+        out.extend_from_slice(&crc.to_be_bytes());
+        out.extend_from_slice(&png[ihdr_end..]);
+        out
+    }
+
+    #[test]
+    fn test_png_cicp_transfer_characteristics() {
+        for (code, expected) in [
+            (1, ColorCharacteristics::Rec709),
+            (4, ColorCharacteristics::Gamma2p2),
+            (13, ColorCharacteristics::sRGB),
+            (16, ColorCharacteristics::PQ),
+            (17, ColorCharacteristics::Smpte428),
+            (2, ColorCharacteristics::Unknown(2))
+        ] {
+            let png = create_png_with_cicp(code);
+            let mut decoder = PngDecoder::new(ZCursor::new(&png));
+            let metadata = DecoderTrait::read_headers(&mut decoder).unwrap().unwrap();
+            assert_eq!(metadata.color_trc(), Some(expected), "cICP transfer {code}");
+        }
     }
 }
