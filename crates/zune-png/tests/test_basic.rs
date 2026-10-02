@@ -163,3 +163,13 @@ fn test_basn6a16() {
 
     test_decoding(path);
 }
+
+#[test]
+fn test_idat_split_into_one_byte_chunks() {
+    // The zlib header itself is split across two IDAT chunks
+    for name in ["oi9n0g16.png", "oi9n2c16.png"] {
+        let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/" + name;
+
+        test_decoding(path);
+    }
+}
