@@ -75,7 +75,8 @@ where
         ) -> Result<(ProcessingStatus, bool), PngDecodeErrors>,
     {
         let mut processed_bytes = 0;
-        let mut skipped_zlib_header = false;
+        // The 2-byte zlib header may be split across IDAT chunks
+        let mut zlib_header_left = 2;
         let mut is_final_chunk = false;
         let mut finished = false;
 
@@ -127,9 +128,10 @@ where
             self.current_idat_bytes_left = self.current_idat_bytes_left.saturating_sub(chunk_size);
             decoder.reset_position();
 
-            if !skipped_zlib_header && chunk_size >= 2 {
-                chunk_pos += 2;
-                skipped_zlib_header = true;
+            if zlib_header_left > 0 {
+                let skip = zlib_header_left.min(chunk_size.saturating_sub(chunk_pos));
+                chunk_pos += skip;
+                zlib_header_left -= skip;
             }
 
             'decoding: loop {
