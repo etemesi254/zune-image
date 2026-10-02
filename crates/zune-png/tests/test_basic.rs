@@ -163,3 +163,21 @@ fn test_basn6a16() {
 
     test_decoding(path);
 }
+
+#[test]
+fn test_interlaced_last_pixel_in_image() {
+    // Images where an Adam7 pass ends less than one pass stride before the end of the image
+    for name in [
+        "s01i3p01.png",
+        "s02i3p01.png",
+        "s03i3p01.png",
+        "s05i3p02.png",
+        "s09i3p02.png",
+        "s33i3p04.png",
+        "s39i3p04.png",
+    ] {
+        let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/" + name;
+
+        test_decoding(path);
+    }
+}
