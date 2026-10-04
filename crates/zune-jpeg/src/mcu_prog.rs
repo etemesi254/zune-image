@@ -1004,11 +1004,17 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 //
                 // For interleaved images, this gives us the exact pixels comprising a whole MCU
                 // block
-                let step = block[position].len() / mcu_height;
+                //
+                // Not `block.len() / mcu_height`: for grayscale output of a vertically sampled
+                // image (`self.coeff = 2`) the buffers are sized for twice as many MCU rows as
+                // there are stripes, which would double the step and read the wrong rows.
+                let step = component.width_stride * component.vertical_sample * 8;
                 // where we will be reading our pixels from.
                 let start = i * step;
 
-                let slice = &block[position][start..start + step];
+                let slice = block[position]
+                    .get(start..start + step)
+                    .ok_or(DecodeErrors::FormatStatic("Component buffer too small"))?;
 
                 let temp_channel = &mut component.raw_coeff;
 

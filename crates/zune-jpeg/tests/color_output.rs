@@ -101,3 +101,35 @@ fn bgra_matches_rgba_with_red_and_blue_reversed_and_opaque_alpha() {
         }
     }
 }
+
+#[test]
+fn luma_matches_y_of_ycbcr_for_vertically_sampled_images() {
+    // Grayscale output of a vertically sampled image must be its Y channel, not other rows.
+    let fixtures: [(&str, &[u8], (usize, usize)); 3] = [
+        (
+            "baseline non-interleaved 4:4:0",
+            include_bytes!("../../../test-images/jpeg/non_interleaved_440_64x64.jpg"),
+            (64, 64)
+        ),
+        (
+            "progressive 4:4:0",
+            include_bytes!("../../../test-images/jpeg/progressive_440_65x65.jpg"),
+            (65, 65)
+        ),
+        (
+            "progressive 4:2:0",
+            include_bytes!("../../../test-images/jpeg/progressive_restart_420.jpg"),
+            (256, 256)
+        )
+    ];
+    for (name, data, expected_dimensions) in fixtures {
+        let (luma, luma_dimensions) = decode(data, ColorSpace::Luma);
+        let (ycbcr, _) = decode_into(data, ColorSpace::YCbCr);
+
+        assert_eq!(luma_dimensions, expected_dimensions, "{name}");
+        assert_eq!(luma.len() * 3, ycbcr.len(), "{name}");
+        for (pixel_index, (luma, ycbcr)) in luma.iter().zip(ycbcr.chunks_exact(3)).enumerate() {
+            assert_eq!(*luma, ycbcr[0], "{name}: pixel {pixel_index}");
+        }
+    }
+}

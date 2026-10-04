@@ -631,17 +631,16 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     continue 'component;
                 }
 
-                // step is the number of pixels this iteration wil be handling
-                // Given by the number of mcu's height and the length of the component block
-                // Since the component block contains the whole channel as raw pixels
-                // we this evenly divides the pixels into MCU blocks
-                //
-                // For interleaved images, this gives us the exact pixels comprising a whole MCU
-                // block
-                let step = block[position].len() / mcu_height;
+                // step is the number of coefficients in one stripe of MCUs of this component,
+                // the size of its `raw_coeff`. It is not `block.len() / mcu_height`: for
+                // grayscale output of a vertically sampled image the scan buffers are sized
+                // for twice as many MCU rows (`self.coeff = 2`), while there are `mcu_y` stripes.
+                let step = component.width_stride * component.vertical_sample * 8;
 
                 // where we will be reading our pixels from.
-                let slice = &block[position][i * step..][..step];
+                let slice = block[position]
+                    .get(i * step..(i + 1) * step)
+                    .ok_or(DecodeErrors::FormatStatic("Component buffer too small"))?;
                 let temp_channel = &mut component.raw_coeff;
                 temp_channel[..step].copy_from_slice(slice);
             }
