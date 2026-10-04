@@ -650,6 +650,46 @@ fn chunked_fresh_decoder_byte_by_byte() {
     }
 }
 
+#[test]
+fn progressive_resume_keeps_first_sos_quantization_tables() {
+    // Insert a DQT redefining table 0 before the second scan of a progressive image.
+    // Components keep the tables in effect at the first SOS, so a decode resumed at
+    // a later scan must use those, not the later DQT.
+    let base = include_bytes!("../../../test-images/jpeg/weird_sampling_3.jpg");
+    let second_sos = base
+        .windows(2)
+        .enumerate()
+        .filter(|(_, w)| *w == [0xFF, 0xDA])
+        .nth(1)
+        .expect("progressive image has a second SOS")
+        .0;
+    let mut dqt_body = vec![0x00];
+    dqt_body.extend_from_slice(&[99; 64]);
+    let mut data = base[..second_sos].to_vec();
+    data.extend_from_slice(&marker_segment(0xDB, &dqt_body));
+    data.extend_from_slice(&base[second_sos..]);
+    let data = &data[..];
+
+    let expected = decode_oneshot(data);
+    for cutoff in (second_sos + 69..data.len()).step_by(16) {
+        let limit = Rc::new(Cell::new(data.len()));
+        let cursor = GrowableCursor::new(data, Rc::clone(&limit));
+        let mut decoder = JpegDecoder::new(cursor);
+        decoder.set_incremental_mode(true);
+        decoder
+            .decode_headers()
+            .expect("headers are before the cutoff");
+        let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+        limit.set(cutoff);
+        let _ = decoder.decode_into(&mut out);
+        limit.set(data.len());
+        decoder
+            .decode_into(&mut out)
+            .expect("full input should complete the decode");
+        assert_pixels_match(&out, &expected, "progressive_dqt_between_scans", cutoff);
+    }
+}
+
 /// In-place resumable header parsing on the *same* decoder instance.
 ///
 /// Uses `GrowableCursor` to simulate a stream where more data becomes

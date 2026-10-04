@@ -2234,6 +2234,10 @@ where
                     comp.dc_diff = 0;
                 }
             }
+            // Components take their quantization tables once, from the tables in
+            // effect at the first SOS (`setup_component_params`). A DQT between
+            // later scans must not change them when resuming from a later checkpoint.
+            self.qt_tables = outer_header_snapshot.qt_tables;
             if checkpoint_view.is_none() && !had_progressive_view {
                 // First-SOS replay restarts progressive coefficient assembly;
                 // scan-boundary retries restore `todo` in `parse_entropy_coded_data`.
