@@ -63,6 +63,10 @@ where
                         let frame = self.frame_info().unwrap();
 
                         let pix = self.decode_raw()?;
+                        // A default image that is not part of the animation is not a frame
+                        if !frame.is_part_of_seq {
+                            continue;
+                        }
 
                         // Use the new APNG post-processing function
                         apng_ctx.process_frame(&frame, &pix, &mut output)?;
@@ -88,6 +92,10 @@ where
                         let frame = self.frame_info().unwrap();
 
                         if let DecodingResult::U16(pix) = self.decode()? {
+                            // A default image that is not part of the animation is not a frame
+                            if !frame.is_part_of_seq {
+                                continue;
+                            }
                             apng_ctx.process_frame(&frame, &pix, &mut output)?;
                             // Create the frame from the fully composited output
                             let im_frame = Frame::from_u16(
@@ -429,6 +437,19 @@ mod tests {
             let mut decoder = PngDecoder::new(ZCursor::new(&png));
             let metadata = DecoderTrait::read_headers(&mut decoder).unwrap().unwrap();
             assert_eq!(metadata.color_trc(), Some(expected), "cICP transfer {code}");
+        }
+    }
+
+    #[test]
+    fn test_apng_frames() {
+        // acTL num_frames 20, the default image is the first frame
+        let ball = include_bytes!("../../../zune-png/tests/random/animated_ball.png");
+        // acTL num_frames 2, after a separate default image that is not part of the animation
+        let separate_default = include_bytes!("../../../zune-png/tests/random/030.png");
+        for (data, frames) in [(&ball[..], 20), (&separate_default[..], 2)] {
+            let mut decoder = PngDecoder::new(ZCursor::new(data));
+            let image = DecoderTrait::decode(&mut decoder).unwrap();
+            assert_eq!(image.frames_len(), frames);
         }
     }
 }
