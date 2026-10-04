@@ -518,7 +518,8 @@ impl StreamingDecoder {
                     }
                     let total_written = self.dest_offset + self.window_slid_bytes;
 
-                    let global_remaining = max_dest_offset.saturating_sub(total_written);
+                    // `max_dest_offset` already has the slid bytes taken off the limit
+                    let global_remaining = max_dest_offset.saturating_sub(self.dest_offset);
 
                     // If fulfilling this block breaches the limit, error out immediately.
                     // This prevents allocating or copying data for malformed payloads or bombs.
@@ -580,6 +581,11 @@ impl StreamingDecoder {
                         self.stream.position += bytes_to_copy;
                         *bytes_left -= bytes_to_copy;
                         self.dest_offset += bytes_to_copy;
+                        // The refill leaves copies of the bytes after `position` above
+                        // `bits_left` in `buffer`. Those bytes were just copied out, so the
+                        // copies are stale: clear them, or the next refill ORs the following
+                        // bytes onto them and corrupts the next block header.
+                        self.stream.buffer = 0;
                     }
 
                     if *bytes_left == 0 {
