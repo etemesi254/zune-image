@@ -1343,7 +1343,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 // E.g the Y sample is not sampled but we haven't finished upsampling the last row of
                 // the previous mcu, since we don't have the down row, so save it
                 for component in comps.iter_mut() {
-                    if component.sample_ratio != SampleRatios::H {
+                    // Components the output colorspace does not use are not decoded, so
+                    // they have no rows to carry over.
+                    if component.sample_ratio != SampleRatios::H && component.needed {
                         // We don't care about H sampling factors, since it's copied in the workers function
 
                         // copy last row to be used for the  next color conversion
