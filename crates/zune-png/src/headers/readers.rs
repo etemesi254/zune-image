@@ -8,7 +8,7 @@ use alloc::string::ToString;
 
 use zune_core::bytestream::ZByteReaderTrait;
 use zune_core::log::{trace, warn};
-use zune_inflate::DeflateDecoder;
+use zune_inflate::{DeflateDecoder, DeflateOptions};
 
 use crate::apng::{ActlChunk, BlendOp, DisposeOp, FrameInfo, SingleFrame};
 use crate::decoder::{ChrmInfo, CicpInfo, ItxtChunk, PLTEEntry, PngChunk, TextChunk, TimeInfo, ZtxtChunk};
@@ -318,7 +318,10 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             let data = self.stream.peek_at(0, remainder)?;
 
             // decode to vec
-            if let Ok(icc_uncompressed) = DeflateDecoder::new(data).decode_zlib() {
+            let options = DeflateOptions::default().set_limit(self.options.inflate_get_limit());
+            if let Ok(icc_uncompressed) =
+                DeflateDecoder::new_with_options(data, options).decode_zlib()
+            {
                 self.png_info.icc_profile = Some(icc_uncompressed);
             } else {
                 warn!("Could not decode ICC profile, error with zlib stream");
@@ -424,7 +427,8 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             let data = self.stream.peek_at(0, remainder)?;
 
             // decode to vec
-            if let Ok(ztxt) = DeflateDecoder::new(data).decode_zlib() {
+            let options = DeflateOptions::default().set_limit(self.options.inflate_get_limit());
+            if let Ok(ztxt) = DeflateDecoder::new_with_options(data, options).decode_zlib() {
                 let chunk = ZtxtChunk {
                     keyword,
                     text: ztxt,
