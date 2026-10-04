@@ -928,7 +928,7 @@ where
                 row_width,
                 usize::from(info.depth),
                 n_components,
-                self.seen_ptle,
+                is_palette,
                 raw_input,
                 final_output,
             );
@@ -1009,7 +1009,10 @@ where
         let add_alpha =
             self.options.png_get_add_alpha_channel() && !self.png_info.color.has_alpha();
         let depth_thing = self.options.png_get_strip_to_8bit() && self.png_info.depth == 16;
-        self.seen_trns | self.seen_ptle | (self.png_info.depth < 8) | add_alpha | depth_thing
+        // A PLTE chunk only matters for indexed images. Truecolor images may carry one as a
+        // suggested palette (PNG spec 11.2.3), which must not change how they are decoded.
+        let palette = self.seen_ptle && self.png_info.color == PngColor::Palette;
+        self.seen_trns | palette | (self.png_info.depth < 8) | add_alpha | depth_thing
     }
 }
 
