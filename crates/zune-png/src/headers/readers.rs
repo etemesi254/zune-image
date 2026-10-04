@@ -490,6 +490,13 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         let dispose_op = DisposeOp::from_int(self.stream.read_u8())?;
         let blend_op = BlendOp::from_int(self.stream.read_u8())?;
 
+        // APNG specification, constraints on frame regions: width > 0 and height > 0
+        if width == 0 || height == 0 {
+            return Err(PngDecodeErrors::GenericStatic(
+                "APNG frame with zero width or height"
+            ));
+        }
+
         // Validate frame bounds against the image canvas.
         // Prevent overflow and reject frames extending past the canvas.
         let frame_right = x_offset.checked_add(width).ok_or_else(|| {
