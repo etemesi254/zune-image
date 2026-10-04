@@ -283,8 +283,10 @@ impl BitStreamArithmetic {
     where
         T: ZByteReaderTrait,
     {
-        let b = if self.marker.is_some() {
-            // When a marker is present, the decoder is repeatedly fed zero bytes
+        let b = if self.marker.is_some() || self.seen_eoi {
+            // When a marker is present, the decoder is repeatedly fed zero bytes.
+            // An EOI stays in force after the decoder acknowledges it: whatever follows
+            // it is not part of this image's entropy data.
             0
         } else {
             reader.read_u8_err()?
