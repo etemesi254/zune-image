@@ -511,6 +511,33 @@ fn full_decode_unchanged() {
 }
 
 #[test]
+fn input_cut_inside_fill_bytes_resumes_correctly() {
+    // The second scan of this image has four 0xFF bytes at offset 4014 followed by
+    // zeros. When the visible input ends inside that run, the byte after an 0xFF is
+    // not there yet; it must not be taken as a stuffed zero (0xFF 0x00 = data byte
+    // 0xFF). After a retry with the whole input, the pixels must match a one-shot decode.
+    let data = include_bytes!("../../../test-images/jpeg/fill_bytes_at_incremental_cut.jpg");
+    let expected = decode_oneshot(data);
+    for cutoff in 4014..=4018 {
+        let limit = Rc::new(Cell::new(data.len()));
+        let cursor = GrowableCursor::new(data, Rc::clone(&limit));
+        let mut decoder = JpegDecoder::new(cursor);
+        decoder.set_incremental_mode(true);
+        decoder
+            .decode_headers()
+            .expect("headers are before the cutoff");
+        let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+        limit.set(cutoff);
+        let _ = decoder.decode_into(&mut out);
+        limit.set(data.len());
+        decoder
+            .decode_into(&mut out)
+            .expect("full input should complete the decode");
+        assert_pixels_match(&out, &expected, "fill_bytes_at_incremental_cut", cutoff);
+    }
+}
+
+#[test]
 fn decode_into_replay_after_success_matches_oneshot() {
     assert_decode_into_replay_matches_oneshot(
         "baseline_replay",
