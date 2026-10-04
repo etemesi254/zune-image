@@ -751,7 +751,10 @@ impl BitStream for BitStreamHuffman {
                     pos += r as usize;
                     r = self.get_bits(symbol as u8);
                     symbol = huff_extend(r, symbol);
-                    let t_pos = UN_ZIGZAG[pos & 63] & 63;
+                    // A run past the end of the block lands on the last coefficient, as
+                    // on the fast path above (and as libjpeg-turbo does); wrapping would
+                    // overwrite the DC or a low-frequency coefficient.
+                    let t_pos = UN_ZIGZAG[min(pos, 63)] & 63;
 
                     block[t_pos] = symbol .wrapping_mul( qt_table[t_pos]);
 

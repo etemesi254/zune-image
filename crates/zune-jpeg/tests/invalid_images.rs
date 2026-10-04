@@ -85,6 +85,43 @@ fn mul_with_overflow() {
 
 
 
+/// One 8x8 grayscale block: DC 0, +1 at zig-zag position 60, then an AC symbol with
+/// run 9 and size 1 whose run reaches position 70, past the end of the block. The
+/// AC codes are 12 bits long, so they are decoded on the slow (non-lookup) path.
+fn ac_run_past_end(last_run_and_size: u8) -> Vec<u8> {
+    let mut data = vec![0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0x00];
+    data.extend([0x10; 64]);
+    // SOF0: 8x8, one component
+    data.extend([
+        0xff, 0xc0, 0x00, 0x0b, 0x08, 0x00, 0x08, 0x00, 0x08, 0x01, 0x01, 0x11, 0x00
+    ]);
+    // DC table: one symbol (size 0), 1-bit code
+    data.extend([0xff, 0xc4, 0x00, 0x14, 0x00, 0x01]);
+    data.extend([0x00; 16]);
+    // AC table: four 12-bit codes for EOB, the last run/size, run 11 size 1, ZRL
+    data.extend([0xff, 0xc4, 0x00, 0x17, 0x10]);
+    data.extend([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0]);
+    data.extend([0x00, last_run_and_size, 0xb1, 0xf0]);
+    // SOS and entropy data: DC 0, three ZRLs, run 11 (+1), last run/size (+1)
+    data.extend([0xff, 0xda, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3f, 0x00]);
+    data.extend([0x00, 0x18, 0x01, 0x80, 0x18, 0x01, 0x40, 0x07, 0xff, 0xd9]);
+    data
+}
+
+#[test]
+fn ac_run_past_end_of_block_lands_on_last_coefficient() {
+    // A run past position 63 puts the coefficient on the last position, as the fast
+    // AC path and libjpeg-turbo do, instead of wrapping around to the DC. The same
+    // stream with run 2 (position 61 + 2 = 63) must therefore decode identically.
+    let past = JpegDecoder::new(ZCursor::new(ac_run_past_end(0x91)))
+        .decode()
+        .unwrap();
+    let at_end = JpegDecoder::new(ZCursor::new(ac_run_past_end(0x21)))
+        .decode()
+        .unwrap();
+    assert_eq!(past, at_end);
+}
+
 #[test]
 fn test_panic_on_slice() {
     const JPEG_DATA: [u8; 1394] = [
