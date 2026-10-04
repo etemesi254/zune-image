@@ -55,6 +55,53 @@ fn test_trns_transparency() {
     test_decoding(path);
 }
 
+/// Frames the `more_frames()` loop yields that are part of the animation.
+fn animation_frames(data: &[u8]) -> usize {
+    let mut decoder = PngDecoder::new(ZCursor::new(data));
+    decoder.decode_headers().unwrap();
+    let mut frames = 0;
+    while decoder.more_frames() {
+        decoder.decode_headers().unwrap();
+        let frame = decoder.frame_info().unwrap();
+        decoder.decode_raw().unwrap();
+        frames += usize::from(frame.is_part_of_seq);
+    }
+    frames
+}
+
+#[test]
+fn more_frames_yields_every_frame_in_actl() {
+    // acTL num_frames: animated_ball 20 and clock 40 (default image is the first frame),
+    // 030 2 (separate default image, then 2 frames).
+    for (name, frames) in [("animated_ball.png", 20), ("clock.png", 40), ("030.png", 2)] {
+        let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/random/" + name;
+        assert_eq!(animation_frames(&open_and_read(path)), frames, "{name}");
+    }
+}
+
+#[test]
+fn more_frames_stops_when_the_input_ends() {
+    // An animated PNG that ends inside the default image's IDAT data (no fcTL, no IEND)
+    // has no further frame, whatever acTL says.
+    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/random/030.png";
+    let data = open_and_read(path);
+    let first_idat = data.windows(4).position(|w| w == b"IDAT").unwrap() + 4;
+    let truncated = &data[..first_idat + 100];
+
+    let mut decoder = PngDecoder::new(ZCursor::new(truncated));
+    decoder.decode_headers().unwrap();
+    let mut iterations = 0;
+    while decoder.more_frames() {
+        iterations += 1;
+        assert!(
+            iterations <= 1,
+            "more_frames() stays true at the end of the input"
+        );
+        decoder.decode_headers().unwrap();
+        let _ = decoder.decode_raw();
+    }
+}
+
 #[test]
 fn test_animation() {
     let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/random/animated_ball.png";
@@ -72,7 +119,7 @@ fn test_animation() {
     let mut ctx = ApngContext::<u8>::new(decoder.info().unwrap(), colorspace);
 
     let mut hash = std::hash::DefaultHasher::default();
-    let expected_hash = 16516776064033238192_u64;
+    let expected_hash = 1483657996133460445_u64;
     while decoder.more_frames() {
         decoder.decode_headers().unwrap();
         let frame = decoder.frame_info().unwrap();
@@ -105,7 +152,7 @@ fn test_animation_clock() {
     let mut ctx = ApngContext::<u8>::new(decoder.info().unwrap(), colorspace);
 
     let mut hash = std::hash::DefaultHasher::default();
-    let expected_hash = 11331376798319734720_u64;
+    let expected_hash = 11531053282805834058_u64;
     while decoder.more_frames() {
         decoder.decode_headers().unwrap();
         let frame = decoder.frame_info().unwrap();

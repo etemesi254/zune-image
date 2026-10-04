@@ -576,6 +576,9 @@ where
         } else {
             self.decode_stream_interlaced(out)?;
         }
+        if self.frame_info().is_some_and(|frame| frame.is_part_of_seq) {
+            self.num_fctl_seen += 1;
+        }
 
         if let Some(last_read_header) = self.non_parsed_header.as_ref() {
             if last_read_header.chunk_type == PngChunkType::IEND {
@@ -586,6 +589,11 @@ where
                 // may be a fCTL chunk
                 self.decoding_state = DecodingState::DecodingHeaders;
             }
+        } else {
+            // The image data ran to the end of the input without a following chunk: there
+            // is no further frame. Otherwise more_frames() would stay true and every call
+            // would decode the same frame again.
+            self.decoding_state = DecodingState::Done;
         }
         Ok(())
     }

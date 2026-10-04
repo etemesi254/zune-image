@@ -466,7 +466,6 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             )));
         }
 
-        self.num_fctl_seen += 1;
         self.frames.push(SingleFrame::new(fctl_info));
         // let the current frame be the last frame there
         self.current_frame = self.frames.len() - 1;

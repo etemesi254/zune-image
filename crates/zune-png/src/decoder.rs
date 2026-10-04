@@ -517,8 +517,11 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             // From https://wiki.mozilla.org/APNG_Specification
 
             // `num_frames` indicates the total number of frames in the animation. This must equal the number of `fcTL` chunks.
-            // `num_fctl_seen` counts the number of fctl chunks seen
-            return self.num_fctl_seen != actl.num_frames as usize;
+            // `num_fctl_seen` is one more than the number of fcTL frames decoded so far. A
+            // default image that is not part of the animation (IDAT before the first fcTL) is
+            // decoded first and not counted. The image ending early also ends the loop.
+            return self.decoding_state != DecodingState::Done
+                && self.num_fctl_seen <= actl.num_frames as usize;
         }
         false
     }
