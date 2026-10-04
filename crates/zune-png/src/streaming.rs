@@ -113,7 +113,10 @@ where
                 return Ok(());
             }
 
-            if self.stream.eof()? {
+            // After the last IDAT the decoder still has to be called once with an empty
+            // final chunk, even when the file ends right after the chunk header that
+            // ended the IDAT run.
+            if !is_final_chunk && self.stream.eof()? {
                 return Ok(());
             }
 
