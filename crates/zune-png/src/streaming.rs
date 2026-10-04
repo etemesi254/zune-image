@@ -852,7 +852,8 @@ where
         // If an image is < 8-bit depth, not paletted, but requires an alpha channel,
         // we must expand the bits AND inject the alpha bytes simultaneously.
         if info.depth < 8 && (has_trns || add_alpha_channel) {
-            // Pre-calculate the scaled tRNS match value
+            // Pre-calculate the scaled tRNS match value. Without a tRNS chunk (alpha added by
+            // png_set_add_alpha_channel) every pixel is opaque.
             let trns_val_scaled = if has_trns {
                 let depth_mask = (1_u16 << info.depth) - 1;
                 let scale = match info.depth {
@@ -861,9 +862,9 @@ where
                     4 => 0x11,
                     _ => 0,
                 };
-                ((self.trns_bytes[0] & 0xFF & depth_mask) as u8) * scale
+                Some(((self.trns_bytes[0] & 0xFF & depth_mask) as u8) * scale)
             } else {
-                return Err(PngDecodeErrors::GenericStatic("No tRNS chunk found"));
+                None
             };
 
             let scale = match info.depth {
@@ -895,7 +896,7 @@ where
 
                     final_output[out_idx] = expanded_luma;
 
-                    if has_trns && expanded_luma == trns_val_scaled {
+                    if trns_val_scaled == Some(expanded_luma) {
                         final_output[out_idx + 1] = 0; // Fully transparent
                     } else {
                         final_output[out_idx + 1] = 255; // Fully opaque
