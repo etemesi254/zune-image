@@ -2859,3 +2859,48 @@ fn per_row_checkpoint_preserves_vertical_upsampling_state() {
         "retry should resume inside entropy data, got {seeks:?}"
     );
 }
+
+#[test]
+fn stable_prefix_excludes_rows_decoded_past_eof() {
+    // With the input cut a few bytes into the last MCU row, the row can still be
+    // completed from the bit reader's zero padding. Those pixels change once the
+    // real bits arrive, so they must not be reported as stable.
+    for (name, data, cutoffs) in [
+        (
+            "sampling_factors",
+            include_bytes!("../../../test-images/jpeg/sampling_factors.jpg").as_slice(),
+            3000..3060
+        ),
+        (
+            "weid_sampling_factors",
+            include_bytes!("../../../test-images/jpeg/weid_sampling_factors.jpg").as_slice(),
+            1700..1760
+        )
+    ] {
+        let expected = decode_oneshot(data);
+        for cutoff in cutoffs {
+            let limit = Rc::new(Cell::new(cutoff));
+            let cursor = GrowableCursor::new(data, Rc::clone(&limit));
+            let mut decoder = JpegDecoder::new(cursor);
+            decoder.set_incremental_mode(true);
+            decoder
+                .decode_headers()
+                .expect("headers are before the cutoff");
+            let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+            if decoder.decode_into(&mut out).is_ok() {
+                continue;
+            }
+            let stable = decoder.decoded_output_bytes().unwrap();
+            if let Some(index) = out[..stable]
+                .iter()
+                .zip(&expected)
+                .position(|(left, right)| left != right)
+            {
+                panic!(
+                    "{name}: {stable} stable bytes with {cutoff} of {} bytes visible, but byte {index} changes later",
+                    data.len()
+                );
+            }
+        }
+    }
+}

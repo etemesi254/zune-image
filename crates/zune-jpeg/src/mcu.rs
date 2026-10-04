@@ -416,7 +416,12 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                                 &mut pixels_written,
                                 &mut upsampler_scratch_space,
                             )?;
-                            self.pixels_decoded = pixels_written;
+                            // A row finished from zero padding past the end of the
+                            // input is not stable: a retry with more input decodes it
+                            // again with the real bits.
+                            if stream.overread_by() == 0 {
+                                self.pixels_decoded = pixels_written;
+                            }
                         }
                         McuDecodeOutput::RawPlanes(raw_planes) => {
                             self.copy_raw_planes_for_mcu_stripe(i, raw_planes)?;
