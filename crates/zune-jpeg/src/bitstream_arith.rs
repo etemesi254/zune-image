@@ -710,6 +710,11 @@ impl BitStream for BitStreamArithmetic {
     }
 
     #[inline(always)]
+    fn marker_ends_data() -> bool {
+        false
+    }
+
+    #[inline(always)]
     fn supports_mcu_checkpoint() -> bool {
         false
     }

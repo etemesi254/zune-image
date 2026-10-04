@@ -968,7 +968,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 continue;
             }
 
-            if stream.marker().is_some() && stream.bits_left() == 0 {
+            if B::marker_ends_data() && stream.marker().is_some() && stream.bits_left() == 0 {
                 break;
             }
         }

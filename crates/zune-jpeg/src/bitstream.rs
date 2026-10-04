@@ -225,6 +225,12 @@ pub(crate) trait BitStream {
     /// Tell us the bits left the two buffer
     fn bits_left(&self) -> u8;
 
+    /// True when a latched marker plus `bits_left() == 0` means the entropy-coded
+    /// data is used up. Huffman data ends at the marker; the arithmetic decoder
+    /// keeps reading zero bytes after a marker until the scan is complete, and its
+    /// `bits_left()` is a byte shift counter that is 0 between any two bytes.
+    fn marker_ends_data() -> bool;
+
     /// Whether this bitstream type supports per-MCU checkpoint/restore.
     /// Huffman coding supports it; arithmetic coding does not (the A/C/CT
     /// registers are coupled to statistical context tables).
@@ -511,6 +517,11 @@ impl BitStream for BitStreamHuffman {
     #[inline(always)]
     fn bits_left(&self) -> u8 {
         self.bits_left
+    }
+
+    #[inline(always)]
+    fn marker_ends_data() -> bool {
+        true
     }
 
     #[inline(always)]

@@ -139,3 +139,36 @@ fn corresponding_progressive_huffman_orders_are_unchanged() {
     );
     assert_eq!(arithmetic_ascending, arithmetic_descending);
 }
+
+#[test]
+fn arithmetic_scan_continues_with_zero_data_after_a_marker() {
+    // After a marker the arithmetic decoder is fed zero bytes until the scan is
+    // complete (libjpeg-turbo arith_decode does the same). A scan whose data stops
+    // early must therefore decode exactly like the same scan with zero bytes written
+    // out before the EOI marker.
+    for (name, data) in [
+        (
+            "seq",
+            include_bytes!("../../../test-images/jpeg/arith/seq.jpg").as_slice()
+        ),
+        (
+            "seq-restart",
+            include_bytes!("../../../test-images/jpeg/arith/seq-restart.jpg").as_slice()
+        )
+    ] {
+        for cut in [17, 33, 65] {
+            let end = data.len() - 2 - cut;
+            let mut short = data[..end].to_vec();
+            short.extend_from_slice(&[0xff, 0xd9]);
+            let mut padded = data[..end].to_vec();
+            padded.extend(core::iter::repeat(0).take(64));
+            padded.extend_from_slice(&[0xff, 0xd9]);
+
+            assert_eq!(
+                decode(&short, false),
+                decode(&padded, false),
+                "{name}: data cut {cut} bytes before EOI"
+            );
+        }
+    }
+}
