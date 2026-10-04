@@ -915,6 +915,33 @@ fn resume_after_sof_eventually_succeeds() {
     assert!(info.width > 0 && info.height > 0, "dimensions must be valid");
 }
 
+#[test]
+fn input_cut_inside_scan_after_complete_scan_resumes_correctly() {
+    // A baseline image whose first scan carries all three components, followed by
+    // DAC and a stray one-component refinement scan (Ss1 Se63 Ah2 Al1) at 6953.
+    // A one-shot decode ignores the extra scan. When the visible input ends inside
+    // it, the retry with the whole input must not start from that scan's parameters.
+    let data = include_bytes!("../../../test-images/jpeg/scan_after_complete_scan.jpg");
+    let expected = decode_oneshot(data);
+    for cutoff in [6970, 7500, 8000, 8872] {
+        let limit = Rc::new(Cell::new(data.len()));
+        let cursor = GrowableCursor::new(data, Rc::clone(&limit));
+        let mut decoder = JpegDecoder::new(cursor);
+        decoder.set_incremental_mode(true);
+        decoder
+            .decode_headers()
+            .expect("headers are before the cutoff");
+        let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+        limit.set(cutoff);
+        let _ = decoder.decode_into(&mut out);
+        limit.set(data.len());
+        decoder
+            .decode_into(&mut out)
+            .expect("full input should complete the decode");
+        assert_pixels_match(&out, &expected, "scan_after_complete_scan", cutoff);
+    }
+}
+
 /// Build a synthetic APP2 ICC chunk with a single payload segment.
 fn icc_app2_chunk(payload: &[u8]) -> Vec<u8> {
     let body_len = 2 + 12 + 1 + 1 + payload.len();

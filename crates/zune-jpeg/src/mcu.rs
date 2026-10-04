@@ -486,6 +486,14 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         return Ok(());
                     }
                     McuContinuation::AnotherSos => continue 'sos,
+                    McuContinuation::InterScanMarker(_) if all_components_in_first_scan => {
+                        // Same as AnotherSos above: once one scan has carried every
+                        // component, later scans are not baseline data. Parsing them
+                        // here would replace the SOS state that a retry after a
+                        // recoverable EOF uses to set up the decode.
+                        warn!("Marker after a scan that already had all components");
+                        return Ok(());
+                    }
                     McuContinuation::InterScanMarker(marker) => {
                         // Handle inter-scan markers (DHT/DQT/etc) uniformly here.
                         // This keeps all marker handling in the outer loop.
