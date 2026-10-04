@@ -138,3 +138,37 @@ fn test_strip_16bit_4() {
     test_into_decoding(&path);
     test_enum_decoding(&path);
 }
+
+#[test]
+fn test_strip_16bit_trns() {
+    // 16-bit gray and RGB with a tRNS chunk: each sample's high byte, alpha 0 or 255
+    for name in ["tbwn0g16.png", "tbbn2c16.png"] {
+        let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/" + name;
+        test_decoding(&path);
+        test_into_decoding(&path);
+    }
+}
+
+#[test]
+fn test_strip_16bit_add_alpha() {
+    for name in ["basn0g16.png", "basn2c16.png"] {
+        let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/" + name;
+        let contents = open_and_read(path);
+
+        let mut decoder = png::Decoder::new(ZCursor::new(&contents[..]));
+        decoder.set_transformations(
+            Transformations::EXPAND | Transformations::STRIP_16 | Transformations::ALPHA
+        );
+        let mut reader = decoder.read_info().unwrap();
+        let mut expected = vec![0; reader.output_buffer_size().unwrap()];
+        reader.next_frame(&mut expected).unwrap();
+
+        let options = DecoderOptions::default()
+            .png_set_strip_to_8bit(true)
+            .png_set_add_alpha_channel(true);
+        let pixels = zune_png::PngDecoder::new_with_options(ZCursor::new(&contents), options)
+            .decode_raw()
+            .unwrap();
+        assert_eq!(pixels, expected, "{name}");
+    }
+}
