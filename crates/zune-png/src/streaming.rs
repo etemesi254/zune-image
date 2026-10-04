@@ -932,6 +932,30 @@ where
             return Ok(());
         }
 
+        // --- 4a. 16-BIT tRNS OR ADD ALPHA, STRIPPED TO 8 BITS ---
+        // The alpha passes below write 16-bit samples, but `final_output` holds 8-bit ones:
+        // keep the high byte of each sample and append the alpha byte here instead.
+        if info.depth == 16
+            && self.options.png_get_strip_to_8bit()
+            && (has_trns || add_alpha_channel)
+        {
+            let mut trns = [0_u8; 6];
+            for (pair, value) in trns.chunks_exact_mut(2).zip(self.trns_bytes) {
+                pair.copy_from_slice(&value.to_be_bytes());
+            }
+            let trns = &trns[..2 * n_components];
+            for (in_px, out_px) in raw_input
+                .chunks_exact(2 * n_components)
+                .zip(final_output.chunks_exact_mut(n_components + 1))
+            {
+                for (sample, out) in in_px.chunks_exact(2).zip(out_px.iter_mut()) {
+                    *out = sample[0];
+                }
+                out_px[n_components] = if has_trns && in_px == trns { 0 } else { 255 };
+            }
+            return Ok(());
+        }
+
         // --- 4. 8-BIT / 16-BIT tRNS ---
         if has_trns {
             if info.depth <= 8 {
