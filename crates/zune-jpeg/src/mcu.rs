@@ -250,7 +250,17 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             * 8;
         let mut upsampler_scratch_space = vec![0; upsampler_scratch_size];
 
+        // Every scan walks the whole image, so bound the number of scans as the
+        // progressive decoder does (jpeg_get_max_scans).
+        let mut scans_seen = 0_usize;
         'sos: loop {
+            scans_seen += 1;
+            if scans_seen > self.options.jpeg_get_max_scans() {
+                return Err(DecodeErrors::Format(format!(
+                    "Too many scans, exceeded limit of {}",
+                    self.options.jpeg_get_max_scans()
+                )));
+            }
             // Later scans may use Huffman tables defined by inter-scan DHT markers.
             self.check_tables::<B>()?;
 
