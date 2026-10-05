@@ -22,7 +22,7 @@ fn record_growth(size: usize) {
     while live > peak {
         match PEAK_BYTES.compare_exchange_weak(peak, live, Ordering::Relaxed, Ordering::Relaxed) {
             Ok(_) => break,
-            Err(current) => peak = current,
+            Err(current) => peak = current
         }
     }
 }
@@ -75,7 +75,7 @@ unsafe impl GlobalAlloc for TrackingAllocator {
 #[derive(Clone, Copy)]
 struct AllocationProfile {
     peak_live_bytes: usize,
-    allocations: usize,
+    allocations:     usize
 }
 
 fn profile<T>(operation: impl FnOnce() -> T) -> AllocationProfile {
@@ -86,7 +86,7 @@ fn profile<T>(operation: impl FnOnce() -> T) -> AllocationProfile {
     black_box(&value);
     let result = AllocationProfile {
         peak_live_bytes: PEAK_BYTES.load(Ordering::SeqCst).saturating_sub(baseline),
-        allocations: ALLOCATIONS.load(Ordering::SeqCst) - allocation_start,
+        allocations:     ALLOCATIONS.load(Ordering::SeqCst) - allocation_start
     };
     drop(value);
     assert_eq!(LIVE_BYTES.load(Ordering::SeqCst), baseline);
@@ -109,7 +109,7 @@ fn decode_scanlines(data: &[u8], rows_per_read: usize) -> u64 {
                     .iter()
                     .fold(checksum, |sum, byte| sum.wrapping_add(u64::from(*byte)));
             }
-            status => panic!("unexpected scanline status {status:?}"),
+            status => panic!("unexpected scanline status {status:?}")
         }
     }
     assert_eq!(scanlines.finish().unwrap(), ScanlineStatus::Complete);
