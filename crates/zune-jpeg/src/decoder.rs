@@ -548,7 +548,7 @@ struct RawPullState {
     owner:                    RawPullOwner,
     phase:                    RawPullPhase,
     next_stripe:              usize,
-    entropy_tables:           Option<EntropyTables>,
+    entropy_tables:           Option<Box<EntropyTables>>,
     layout:                   Option<[PlaneInfo; MAX_COMPONENTS]>,
     rows_per_stripe:          [usize; MAX_COMPONENTS],
     buffered_source_complete: bool
@@ -799,7 +799,8 @@ where
         if self.decoder.raw_pull_state.phase == RawPullPhase::StreamingBaseline
             && self.decoder.is_arithmetic
         {
-            self.decoder.raw_pull_state.entropy_tables = Some(self.decoder.entropy_tables.clone());
+            self.decoder.raw_pull_state.entropy_tables =
+                Some(Box::new(self.decoder.entropy_tables.clone()));
         }
         Ok(RawImcuRowStatus::RowReady {
             rows_written: sink.rows_written
@@ -943,7 +944,7 @@ where
                 .ok_or(DecodeErrors::FormatStatic(
                     "missing arithmetic contexts for raw iMCU-row resume"
                 ))?;
-            self.decoder.entropy_tables = tables.clone();
+            self.decoder.entropy_tables = tables.as_ref().clone();
         }
         Ok(())
     }
