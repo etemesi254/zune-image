@@ -624,7 +624,7 @@ struct ScanlineState {
     staged_rows:     usize,
     staging:         Vec<u8>,
     source_complete: bool,
-    entropy_tables:  Option<EntropyTables>
+    entropy_tables:  Option<Box<EntropyTables>>
 }
 
 impl Default for ScanlineState {
@@ -1057,7 +1057,8 @@ where
         if self.decoder.scanline_state.phase == ScanlinePhase::StreamingBaseline
             && self.decoder.is_arithmetic
         {
-            self.decoder.scanline_state.entropy_tables = Some(self.decoder.entropy_tables.clone());
+            self.decoder.scanline_state.entropy_tables =
+                Some(Box::new(self.decoder.entropy_tables.clone()));
         }
         Ok(ScanlineReadStatus::RowsProcessed { rows: rows_written })
     }
@@ -1080,7 +1081,7 @@ where
                     "missing arithmetic contexts for converted scanline resume"
                 )
             )?;
-            self.decoder.entropy_tables = tables.clone();
+            self.decoder.entropy_tables = tables.as_ref().clone();
         }
         Ok(())
     }
