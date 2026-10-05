@@ -22,7 +22,7 @@ fn record_growth(size: usize) {
     while live > peak {
         match PEAK_BYTES.compare_exchange_weak(peak, live, Ordering::Relaxed, Ordering::Relaxed) {
             Ok(_) => break,
-            Err(current) => peak = current
+            Err(current) => peak = current,
         }
     }
 }
@@ -75,7 +75,7 @@ unsafe impl GlobalAlloc for TrackingAllocator {
 #[derive(Clone, Copy)]
 struct AllocationProfile {
     peak_live_bytes: usize,
-    allocations:     usize
+    allocations: usize,
 }
 
 fn profile<T>(operation: impl FnOnce() -> T) -> AllocationProfile {
@@ -86,7 +86,7 @@ fn profile<T>(operation: impl FnOnce() -> T) -> AllocationProfile {
     black_box(&value);
     let result = AllocationProfile {
         peak_live_bytes: PEAK_BYTES.load(Ordering::SeqCst).saturating_sub(baseline),
-        allocations:     ALLOCATIONS.load(Ordering::SeqCst) - allocation_start
+        allocations: ALLOCATIONS.load(Ordering::SeqCst) - allocation_start,
     };
     drop(value);
     assert_eq!(LIVE_BYTES.load(Ordering::SeqCst), baseline);
@@ -109,7 +109,7 @@ fn decode_scanlines(data: &[u8], rows_per_read: usize) -> u64 {
                     .iter()
                     .fold(checksum, |sum, byte| sum.wrapping_add(u64::from(*byte)));
             }
-            status => panic!("unexpected scanline status {status:?}")
+            status => panic!("unexpected scanline status {status:?}"),
         }
     }
     assert_eq!(scanlines.finish().unwrap(), ScanlineStatus::Complete);
@@ -117,24 +117,24 @@ fn decode_scanlines(data: &[u8], rows_per_read: usize) -> u64 {
 }
 
 fn main() {
-    let data =
+    let baseline =
         read(sample_path().join("test-images/jpeg/benchmarks/speed_bench_hv_subsampling.jpg"))
             .unwrap();
 
-    let full = profile(|| JpegDecoder::new(ZCursor::new(&data)).decode().unwrap());
-    let one_row = profile(|| decode_scanlines(&data, 1));
-    let direct = profile(|| decode_scanlines(&data, 64));
+    let full = profile(|| JpegDecoder::new(ZCursor::new(&baseline)).decode().unwrap());
+    let one_row = profile(|| decode_scanlines(&baseline, 1));
+    let direct = profile(|| decode_scanlines(&baseline, 64));
 
     println!(
-        "full output: peak={} bytes, allocations={}",
+        "baseline full output: peak={} bytes, allocations={}",
         full.peak_live_bytes, full.allocations
     );
     println!(
-        "one-row scanlines: peak={} bytes, allocations={}",
+        "baseline one-row scanlines: peak={} bytes, allocations={}",
         one_row.peak_live_bytes, one_row.allocations
     );
     println!(
-        "64-row scanlines: peak={} bytes, allocations={}",
+        "baseline 64-row scanlines: peak={} bytes, allocations={}",
         direct.peak_live_bytes, direct.allocations
     );
 
@@ -142,4 +142,34 @@ fn main() {
     assert!(direct.peak_live_bytes < full.peak_live_bytes);
     assert!(one_row.allocations <= full.allocations + 4);
     assert!(direct.allocations <= full.allocations + 4);
+
+    let progressive =
+        read(sample_path().join("test-images/jpeg/benchmarks/speed_bench_prog_hv_sampling.jpg"))
+            .unwrap();
+    let full = profile(|| {
+        JpegDecoder::new(ZCursor::new(&progressive))
+            .decode()
+            .unwrap()
+    });
+    let one_row = profile(|| decode_scanlines(&progressive, 1));
+    let direct = profile(|| decode_scanlines(&progressive, 64));
+
+    println!(
+        "progressive full output: peak={} bytes, allocations={}",
+        full.peak_live_bytes, full.allocations
+    );
+    println!(
+        "progressive one-row scanlines: peak={} bytes, allocations={}",
+        one_row.peak_live_bytes, one_row.allocations
+    );
+    println!(
+        "progressive 64-row scanlines: peak={} bytes, allocations={}",
+        direct.peak_live_bytes, direct.allocations
+    );
+
+    // Buffered progressive output must retain full coefficient storage, but
+    // rendering rows should reuse stripe scratch instead of allocating once
+    // per iMCU stripe.
+    assert!(one_row.allocations <= full.allocations + 64);
+    assert!(direct.allocations <= full.allocations + 64);
 }
