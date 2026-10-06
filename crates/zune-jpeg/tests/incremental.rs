@@ -1083,6 +1083,44 @@ fn com_after_complete_scan_cut_inside_resumes() {
     }
 }
 
+#[test]
+fn direct_sos_after_complete_scan_is_decided_before_parsing_its_header() {
+    let mut data = SCAN_AFTER_COMPLETE[..SCAN_AFTER_COMPLETE_DAC].to_vec();
+    data.extend_from_slice(&SCAN_AFTER_COMPLETE[SCAN_AFTER_COMPLETE_SOS..]);
+    let expected = first_scan_oracle();
+
+    for strict in [false, true] {
+        let limit = Rc::new(Cell::new(data.len()));
+        let cursor = GrowableCursor::new(&data, Rc::clone(&limit));
+        let options = DecoderOptions::default().set_strict_mode(strict);
+        let mut decoder = JpegDecoder::new_with_options(cursor, options);
+        decoder.set_incremental_mode(true);
+        decoder
+            .decode_headers()
+            .expect("headers are before the extra SOS");
+        let mut out = vec![0; decoder.output_buffer_size().unwrap()];
+
+        // Make the complete SOS marker visible, but not its length or header.
+        limit.set(SCAN_AFTER_COMPLETE_DAC + 2);
+        if strict {
+            match decoder.decode_into(&mut out) {
+                Err(DecodeErrors::FormatStatic(msg)) => {
+                    assert_eq!(
+                        msg,
+                        "SOS after a baseline scan that already had all components"
+                    );
+                }
+                other => panic!("expected the extra-SOS error, got {other:?}")
+            }
+        } else {
+            decoder
+                .decode_into(&mut out)
+                .expect("lenient decode should stop before parsing the extra SOS");
+            assert_pixels_match(&out, &expected, "direct SOS", data.len());
+        }
+    }
+}
+
 /// Build a synthetic APP2 ICC chunk with a single payload segment.
 fn icc_app2_chunk(payload: &[u8]) -> Vec<u8> {
     let body_len = 2 + 12 + 1 + 1 + payload.len();

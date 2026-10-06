@@ -482,13 +482,36 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 match terminate {
                     McuContinuation::Ok => {}
                     McuContinuation::AnotherSos if all_components_in_first_scan => {
+                        // Decided before parsing the SOS header, so the committed SOS
+                        // and checkpoint state still describe the scan that was decoded.
                         if self.options.strict_mode() {
                             return Err(DecodeErrors::FormatStatic(SOS_AFTER_COMPLETE_SCAN));
                         }
+                        stream.marker().take();
                         warn!("More than one SOS despite already having all components");
                         return Ok(());
                     }
-                    McuContinuation::AnotherSos => continue 'sos,
+                    McuContinuation::AnotherSos => {
+                        match self.parse_marker_inner(Marker::SOS) {
+                            Ok(()) => {}
+                            // Same handling as input ending inside the scan data above
+                            // (this header used to be parsed during the row decode).
+                            Err(e) if e.is_recoverable_eof() && !self.scan_eof_is_error() => {
+                                error!("{e}");
+                                if let Some(pixels) = output.pixels_mut() {
+                                    pixels.fill(128);
+                                }
+                                return Ok(());
+                            }
+                            Err(e) => return Err(e)
+                        }
+                        self.invalidate_scan_checkpoint();
+                        stream.marker().take();
+                        stream.reset();
+                        B::reset_arith_tables(&mut self.entropy_tables);
+                        trace!("Found SOS marker");
+                        continue 'sos;
+                    }
                     McuContinuation::InterScanMarker(marker) => {
                         // Handle inter-scan markers (DHT/DQT/etc) uniformly here.
                         // This keeps all marker handling in the outer loop.
@@ -1030,12 +1053,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 // A latched RST means the entropy segment is already exhausted.
                 self.handle_rst(stream)?;
             } else if let Marker::SOS = m {
-                self.parse_marker_inner(Marker::SOS)?;
-                self.invalidate_scan_checkpoint();
-                stream.marker().take();
-                stream.reset();
-                B::reset_arith_tables(&mut self.entropy_tables);
-                trace!("Found SOS marker");
+                // Left latched and unparsed: the caller decides whether another
+                // scan is valid before parsing its header.
                 return Ok(McuContinuation::AnotherSos);
             } else if matches!(
                 m,
@@ -1442,6 +1461,8 @@ enum InterScanEnd {
 
 enum McuContinuation {
     Ok,
+    /// An SOS marker follows the entropy-coded data. It is still latched in the
+    /// bitstream and its header has not been parsed.
     AnotherSos,
     /// Found an inter-scan marker (DHT/DQT/DRI/COM/APP) that needs handling.
     /// The caller should parse it and scan for the next SOS.
