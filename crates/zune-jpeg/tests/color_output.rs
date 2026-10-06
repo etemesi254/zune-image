@@ -9,6 +9,7 @@
 use zune_core::bytestream::ZCursor;
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::DecoderOptions;
+use zune_jpeg::errors::DecodeErrors;
 use zune_jpeg::JpegDecoder;
 
 const FIXTURES: [(&str, &[u8], (usize, usize)); 7] = [
@@ -131,5 +132,21 @@ fn luma_matches_y_of_ycbcr_for_vertically_sampled_images() {
         for (pixel_index, (luma, ycbcr)) in luma.iter().zip(ycbcr.chunks_exact(3)).enumerate() {
             assert_eq!(*luma, ycbcr[0], "{name}: pixel {pixel_index}");
         }
+    }
+}
+
+#[test]
+fn unsupported_lumaa_output_is_an_error_for_vertically_subsampled_images() {
+    // 4:2:0: vertically subsampled chroma used to panic on carry-over of rows never decoded
+    let data = include_bytes!("../../../test-images/jpeg/non_interleaved_420_64x64.jpg");
+    let options = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::LumaA);
+    let err = JpegDecoder::new_with_options(ZCursor::new(data.as_slice()), options)
+        .decode()
+        .expect_err("LumaA output from YCbCr is not implemented");
+    match err {
+        DecodeErrors::Format(msg) => {
+            assert_eq!(msg, "Unimplemented colorspace mapping from YCbCr to LumaA")
+        }
+        other => panic!("expected DecodeErrors::Format, got {other:?}")
     }
 }
