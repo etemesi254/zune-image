@@ -255,6 +255,21 @@ fn baseline_scanlines_match_supported_output_colorspaces() {
 }
 
 #[test]
+fn bgr_bgra_scanlines_match_decode_across_sampling_modes() {
+    for data in [
+        include_bytes!("../../../test-images/jpeg/non_interleaved_444_64x64.jpg").as_slice(),
+        include_bytes!("../../../test-images/jpeg/non_interleaved_422_65x65.jpg").as_slice(),
+        include_bytes!("../../../test-images/jpeg/2029.jpg").as_slice(),
+        include_bytes!("../../../test-images/jpeg/rebuilt_relax_fill_bytes_before_marker.jpg")
+            .as_slice()
+    ] {
+        for colorspace in [ColorSpace::BGR, ColorSpace::BGRA] {
+            assert_scanlines_match_decode(data, colorspace, 3);
+        }
+    }
+}
+
+#[test]
 fn batched_baseline_scanlines_match_decode() {
     assert_scanlines_match_decode(
         include_bytes!("../../../test-images/jpeg/2029.jpg"),
