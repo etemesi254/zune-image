@@ -1043,20 +1043,22 @@ impl BitStream for BitStreamHuffman {
                 while k <= self.spec_end {
                     let coefficient = &mut block[UN_ZIGZAG[k as usize & 63] & 63];
 
-                    if *coefficient != 0 && self.get_bit() == 1 {
-                        // check if we already modified it, if so do nothing, otherwise
-                        // append the correction bit.
-                        if (*coefficient & bit) == 0 {
-                            if *coefficient >= 0 {
-                                *coefficient = coefficient.wrapping_add(bit);
-                            } else {
-                                *coefficient = coefficient.wrapping_sub(bit);
+                    if *coefficient != 0 {
+                        // Zero coefficients consume no correction bit, so do not refill for them.
+                        if self.bits_left < 1 {
+                            self.refill(reader)?;
+                        }
+                        if self.get_bit() == 1 {
+                            // check if we already modified it, if so do nothing, otherwise
+                            // append the correction bit.
+                            if (*coefficient & bit) == 0 {
+                                if *coefficient >= 0 {
+                                    *coefficient = coefficient.wrapping_add(bit);
+                                } else {
+                                    *coefficient = coefficient.wrapping_sub(bit);
+                                }
                             }
                         }
-                    }
-                    if self.bits_left < 1 {
-                        // refill at the last possible moment
-                        self.refill(reader)?;
                     }
                     k += 1;
                 }
