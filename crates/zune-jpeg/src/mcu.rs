@@ -151,6 +151,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let padded_width = calculate_padded_width(width, self.info.sample_ratio);
 
         let mut stream = B::new();
+        stream.set_strict(self.options.strict_mode());
 
         let mut tmp = [0_i32; DCT_BLOCK];
 

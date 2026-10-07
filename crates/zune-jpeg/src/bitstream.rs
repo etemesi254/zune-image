@@ -149,6 +149,9 @@ pub(crate) trait BitStream {
     /// Create a new Bitstream for progressive decoding
     fn new_progressive(al: u8, spec_start: u8, spec_end: u8) -> Self;
 
+    /// Strict mode: reject malformed entropy data that lenient decoding recovers from.
+    fn set_strict(&mut self, _strict: bool) {}
+
     fn get_dc_table(
         tables: &mut EntropyTables, dc_pos: usize
     ) -> Result<&mut Self::DCEntropyTable, DecodeErrors>;
@@ -268,9 +271,29 @@ pub(crate) struct BitStreamHuffman {
     /// True if we have seen end of image marker.
     /// Don't read anything after that.
     seen_eoi:            bool,
+    /// Strict mode, see [`BitStream::set_strict`].
+    strict:              bool,
 }
 
 impl BitStreamHuffman {
+    /// The zig-zag position of an AC coefficient whose run ended at `pos`. A run past the
+    /// last coefficient of the block (63) is malformed: strict mode rejects it, lenient mode
+    /// puts the coefficient on that last position, as libjpeg-turbo does, instead of
+    /// wrapping it onto the DC or a low-frequency coefficient. A run past the end of a
+    /// progressive scan's band but within the block is left alone, as in libjpeg-turbo.
+    #[inline(always)]
+    fn ac_position(&self, pos: usize) -> Result<usize, DecodeErrors> {
+        if pos <= 63 {
+            return Ok(pos);
+        }
+        if self.strict {
+            return Err(DecodeErrors::FormatStatic(
+                "AC coefficient run past the end of the block"
+            ));
+        }
+        Ok(63)
+    }
+
     /// Get a single bit from the bitstream
     fn get_bit(&mut self) -> u8 {
         let k = (self.aligned_buffer >> 63) as u8;
@@ -470,6 +493,7 @@ impl BitStream for BitStreamHuffman {
             eob_run:             0,
             overread_by:         0,
             seen_eoi:            false,
+            strict:              false,
         }
     }
 
@@ -489,7 +513,12 @@ impl BitStream for BitStreamHuffman {
             eob_run:             0,
             overread_by:         0,
             seen_eoi:            false,
+            strict:              false,
         }
+    }
+
+    fn set_strict(&mut self, strict: bool) {
+        self.strict = strict;
     }
 
     #[inline(always)]
@@ -736,7 +765,7 @@ impl BitStream for BitStreamHuffman {
             if fast_ac != 0 {
                 //  FAST AC path
                 pos += ((fast_ac >> 4) & 15) as usize; // run
-                let t_pos = UN_ZIGZAG[min(pos, 63)] & 63;
+                let t_pos = UN_ZIGZAG[self.ac_position(pos)?] & 63;
 
                 block[t_pos] = i32::from(fast_ac >> 8).wrapping_mul (qt_table[t_pos]); // Value
                 self.drop_bits((fast_ac & 15) as u8);
@@ -751,10 +780,7 @@ impl BitStream for BitStreamHuffman {
                     pos += r as usize;
                     r = self.get_bits(symbol as u8);
                     symbol = huff_extend(r, symbol);
-                    // A run past the end of the block lands on the last coefficient, as
-                    // on the fast path above (and as libjpeg-turbo does); wrapping would
-                    // overwrite the DC or a low-frequency coefficient.
-                    let t_pos = UN_ZIGZAG[min(pos, 63)] & 63;
+                    let t_pos = UN_ZIGZAG[self.ac_position(pos)?] & 63;
 
                     block[t_pos] = symbol .wrapping_mul( qt_table[t_pos]);
 
@@ -801,6 +827,8 @@ impl BitStream for BitStreamHuffman {
                 //  FAST AC path
                 pos += ((fast_ac >> 4) & 15) as usize; // run
 
+                // nothing is written, but strict mode must reject the same streams
+                self.ac_position(pos)?;
                 self.drop_bits((fast_ac & 15) as u8);
                 pos += 1;
             } else {
@@ -811,6 +839,7 @@ impl BitStream for BitStreamHuffman {
 
                 if symbol != 0 {
                     pos += r as usize;
+                    self.ac_position(pos)?;
                     // Advance over bits but ignore.
                     let _ = self.get_bits(symbol as u8);
 
@@ -890,7 +919,7 @@ impl BitStream for BitStreamHuffman {
             if fac != 0 {
                 // fast ac path
                 k += ((fac >> 4) & 15) as usize; // run
-                block[UN_ZIGZAG[min(k, 63)] & 63] = (fac >> 8).wrapping_mul(bit); // value
+                block[UN_ZIGZAG[self.ac_position(k)?] & 63] = (fac >> 8).wrapping_mul(bit); // value
                 self.drop_bits((fac & 15) as u8);
                 k += 1;
             } else {
@@ -903,7 +932,7 @@ impl BitStream for BitStreamHuffman {
                     k += r as usize;
                     r = self.get_bits(symbol as u8);
                     symbol = huff_extend(r, symbol);
-                    block[UN_ZIGZAG[k & 63] & 63] = (symbol as i16).wrapping_mul(bit);
+                    block[UN_ZIGZAG[self.ac_position(k)?] & 63] = (symbol as i16).wrapping_mul(bit);
                     k += 1;
                 } else {
                     if r != 15 {
