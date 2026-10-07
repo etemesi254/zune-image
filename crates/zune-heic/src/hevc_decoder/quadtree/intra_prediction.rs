@@ -146,7 +146,9 @@ const INV_ANGLES: [i16; 35] = [
     0, 0, 0, 0, 0, 0, 0, 0, 0                     // 26-34: Positive Vertical
 ];
 
-pub fn predict_angular(p: &[u8], dst: &mut [u8], ref_main_buf: &mut [u8], n_t: usize, mode: u8) {
+pub fn predict_angular(
+    p: &[u8], dst: &mut [u8], ref_main_buf: &mut [u8], n_t: usize, mode: u8, is_luma: bool
+) {
     let mode_idx = mode as usize;
     let angle = INTRA_ANGLES[mode_idx];
     let is_vert = mode >= 18;
@@ -222,6 +224,27 @@ pub fn predict_angular(p: &[u8], dst: &mut [u8], ref_main_buf: &mut [u8], n_t: u
             dst[row * n_t + col] = val;
         }
     }
+
+    // ── 3. Boundary smoothing for pure vertical/horizontal (Spec 8.4.4.2.6) ──
+    // Applied to luma blocks smaller than 32x32 only.
+    if is_luma && n_t < 32 {
+        let corner = i32::from(p[corner_idx]);
+        if mode == 26 {
+            // predSamples[0][y] = Clip1(p[0][-1] + ((p[-1][y] - p[-1][-1]) >> 1))
+            let top0 = i32::from(p[corner_idx + 1]);
+            for y in 0..n_t {
+                let left = i32::from(p[corner_idx - 1 - y]);
+                dst[y * n_t] = (top0 + ((left - corner) >> 1)).clamp(0, 255) as u8;
+            }
+        } else if mode == 10 {
+            // predSamples[x][0] = Clip1(p[-1][0] + ((p[x][-1] - p[-1][-1]) >> 1))
+            let left0 = i32::from(p[corner_idx - 1]);
+            for x in 0..n_t {
+                let top = i32::from(p[corner_idx + 1 + x]);
+                dst[x] = (left0 + ((top - corner) >> 1)).clamp(0, 255) as u8;
+            }
+        }
+    }
 }
 pub fn decode_intra_prediction_internal_u8(
     ctx: &mut DecodeSliceContext, x_b0: usize, y_b0: usize, intra_mode: u8, n_t: usize,
@@ -243,7 +266,9 @@ pub fn decode_intra_prediction_internal_u8(
     match intra_mode {
         0 => predict_planar(p_slice, scratchpad, n_t, log2_n_t),
         1 => predict_dc(p_slice, scratchpad, n_t, log2_n_t, c_idx == 0),
-        2..=34 => predict_angular(p_slice, scratchpad, ref_main_scratch, n_t, intra_mode),
+        2..=34 => {
+            predict_angular(p_slice, scratchpad, ref_main_scratch, n_t, intra_mode, c_idx == 0);
+        }
         _ => unreachable!()
     }
 }
