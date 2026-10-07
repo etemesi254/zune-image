@@ -197,8 +197,9 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
                 return Err(PngDecodeErrors::Generic(msg));
             }
         }
-        // skip any unread bytes and the crc
-        self.stream.skip(chunk.length - read + 4)?;
+        // skip any unread bytes and the crc (saturating: a malformed length must not wrap)
+        self.stream
+            .skip(chunk.length.saturating_sub(read).saturating_add(4))?;
         self.seen_trns = true;
 
         Ok(())
