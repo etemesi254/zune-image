@@ -1345,8 +1345,12 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 for component in comps.iter_mut() {
                     // Components the output colorspace does not use are not decoded, so
                     // they have no rows to carry over.
-                    if component.sample_ratio != SampleRatios::H && component.needed {
-                        // We don't care about H sampling factors, since it's copied in the workers function
+                    if !matches!(
+                        component.sample_ratio,
+                        SampleRatios::H | SampleRatios::Generic(_, _)
+                    ) && component.needed
+                    {
+                        // H and Generic sampling preserve their already-upsampled rows in worker.
 
                         // copy last row to be used for the  next color conversion
                         let size = component.vertical_sample

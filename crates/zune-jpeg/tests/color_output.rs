@@ -150,3 +150,34 @@ fn unsupported_lumaa_output_is_an_error_for_vertically_subsampled_images() {
         other => panic!("expected DecodeErrors::Format, got {other:?}")
     }
 }
+
+#[test]
+fn generic_upsampling_preserves_delayed_boundary_rows() {
+    let data = include_bytes!("../../../test-images/jpeg/issue_482_mixed_sampling.jpg");
+    let reference = include_bytes!("../../../test-images/jpeg/issue_482_mixed_sampling.rgb");
+    let (actual, dimensions) = decode(data, ColorSpace::RGB);
+
+    assert_eq!(dimensions, (40, 24));
+    assert_eq!(actual.len(), reference.len());
+
+    let differences: Vec<u8> = actual
+        .iter()
+        .zip(reference)
+        .map(|(actual, reference)| actual.abs_diff(*reference))
+        .collect();
+    let max_difference = differences.iter().copied().max().unwrap_or(0);
+    let mean_difference =
+        differences.iter().map(|difference| f64::from(*difference)).sum::<f64>()
+            / differences.len() as f64;
+
+    assert!(max_difference <= 8, "max channel difference {max_difference}");
+    assert!(mean_difference < 3.0, "mean channel difference {mean_difference}");
+
+    let row_bytes = 40 * 3;
+    let delayed_rows = &differences[14 * row_bytes..16 * row_bytes];
+    let delayed_max = delayed_rows.iter().copied().max().unwrap_or(0);
+    assert!(
+        delayed_max <= 8,
+        "delayed MCU-boundary rows differ by {delayed_max}"
+    );
+}

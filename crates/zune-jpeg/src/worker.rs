@@ -556,6 +556,19 @@ pub(crate) fn upsample(
             let raw_coeff = &component.raw_coeff;
             let dest_coeff = &mut component.upsample_dest;
 
+            if has_vertical_sample {
+                let length = component.first_row_upsample_dest.len();
+                let start = dest_coeff
+                    .len()
+                    .checked_sub(length)
+                    .ok_or(DecodeErrors::FormatStatic(
+                        "Generic upsample destination is too small",
+                    ))?;
+                component
+                    .first_row_upsample_dest
+                    .copy_from_slice(&dest_coeff[start..]);
+            }
+
             //let size =  component.width_stride.div_ceil(v);
 
             // for (single_row, output_stride) in raw_coeff
