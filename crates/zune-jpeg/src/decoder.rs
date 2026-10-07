@@ -2845,6 +2845,10 @@ where
                     state.scan_checkpoint = None;
                     state.progressive_checkpoint = None;
                 }
+                // A later decode_into call is a replay, not an EOF retry. Start it
+                // through the same direct path unless incremental mode explicitly
+                // requests checkpoints on every first attempt.
+                self.scan_decode_attempted = false;
                 if let Some(pixels) = output.pixels_mut() {
                     self.pixels_decoded = pixels.len();
                 }
