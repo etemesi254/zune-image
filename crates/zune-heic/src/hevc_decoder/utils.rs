@@ -49,7 +49,12 @@ fn find_epb(src: &[u8], start: usize) -> Option<usize> {
 ///
 /// Returns `Cow::Borrowed` if no EPB is found (zero-allocation).
 /// Returns `Cow::Owned` with the cleaned vector if EPBs are removed.
-pub fn extract_rbsp(src: &[u8]) -> Cow<'_, [u8]> {
+///
+/// If `epb_positions` is given, the positions (indices into `src`) of every
+/// removed emulation prevention byte are recorded, in increasing order.
+pub fn extract_rbsp_with_epb<'a>(
+    src: &'a [u8], mut epb_positions: Option<&mut Vec<usize>>
+) -> Cow<'a, [u8]> {
     // 1. Initial Fast Scan
     if let Some(first_epb) = find_epb(src, 0) {
         // 2. The Slow Path (Allocation Required)
@@ -65,6 +70,9 @@ pub fn extract_rbsp(src: &[u8]) -> Cow<'_, [u8]> {
             // We know `si` points directly to a `0x00 0x00 0x03` here
             if si + 2 < src.len() && src[si] == 0 && src[si + 1] == 0 && src[si + 2] == 3 {
                 dst.extend_from_slice(&[0, 0]); // Keep the two 0x00s
+                if let Some(p) = epb_positions.as_deref_mut() {
+                    p.push(si + 2);
+                }
                 si += 3; // Skip the 0x03!
             } else {
                 break; // Failsafe, should rarely hit unless malformed NAL ends prematurely

@@ -27,6 +27,7 @@ mod nal_unit_parsers;
 mod neighbor_tracker;
 mod quadtree;
 mod raw_frame;
+mod shared;
 mod utils;
 
 pub struct HevcDecoder {
@@ -38,7 +39,9 @@ pub struct HevcDecoder {
     pps_id: usize,
     sps_id: usize,
     pub(crate) neighbor_tracker: Option<NeighborTracker>,
-    pub(crate) dependent_slice_contexts: Option<[u8; NUM_CABAC_CONTEXTS]>
+    pub(crate) dependent_slice_contexts: Option<[u8; NUM_CABAC_CONTEXTS]>,
+    /// Maximum number of threads used to decode CTU rows in parallel (WPP)
+    pub(crate) max_threads: usize
 }
 
 impl Default for HevcDecoder {
@@ -59,8 +62,17 @@ impl HevcDecoder {
             pps_id:                   0,
             sps_id:                   0,
             neighbor_tracker:         None,
-            dependent_slice_contexts: None
+            dependent_slice_contexts: None,
+            max_threads:              1
         }
+    }
+
+    /// Set the maximum number of threads used to decode the CTU rows of a
+    /// picture in parallel. Only streams coded with wavefront parallel
+    /// processing (`entropy_coding_sync_enabled_flag`) can use more than one.
+    /// Defaults to 1.
+    pub fn set_max_threads(&mut self, threads: usize) {
+        self.max_threads = threads.max(1);
     }
 
     #[must_use]

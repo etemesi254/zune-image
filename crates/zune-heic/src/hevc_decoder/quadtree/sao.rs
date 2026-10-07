@@ -8,7 +8,7 @@ use crate::hevc_decoder::raw_frame::{RawFrame, SingleFrame, offset_plane};
 use std::cmp::min;
 use std::sync::Arc;
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Copy)]
 pub struct SaoInfo {
     // todo combine sao_type_idx and sao_eo_class into one byte to save on space
     type_index: u8,
@@ -98,11 +98,11 @@ pub fn read_sao(ctx: &mut DecodeSliceContext, x_ctb: usize, y_ctb: usize) {
     if sao_merge_left_flag {
         // Copy from left CTB
         debug_more!("Merging SAO from LEFT");
-        sao_info = ctx.get_neighbor_sao(x_ctb - 1, y_ctb).clone();
+        sao_info = *ctx.get_neighbor_sao(x_ctb - 1, y_ctb);
     } else if sao_merge_up_flag {
         // Copy from top CTB
         debug_more!("Merging SAO from UP");
-        sao_info = ctx.get_neighbor_sao(x_ctb, y_ctb - 1).clone();
+        sao_info = *ctx.get_neighbor_sao(x_ctb, y_ctb - 1);
     } else {
         sao_info = SaoInfo::default();
         let mut n_chroma = 3;

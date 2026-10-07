@@ -442,8 +442,20 @@ where
             }
             let cols = (self.cols as usize).max(1);
 
+            // Grid tiles are already decoded in parallel (one tile per thread),
+            // so only a single picture spreads its CTU rows over the CPUs.
+            #[cfg(not(target_arch = "wasm32"))]
+            let row_threads = if self.is_grid {
+                1
+            } else {
+                std::thread::available_parallelism().map_or(1, std::num::NonZero::get)
+            };
+            #[cfg(target_arch = "wasm32")]
+            let row_threads = 1;
+
             let processor = |sample: HevcSample| -> Result<(), HeicErrors> {
                 let mut software_decoder: HevcDecoder = HevcDecoder::new();
+                software_decoder.set_max_threads(row_threads);
 
                 let vps = sample.vps.as_deref().ok_or(HeicErrors::Generic {
                     msg: "vps not found".to_owned(),

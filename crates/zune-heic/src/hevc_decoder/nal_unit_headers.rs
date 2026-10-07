@@ -276,6 +276,9 @@ pub struct SliceHeader {
     pub slice_beta_offset_div2: i8,
     /// slice_tc_offset_div2 (inherits the PPS value when not overridden)
     pub slice_tc_offset_div2: i8,
+    /// entry_point_offset_minus1[i] + 1: sizes in bytes (counting emulation
+    /// prevention bytes) of each substream but the last (spec 7.4.7.1)
+    pub entry_point_offsets: Vec<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

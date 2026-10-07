@@ -1,6 +1,7 @@
 use crate::debug_more;
 use crate::hevc_decoder::DEBUG_MORE;
 use crate::hevc_decoder::constants::PartMode;
+use crate::hevc_decoder::shared::SharedBuf;
 
 #[derive(Clone, Copy, Debug)]
 pub struct BlockState {
@@ -51,7 +52,7 @@ pub enum PredMode {
 }
 pub struct NeighborTracker {
     /// Full frame map stored in 8x8 units.
-    pub blocks:          Vec<BlockState>,
+    pub blocks:          SharedBuf<BlockState>,
     pub height_in_units: usize,
     pub width_in_units:  usize,
     pub log2_unit_size:  u8 // Usually 2 for 4x4 units, or 3 for 8x8 units
@@ -66,12 +67,27 @@ impl NeighborTracker {
         let height_in_units = pic_height.div_ceil(1 << log2_unit_size);
 
         Self {
-            blocks: vec![BlockState::default(); width_in_units * height_in_units],
+            blocks: SharedBuf::new(width_in_units * height_in_units, BlockState::default()),
             width_in_units,
             height_in_units,
             log2_unit_size
         }
     }
+    /// Another handle to the same block map, for a WPP row decoder.
+    ///
+    /// # Safety
+    /// Same contract as [`SharedBuf::shared_view`]: each row decoder may only
+    /// write blocks of its own CTU row, and may only read blocks of other rows
+    /// after the WPP progress counters guarantee they are complete.
+    pub unsafe fn shared_view(&self) -> Self {
+        Self {
+            blocks:          unsafe { self.blocks.shared_view() },
+            height_in_units: self.height_in_units,
+            width_in_units:  self.width_in_units,
+            log2_unit_size:  self.log2_unit_size
+        }
+    }
+
     pub fn update_block_depth(&mut self, x: usize, y: usize, size: usize, ct_depth: u8) {
         let gx_start = x >> self.log2_unit_size;
         let gy_start = y >> self.log2_unit_size;

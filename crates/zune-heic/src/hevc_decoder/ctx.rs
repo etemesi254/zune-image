@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::debug_more;
 use crate::hevc_decoder::DEBUG_MORE;
@@ -9,6 +9,7 @@ use crate::hevc_decoder::neighbor_tracker::NeighborTracker;
 use crate::hevc_decoder::quadtree::sao::SaoInfo;
 use crate::hevc_decoder::quadtree::sig_ctx_generator::generate_all_sig_ctx_maps;
 use crate::hevc_decoder::raw_frame::{RawFrame, SingleFrame};
+use crate::hevc_decoder::shared::SharedBuf;
 #[allow(clippy::struct_excessive_bools)]
 pub struct DecodeSliceContext<'a> {
     pub sps: &'a Sps,
@@ -59,24 +60,19 @@ pub struct DecodeSliceContext<'a> {
     /// so Chroma can use them for CCP.
     pub luma_residual_temp: Vec<i16>,
 
-    pub ctb_sao_buffer: Vec<SaoInfo>,
-    // ctb contexts
-    pub ctb_context: Vec<Option<[u8; NUM_CABAC_CONTEXTS]>>,
+    /// Per-CTB SAO parameters (shared between WPP row decoders)
+    pub ctb_sao_buffer: SharedBuf<SaoInfo>,
+    /// CABAC contexts saved after CTU 1 of each row, used to start the next
+    /// row (WPP, spec 9.3.1). Shared between WPP row decoders.
+    pub ctb_context: &'a [Mutex<Option<[u8; NUM_CABAC_CONTEXTS]>>],
 }
 impl<'a> DecodeSliceContext<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         sps: &'a Sps, pps: &'a Pps, slice_header: &'a SliceHeader, cabac_engine: CabacDecoder<'a>,
         neighbor_tracker: &'a mut NeighborTracker, last_qp_in_slice: i8, raw_frame: &Arc<RawFrame>,
+        ctb_sao_buffer: SharedBuf<SaoInfo>, ctb_context: &'a [Mutex<Option<[u8; NUM_CABAC_CONTEXTS]>>],
     ) -> Self {
-        // SAO data
-
-        let ctb_size = 1 << sps.log2_ctb_size_y;
-
-        let width_in_ctbs = sps.pic_width_in_luma_samples.div_ceil(ctb_size);
-        let height_in_ctbs = sps.pic_height_in_luma_samples.div_ceil(ctb_size);
-
-        let buffer_size = (width_in_ctbs * height_in_ctbs) as usize;
-
         Self {
             sps,
             pps,
@@ -114,8 +110,8 @@ impl<'a> DecodeSliceContext<'a> {
             luma_residual_temp: vec![0; 1024],
             idct_scratchpad: vec![0; 1024],
             res_scale_val: -1,
-            ctb_sao_buffer: vec![SaoInfo::default(); buffer_size],
-            ctb_context: vec![None; height_in_ctbs as usize],
+            ctb_sao_buffer,
+            ctb_context,
         }
     }
 }

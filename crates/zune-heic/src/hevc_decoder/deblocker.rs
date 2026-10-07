@@ -605,7 +605,7 @@ mod tests {
     // -----------------------------------------------------------------------
 
     fn make_nt_uniform(w4: usize, h4: usize, is_intra: bool, slice_id: u16) -> NeighborTracker {
-        let blocks = (0..w4 * h4)
+        let blocks: Vec<BlockState> = (0..w4 * h4)
             .map(|_| BlockState {
                 pred_mode: PredMode::ModeIntra,
                 part_mode: PartMode::Part2Nx2N,
@@ -624,7 +624,7 @@ mod tests {
             })
             .collect();
         NeighborTracker {
-            blocks,
+            blocks: crate::hevc_decoder::shared::SharedBuf::from_vec(blocks),
             width_in_units: w4,
             height_in_units: h4,
             log2_unit_size: 2,

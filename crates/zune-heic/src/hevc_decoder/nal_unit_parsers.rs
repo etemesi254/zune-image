@@ -513,8 +513,16 @@ pub fn decode_slice_header(
         let num_entry_point_offsets = r.read_ue()?;
         if num_entry_point_offsets > 0 {
             let offset_len_minus1 = r.read_ue()?;
+            if offset_len_minus1 > 31 {
+                return Err(NalError::Generic(format!(
+                    "offset_len_minus1 {offset_len_minus1} out of range"
+                )));
+            }
+            // bounded by the slice size; guard against corrupt counts
+            sh.entry_point_offsets.reserve((num_entry_point_offsets as usize).min(4096));
             for _ in 0..num_entry_point_offsets {
-                r.get_bits((offset_len_minus1 + 1) as u8)?;
+                let v = r.get_bits((offset_len_minus1 + 1) as u8)?;
+                sh.entry_point_offsets.push((v as u32).wrapping_add(1));
             }
         }
     }
