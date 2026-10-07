@@ -270,6 +270,12 @@ pub struct SliceHeader {
     pub slice_addr_rs: Box<Option<SliceHeader>>,
     pub slice_cb_qp_offset: i8,
     pub slice_cr_qp_offset: i8,
+    /// slice_deblocking_filter_disabled_flag (inherits the PPS value when not overridden)
+    pub slice_deblocking_filter_disabled_flag: bool,
+    /// slice_beta_offset_div2 (inherits the PPS value when not overridden)
+    pub slice_beta_offset_div2: i8,
+    /// slice_tc_offset_div2 (inherits the PPS value when not overridden)
+    pub slice_tc_offset_div2: i8,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

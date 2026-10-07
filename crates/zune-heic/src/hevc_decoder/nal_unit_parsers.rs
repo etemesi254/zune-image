@@ -481,14 +481,19 @@ pub fn decode_slice_header(
         }
 
         // 9. Deblocking Filter
+        // Defaults are inherited from the PPS (spec 7.4.7.1)
+        sh.slice_deblocking_filter_disabled_flag = pps.deblocking_filter_disabled_flag;
+        sh.slice_beta_offset_div2 = pps.beta_offset_div2 as i8;
+        sh.slice_tc_offset_div2 = pps.tc_offset_div2 as i8;
+
         if pps.deblocking_filter_control_present_flag && pps.deblocking_filter_override_enabled_flag
         {
             let deblocking_filter_override_flag = r.read_flag()?;
             if deblocking_filter_override_flag {
-                let slice_deblocking_filter_disabled_flag = r.read_flag()?;
-                if !slice_deblocking_filter_disabled_flag {
-                    r.read_se()?; // beta_offset_div2
-                    r.read_se()?; // tc_offset_div2
+                sh.slice_deblocking_filter_disabled_flag = r.read_flag()?;
+                if !sh.slice_deblocking_filter_disabled_flag {
+                    sh.slice_beta_offset_div2 = r.read_se()? as i8;
+                    sh.slice_tc_offset_div2 = r.read_se()? as i8;
                 }
             }
         }
@@ -496,7 +501,7 @@ pub fn decode_slice_header(
         // 10. Loop Filter Across Slices (The 1-bit drift culprit)
         let is_sao_enabled = sps.sample_adaptive_offset_enabled_flag
             && (sh.slice_sao_luma_flag || sh.slice_sao_chroma_flag);
-        let is_dbf_enabled = !pps.deblocking_filter_disabled_flag;
+        let is_dbf_enabled = !sh.slice_deblocking_filter_disabled_flag;
 
         if pps.loop_filter_across_slices_enabled_flag && (is_sao_enabled || is_dbf_enabled) {
             let _slice_loop_filter_across_slices_enabled_flag = r.read_flag()?;
