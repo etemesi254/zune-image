@@ -4,8 +4,6 @@ use zune_core::bytestream::ZByteReaderTrait;
 use zune_core::log::trace;
 
 use crate::decoder::HeifDecoder;
-#[cfg(feature = "std")]
-use crate::decoder::TileMap;
 use crate::errors::HeicErrors;
 use crate::header_structs::ItemProperty;
 
@@ -399,78 +397,6 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
         }
 
         Ok(())
-    }
-
-    /// Stitches pre-converted RGB tiles (used by the VideoToolbox path, which
-    /// produces whole RGB tiles) into `output`, then applies mirror/rotation.
-    #[cfg(feature = "std")]
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-    #[allow(clippy::too_many_lines)]
-    pub(crate) fn stitch(&self, tile_map: &TileMap, output: &mut [u8]) -> Result<(), HeicErrors> {
-        let unrotated_w = self.width.unwrap() as usize;
-        let unrotated_h = self.height.unwrap() as usize;
-        let channels = self.colorspace().unwrap().num_components();
-
-        let rotation_degrees = self.rotation.unwrap_or(0);
-
-        let tiles = tile_map.lock().unwrap();
-
-        // Intermediate buffer for the unrotated grid.
-        // If there is no rotation, we can write directly to `output` to save memory.
-        let mut unrotated_canvas = if rotation_degrees != 0 {
-            vec![0u8; unrotated_w * unrotated_h * channels]
-        } else {
-            Vec::new()
-        };
-
-        let target_canvas =
-            if rotation_degrees != 0 { &mut unrotated_canvas[..] } else { &mut output[..] };
-
-        // --- STEP 1: Stitching ---
-        for (index, &item_id) in self.ordered_tile_ids.iter().enumerate() {
-            if let Some(Ok(tile_data)) = tiles.get(&item_id) {
-                let tile_w = tile_data.width;
-                let tile_h = tile_data.height;
-
-                let col = index % (self.cols as usize);
-                let row = index / (self.cols as usize);
-
-                // Use the DYNAMIC tile width/height!
-                let base_x = col * tile_w;
-                let base_y = row * tile_h;
-
-                let tile_stride = tile_w * channels;
-                let grid_stride = unrotated_w * channels;
-
-                for ty in 0..tile_h {
-                    let canvas_y = base_y + ty;
-
-                    // Crop bounds if tiles overflow the final target resolution
-                    if canvas_y >= unrotated_h {
-                        break;
-                    }
-                    if base_x >= unrotated_w {
-                        continue;
-                    }
-
-                    let copy_width = tile_w.min(unrotated_w - base_x);
-                    let len = copy_width * channels;
-
-                    let src = ty * tile_stride;
-                    let dst = canvas_y * grid_stride + base_x * channels;
-
-                    target_canvas[dst..dst + len]
-                        .copy_from_slice(&tile_data.pixels[src..src + len]);
-                }
-            } else {
-                return Err(HeicErrors::Generic {
-                    msg: format!("Tile missing or errored: {item_id}")
-                });
-            }
-        }
-
-        drop(tiles);
-        self.apply_orientation(&mut unrotated_canvas, output)
     }
 
     /// Applies `imir` mirroring and then `irot` rotation (HEIF order).

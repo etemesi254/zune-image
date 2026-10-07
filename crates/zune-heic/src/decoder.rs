@@ -1,9 +1,5 @@
 use alloc::{borrow::ToOwned, string::ToString, vec::Vec};
 use alloc::collections::BTreeMap;
-#[cfg(feature = "std")]
-use std::collections::HashMap;
-#[cfg(feature = "std")]
-use std::sync::{Arc, Mutex};
 
 use zune_core::bytestream::{ZByteReaderTrait, ZReader, ZSeekFrom};
 use zune_core::colorspace::ColorSpace;
@@ -21,16 +17,6 @@ use crate::hevc_decoder::nal_parser::NalFraming;
 use crate::processor::HevcSample;
 use crate::utils::Lock;
 
-#[cfg(feature = "std")]
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-pub(crate) struct SingleDecodedTile {
-    pub pixels: Vec<u8>,
-    pub width: usize,
-    pub height: usize,
-}
-#[cfg(feature = "std")]
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-pub(crate) type TileMap = Arc<Mutex<HashMap<u32, Result<SingleDecodedTile, HeicErrors>>>>;
 
 /// A HEIF/Heic Decoder Instance
 pub struct HeifDecoder<T> {
@@ -415,17 +401,6 @@ where
 
         let mut output = vec![0; w * h * colors];
 
-        #[cfg(all(target_os = "macos", feature = "std"))]
-        {
-            if self.options.hvec_use_apple_videotoolbox() {
-                trace!("HEVC using apple video toolbox");
-                // --- APPLE SILICON PATH ---
-                let tile_map = self.decode_hardware_videotoolbox()?;
-
-                self.stitch(&tile_map, &mut output)?;
-                return Ok(output);
-            }
-        }
         // Tiles are converted straight into their place on the canvas as soon as
         // they are decoded, so no per-tile RGB copies are kept around. When the
         // image is rotated we need an intermediate (unrotated) canvas; otherwise
@@ -449,71 +424,86 @@ where
             }
             let cols = (self.cols as usize).max(1);
 
-            // Grid tiles are already decoded in parallel (one tile per thread),
-            // so only a single picture spreads its CTU rows over the CPUs.
-            #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
-            let row_threads = if self.is_grid {
-                1
+            // Apple VideoToolbox: hardware decode, tiles written straight into
+            // the same canvas from the decode callback.
+            #[cfg(all(target_os = "macos", feature = "std"))]
+            let decoded_in_hardware = if self.options.hvec_use_apple_videotoolbox() {
+                trace!("HEVC using apple video toolbox");
+                self.decode_hardware_videotoolbox(&canvas_rows, &placements, cols, w, h, colors)?;
+                true
             } else {
-                std::thread::available_parallelism().map_or(1, core::num::NonZero::get)
+                false
             };
-            #[cfg(any(not(feature = "std"), target_arch = "wasm32"))]
-            let row_threads = 1;
+            #[cfg(not(all(target_os = "macos", feature = "std")))]
+            let decoded_in_hardware = false;
 
-            let processor = |sample: HevcSample| -> Result<(), HeicErrors> {
-                let mut software_decoder: HevcDecoder = HevcDecoder::new();
-                software_decoder.set_max_threads(row_threads);
-
-                let vps = sample.vps.as_deref().ok_or(HeicErrors::Generic {
-                    msg: "vps not found".to_owned(),
-                })?;
-                let sps = sample.sps.as_deref().ok_or(HeicErrors::Generic {
-                    msg: "sps not found".to_owned(),
-                })?;
-                let pps = sample.pps.as_deref().ok_or(HeicErrors::Generic {
-                    msg: "pps not found".to_owned(),
-                })?;
-
-                software_decoder.parse_extradata(vps, NalFraming::RawBytes)?;
-                software_decoder.parse_extradata(sps, NalFraming::RawBytes)?;
-                software_decoder.parse_extradata(pps, NalFraming::RawBytes)?;
-
-                // then decode
-                let frame = software_decoder.decode(&sample)?.ok_or(HeicErrors::Generic {
-                    msg: "decode failure, no frame found".to_string(),
-                })?;
-
-                // Dynamically grab the REAL tile dimensions
-                let tile_w = software_decoder.width();
-                let tile_h = software_decoder.height();
-
-                let positions = placements.get(&sample.item_id).ok_or(HeicErrors::Generic {
-                    msg: format!("Decoded tile {} has no grid position", sample.item_id),
-                })?;
-
-                for &index in positions {
-                    let base_x = (index % cols) * tile_w;
-                    let base_y = (index / cols) * tile_h;
-                    frame.write_into_canvas(&canvas_rows, base_x, base_y, w, h, colors)?;
-                }
-                Ok(())
-            };
-            // no threads without std (or on wasm)
-            #[cfg(any(not(feature = "std"), target_arch = "wasm32"))]
-            {
-                trace!("Using single threaded sample processor");
-
-                self.process_hevc_samples(processor)?;
-            }
-
-            #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
-            {
-                if self.is_grid {
-                    trace!("Using parallel sample decoder");
-                    self.process_hevc_samples_parallel(processor)?;
+            if !decoded_in_hardware {
+                // Grid tiles are already decoded in parallel (one tile per thread),
+                // so only a single picture spreads its CTU rows over the CPUs.
+                #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+                let row_threads = if self.is_grid {
+                    1
                 } else {
-                    trace!("Using standard sample decoder, image is not grid so no need for parallel");
+                    std::thread::available_parallelism().map_or(1, core::num::NonZero::get)
+                };
+                #[cfg(any(not(feature = "std"), target_arch = "wasm32"))]
+                let row_threads = 1;
+
+                let processor = |sample: HevcSample| -> Result<(), HeicErrors> {
+                    let mut software_decoder: HevcDecoder = HevcDecoder::new();
+                    software_decoder.set_max_threads(row_threads);
+
+                    let vps = sample.vps.as_deref().ok_or(HeicErrors::Generic {
+                        msg: "vps not found".to_owned(),
+                    })?;
+                    let sps = sample.sps.as_deref().ok_or(HeicErrors::Generic {
+                        msg: "sps not found".to_owned(),
+                    })?;
+                    let pps = sample.pps.as_deref().ok_or(HeicErrors::Generic {
+                        msg: "pps not found".to_owned(),
+                    })?;
+
+                    software_decoder.parse_extradata(vps, NalFraming::RawBytes)?;
+                    software_decoder.parse_extradata(sps, NalFraming::RawBytes)?;
+                    software_decoder.parse_extradata(pps, NalFraming::RawBytes)?;
+
+                    // then decode
+                    let frame = software_decoder.decode(&sample)?.ok_or(HeicErrors::Generic {
+                        msg: "decode failure, no frame found".to_string(),
+                    })?;
+
+                    // Dynamically grab the REAL tile dimensions
+                    let tile_w = software_decoder.width();
+                    let tile_h = software_decoder.height();
+
+                    let positions = placements.get(&sample.item_id).ok_or(HeicErrors::Generic {
+                        msg: format!("Decoded tile {} has no grid position", sample.item_id),
+                    })?;
+
+                    for &index in positions {
+                        let base_x = (index % cols) * tile_w;
+                        let base_y = (index / cols) * tile_h;
+                        frame.write_into_canvas(&canvas_rows, base_x, base_y, w, h, colors)?;
+                    }
+                    Ok(())
+                };
+                // no threads without std (or on wasm)
+                #[cfg(any(not(feature = "std"), target_arch = "wasm32"))]
+                {
+                    trace!("Using single threaded sample processor");
+
                     self.process_hevc_samples(processor)?;
+                }
+
+                #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+                {
+                    if self.is_grid {
+                        trace!("Using parallel sample decoder");
+                        self.process_hevc_samples_parallel(processor)?;
+                    } else {
+                        trace!("Using standard sample decoder, image is not grid so no need for parallel");
+                        self.process_hevc_samples(processor)?;
+                    }
                 }
             }
         }

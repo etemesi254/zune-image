@@ -13,13 +13,16 @@
 //! 3. Encoded HEVC samples are wrapped into `CMSampleBuffer`s.
 //! 4. Samples are submitted asynchronously to VideoToolbox.
 //! 5. Decoded frames are delivered via a C callback (`decode_callback`).
-//! 6. Frames are converted from NV12 (YUV) → RGB and stored in a shared `TileMap`.
+//! 6. Each decoded frame is converted from NV12 (YUV) → RGB straight into its
+//!    place in the output canvas (only the visible part of the tile).
 //!
 //! ## Threading Model
 //!
 //! - Decoding is asynchronous.
 //! - The callback is invoked on a VideoToolbox-managed background thread.
-//! - Output is stored in a `Arc<Mutex<HashMap<u32, Vec<u8>>>>` (`TileMap`).
+//! - The canvas has one lock per row (same as the software decoder), so tiles
+//!   can be written concurrently; errors and finished tiles are recorded in a
+//!   `Mutex<CallbackStatus>`.
 //!
 //! ## Safety
 //!
@@ -36,8 +39,8 @@
 mod types;
 use core::ffi::c_void;
 use core::{ptr, slice};
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use alloc::collections::{BTreeMap, BTreeSet};
+use std::sync::Mutex;
 
 use zune_core::bytestream::ZByteReaderTrait;
 
@@ -51,9 +54,10 @@ use crate::apple_videotoolbox::types::{
     VTDecompressionSessionDecodeFrame, VTDecompressionSessionRef,
     VTDecompressionSessionWaitForAsynchronousFrames, kCFAllocatorNull
 };
-use crate::decoder::{HeifDecoder, SingleDecodedTile, TileMap};
+use crate::decoder::HeifDecoder;
 use crate::errors::HeicErrors;
 use crate::processor::HevcSample;
+use crate::utils::Lock;
 
 // ---------------------------------------------------------------------------
 /// Hardware HEVC decoder backed by VideoToolbox.
@@ -79,7 +83,7 @@ impl AppleHardwareDecoder {
     /// * `pps` - Picture Parameter Set
     /// * `context` - Opaque pointer passed to the decode callback
     ///
-    /// Typically, `context` is a pointer to a `TileMap`.
+    /// `context` is a pointer to the `CallbackContext` the callback writes into.
     ///
     /// # Returns
     ///
@@ -316,40 +320,159 @@ pub fn ycbcr_to_rgb_inner_16_scalar<const BGRA: bool>(
     // Increment pos
     *pos += 48;
 }
+/// Where decoded tiles go: the output canvas (one lock per row) and the grid
+/// position(s) of every tile.
+struct CallbackContext<'a, 'b> {
+    canvas_rows: &'a [Lock<&'b mut [u8]>],
+    placements:  &'a BTreeMap<u32, Vec<usize>>,
+    cols:        usize,
+    canvas_w:    usize,
+    canvas_h:    usize,
+    channels:    usize,
+    status:      Mutex<CallbackStatus>
+}
+
+#[derive(Default)]
+struct CallbackStatus {
+    /// first error reported by any callback
+    error: Option<HeicErrors>,
+    /// tiles written successfully
+    done:  BTreeSet<u32>
+}
+
+impl CallbackContext<'_, '_> {
+    fn status(&self) -> std::sync::MutexGuard<'_, CallbackStatus> {
+        self.status
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn fail(&self, error: HeicErrors) {
+        self.status().error.get_or_insert(error);
+    }
+
+    /// Convert a decoded NV12 tile into every grid position it occupies.
+    #[allow(clippy::too_many_arguments)]
+    fn write_tile(
+        &self, item_id: u32, width: usize, height: usize, y_plane: &[u8], y_stride: usize,
+        uv_plane: &[u8], uv_stride: usize
+    ) -> Result<(), HeicErrors> {
+        if width == 0 || height == 0 || y_stride < width || uv_stride < width.div_ceil(2) * 2 {
+            return Err(HeicErrors::Generic {
+                msg: format!("Unexpected hardware frame layout {width}x{height}")
+            });
+        }
+        let positions = self.placements.get(&item_id).ok_or(HeicErrors::Generic {
+            msg: format!("Decoded tile {item_id} has no grid position")
+        })?;
+
+        for &index in positions {
+            let base_x = (index % self.cols) * width;
+            let base_y = (index / self.cols) * height;
+            if base_x >= self.canvas_w || base_y >= self.canvas_h {
+                // tile lies completely outside the visible canvas
+                continue;
+            }
+            let vis_w = width.min(self.canvas_w - base_x);
+            let vis_h = height.min(self.canvas_h - base_y);
+
+            for row in 0..vis_h {
+                let y_row = &y_plane[row * y_stride..row * y_stride + width];
+                let uv_start = (row / 2) * uv_stride;
+                let uv_row = &uv_plane[uv_start..uv_start + uv_stride];
+
+                self.canvas_rows[base_y + row].with(|dst_row| {
+                    let dst = &mut dst_row
+                        [base_x * self.channels..(base_x + vis_w) * self.channels];
+                    convert_nv12_row(y_row, uv_row, vis_w, dst, self.channels);
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Convert the first `vis_w` pixels of one NV12 row (`y_row` is the full
+/// luma row, `uv_row` the interleaved Cb/Cr row) into `dst`
+/// (`vis_w * channels` bytes; 1 = luma, 3 = RGB, 4 = RGB + opaque alpha).
+fn convert_nv12_row(y_row: &[u8], uv_row: &[u8], vis_w: usize, dst: &mut [u8], channels: usize) {
+    if channels == 1 {
+        dst[..vis_w].copy_from_slice(&y_row[..vis_w]);
+        return;
+    }
+    let width = y_row.len();
+    let full_chunks = vis_w / 16;
+    let mut cb_chunk = [0i16; 16];
+    let mut cr_chunk = [0i16; 16];
+    let mut temp = [0u8; 48];
+    let mut out_pos = 0usize;
+
+    for chunk in 0..vis_w.div_ceil(16) {
+        let x_base = chunk * 16;
+        let is_full = chunk < full_chunks;
+
+        let y_chunk: [i16; 16] = core::array::from_fn(|i| {
+            // clamp so the last partial chunk never reads past the row
+            i16::from(y_row[(x_base + i).min(width - 1)])
+        });
+        for i in 0..16 {
+            // chroma sample covering luma column x (4:2:0, interleaved Cb/Cr)
+            let uv = (x_base + i).min(width - 1) & !1;
+            cb_chunk[i] = i16::from(uv_row[uv]);
+            cr_chunk[i] = i16::from(uv_row[uv + 1]);
+        }
+
+        let n_px = if is_full { 16 } else { vis_w - x_base };
+        if channels == 3 && is_full {
+            ycbcr_to_rgb_inner_16_scalar::<false>(&y_chunk, &cb_chunk, &cr_chunk, dst, &mut out_pos);
+            continue;
+        }
+        let mut temp_pos = 0usize;
+        ycbcr_to_rgb_inner_16_scalar::<false>(&y_chunk, &cb_chunk, &cr_chunk, &mut temp, &mut temp_pos);
+        if channels == 3 {
+            dst[out_pos..out_pos + n_px * 3].copy_from_slice(&temp[..n_px * 3]);
+            out_pos += n_px * 3;
+        } else {
+            // RGBA: alpha is not decoded yet, emit opaque pixels
+            for (px, rgb) in dst[out_pos..out_pos + n_px * 4]
+                .chunks_exact_mut(4)
+                .zip(temp.chunks_exact(3))
+            {
+                px[..3].copy_from_slice(rgb);
+                px[3] = 255;
+            }
+            out_pos += n_px * 4;
+        }
+    }
+}
+
 /// VideoToolbox decode callback.
 ///
-/// This function is invoked asynchronously when a frame is decoded.
-///
-/// # Responsibilities
-///
-/// - Extract NV12 planes (Y + interleaved UV)
-/// - Convert to RGB
-/// - Store in `TileMap` using `item_id`
+/// This function is invoked asynchronously when a frame is decoded. It
+/// converts the NV12 frame straight into the output canvas.
 ///
 /// # Safety
 ///
-/// - `decompression_output_ref_con` must point to a valid `Mutex<HashMap<...>>`.
-/// - `source_frame_ref_con` must be a valid encoded `item_id`.
+/// - `decompression_output_ref_con` must point to the `CallbackContext` given
+///   to `AppleHardwareDecoder::new`, which outlives the session.
+/// - `source_frame_ref_con` carries the tile's `item_id`.
 extern "C" fn decode_callback(
     decompression_output_ref_con: *mut c_void, source_frame_ref_con: *mut c_void, status: OSStatus,
     _info_flags: VTDecodeInfoFlags, image_buffer: CVImageBufferRef,
     _presentation_time_stamp: CMTime, _presentation_duration: CMTime
 ) {
-    let tile_map_ptr = decompression_output_ref_con
-        as *const Mutex<HashMap<u32, Result<SingleDecodedTile, HeicErrors>>>;
-    let item_id = source_frame_ref_con as usize;
+    // SAFETY: see function docs; the context is only accessed through `&`.
+    let ctx = unsafe { &*(decompression_output_ref_con as *const CallbackContext) };
+    let item_id = source_frame_ref_con as usize as u32;
 
     if status != 0 || image_buffer.is_null() {
-        let msg = format!("Hardware decode failed. Status: {status}");
-        unsafe {
-            if let Ok(mut map) = (*tile_map_ptr).lock() {
-                map.insert(item_id as u32, Err(HeicErrors::Generic { msg }));
-            }
-            return;
-        }
+        ctx.fail(HeicErrors::Generic {
+            msg: format!("Hardware decode of tile {item_id} failed. Status: {status}")
+        });
+        return;
     }
 
-    unsafe {
+    let result = unsafe {
         CVPixelBufferLockBaseAddress(image_buffer, 1);
 
         let width = CVPixelBufferGetWidth(image_buffer);
@@ -360,133 +483,55 @@ extern "C" fn decode_callback(
         let uv_ptr = CVPixelBufferGetBaseAddressOfPlane(image_buffer, 1).cast_const();
         let uv_stride = CVPixelBufferGetBytesPerRowOfPlane(image_buffer, 1);
 
-        let y_plane = slice::from_raw_parts(y_ptr, height * y_stride);
-        let uv_plane = slice::from_raw_parts(uv_ptr, (height / 2) * uv_stride);
-
-        let mut rgb_data = vec![0u8; width * height * 3];
-        let mut out_pos = 0usize;
-
-        let chunks_of_16 = width / 16;
-        let remainder = width % 16;
-
-        let mut cb_chunk = [0i16; 16];
-        let mut cr_chunk = [0i16; 16];
-
-        for row in 0..height {
-            let y_row_base = row * y_stride;
-            let uv_row_base = (row / 2) * uv_stride;
-
-            for chunk in 0..chunks_of_16 {
-                let x_base = chunk * 16;
-
-                // Y: one contiguous slice read
-                let y_src = &y_plane[y_row_base + x_base..][..16];
-                let y_chunk: [i16; 16] = std::array::from_fn(|i| i16::from(y_src[i]));
-
-                // UV: one 16-byte slice read, deinterleave into cb/cr in 8 iterations
-                let uv_base = uv_row_base + (x_base / 2) * 2;
-                let uv_src = &uv_plane[uv_base..][..16];
-
-                for i in 0..8 {
-                    let cb = i16::from(uv_src[i * 2]);
-                    let cr = i16::from(uv_src[i * 2 + 1]);
-                    cb_chunk[i * 2] = cb;
-                    cb_chunk[i * 2 + 1] = cb;
-                    cr_chunk[i * 2] = cr;
-                    cr_chunk[i * 2 + 1] = cr;
-                }
-
-                ycbcr_to_rgb_inner_16_scalar::<false>(
-                    &y_chunk,
-                    &cb_chunk,
-                    &cr_chunk,
-                    &mut rgb_data,
-                    &mut out_pos
-                );
-            }
-
-            // Remainder: same idea but clamp to avoid OOB
-            if remainder > 0 {
-                let x_base = chunks_of_16 * 16;
-
-                let y_chunk: [i16; 16] = std::array::from_fn(|i| {
-                    i16::from(y_plane[y_row_base + (x_base + i).min(width - 1)])
-                });
-
-                let mut cb_chunk = [0i16; 16];
-                let mut cr_chunk = [0i16; 16];
-                for i in 0..8 {
-                    let x0 = (x_base + i * 2).min(width - 1);
-                    let x1 = (x_base + i * 2 + 1).min(width - 1);
-                    // x0 is always even after the min clamp, but guard with & !1
-                    let uv_off0 = uv_row_base + (x0 & !1);
-                    let uv_off1 = uv_row_base + (x1 & !1);
-                    let cb0 = i16::from(uv_plane[uv_off0]);
-                    let cr0 = i16::from(uv_plane[uv_off0 + 1]);
-                    let cb1 = i16::from(uv_plane[uv_off1]);
-                    let cr1 = i16::from(uv_plane[uv_off1 + 1]);
-                    cb_chunk[i * 2] = cb0;
-                    cb_chunk[i * 2 + 1] = cb1;
-                    cr_chunk[i * 2] = cr0;
-                    cr_chunk[i * 2 + 1] = cr1;
-                }
-
-                let mut temp = [0u8; 48];
-                let mut temp_pos = 0usize;
-                ycbcr_to_rgb_inner_16_scalar::<false>(
-                    &y_chunk,
-                    &cb_chunk,
-                    &cr_chunk,
-                    &mut temp,
-                    &mut temp_pos
-                );
-
-                let valid_bytes = remainder * 3;
-                rgb_data[out_pos..out_pos + valid_bytes].copy_from_slice(&temp[..valid_bytes]);
-                out_pos += valid_bytes;
-            }
-        }
+        let result = if y_ptr.is_null() || uv_ptr.is_null() {
+            Err(HeicErrors::Generic {
+                msg: format!("Hardware frame for tile {item_id} has no pixel data")
+            })
+        } else {
+            // NV12: full-height luma plane, half-height (rounded up) chroma plane
+            let y_plane = slice::from_raw_parts(y_ptr, height * y_stride);
+            let uv_plane = slice::from_raw_parts(uv_ptr, height.div_ceil(2) * uv_stride);
+            ctx.write_tile(item_id, width, height, y_plane, y_stride, uv_plane, uv_stride)
+        };
 
         CVPixelBufferUnlockBaseAddress(image_buffer, 1);
+        result
+    };
 
-        if let Ok(mut map) = (*tile_map_ptr).lock() {
-            let tile = SingleDecodedTile {
-                width,
-                height,
-                pixels: rgb_data
-            };
-            map.insert(item_id as u32, Ok(tile));
+    match result {
+        Ok(()) => {
+            ctx.status().done.insert(item_id);
         }
+        Err(e) => ctx.fail(e)
     }
 }
 
 impl<T: ZByteReaderTrait> HeifDecoder<T> {
-    /// Decode HEVC tiles using Apple VideoToolbox hardware acceleration.
+    /// Decode HEVC tiles using Apple VideoToolbox hardware acceleration,
+    /// writing each tile straight into `canvas_rows` (one entry per canvas
+    /// row of `canvas_w * channels` bytes) at its grid position(s).
     ///
-    /// # Returns
-    ///
-    /// A `TileMap` containing all decoded tiles indexed by `item_id`.
-    ///
-    /// # Workflow
-    ///
-    /// 1. Lazily initializes `AppleHardwareDecoder`
-    /// 2. Feeds HEVC samples into VideoToolbox
-    /// 3. Waits for all frames via `flush()`
-    /// 4. Returns collected RGB tiles
-    ///
-    /// # Notes
-    ///
-    /// - Decoding is asynchronous internally.
-    /// - Final `flush()` is required to guarantee completion.
-    pub(crate) fn decode_hardware_videotoolbox(&mut self) -> Result<TileMap, HeicErrors> {
-        // 1. Thread-safe tile storage
-        let tile_map: TileMap = Arc::new(Mutex::new(HashMap::new()));
+    /// Decoding is asynchronous; this waits for every submitted frame before
+    /// returning, so no callback can run after the canvas is released.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn decode_hardware_videotoolbox(
+        &self, canvas_rows: &[Lock<&mut [u8]>], placements: &BTreeMap<u32, Vec<usize>>,
+        cols: usize, canvas_w: usize, canvas_h: usize, channels: usize
+    ) -> Result<(), HeicErrors> {
+        // Declared before the decoder so it is dropped after it.
+        let context = CallbackContext {
+            canvas_rows,
+            placements,
+            cols,
+            canvas_w,
+            canvas_h,
+            channels,
+            status: Mutex::new(CallbackStatus::default())
+        };
         let mut hardware_decoder: Option<AppleHardwareDecoder> = None;
 
-        // 2. The Loop
         let mut processor = |sample: HevcSample| -> Result<(), HeicErrors> {
             if hardware_decoder.is_none() {
-                // Initialize with a pointer to our tile_map
                 let vps = sample.vps.as_deref().ok_or(HeicErrors::Generic {
                     msg: "vps not found".to_owned()
                 })?;
@@ -497,8 +542,8 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
                     msg: "pps not found".to_owned()
                 })?;
 
-                // Pass the RAW POINTER of the mutex to the callback
-                let context_ptr = Arc::as_ptr(&tile_map) as *mut c_void;
+                // The callback receives a pointer to `context`
+                let context_ptr = (&raw const context).cast_mut().cast::<c_void>();
                 hardware_decoder = Some(
                     AppleHardwareDecoder::new(vps, sps, pps, context_ptr).map_err(|d| {
                         HeicErrors::Generic {
@@ -511,17 +556,38 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
             }
 
             if let Some(decoder) = hardware_decoder.as_ref() {
-                decoder.decode_sample(&sample).unwrap();
+                decoder.decode_sample(&sample).map_err(|d| HeicErrors::Generic {
+                    msg: format!(
+                        "Error submitting tile {} to apple hardware decoder: os-status:{d}",
+                        sample.item_id
+                    )
+                })?;
             }
             Ok(())
         };
 
-        self.process_hevc_samples(&mut processor)?;
+        let submitted = self.process_hevc_samples(&mut processor);
 
+        // Always wait for in-flight frames, even on error: their callbacks
+        // write into the canvas.
         if let Some(decoder) = hardware_decoder.as_ref() {
-            decoder.flush(); // Wait for all 48 tiles to hit the TileMap
+            decoder.flush();
         }
+        drop(hardware_decoder);
+        submitted?;
 
-        Ok(tile_map)
+        let status = context
+            .status
+            .into_inner()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(error) = status.error {
+            return Err(error);
+        }
+        if let Some(missing) = placements.keys().find(|id| !status.done.contains(id)) {
+            return Err(HeicErrors::Generic {
+                msg: format!("Tile missing from hardware decoder: {missing}")
+            });
+        }
+        Ok(())
     }
 }
