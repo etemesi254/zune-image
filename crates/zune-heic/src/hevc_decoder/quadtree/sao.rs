@@ -5,7 +5,7 @@ use crate::hevc_decoder::cabac_tables::CONTEXT_MODEL_SAO_MERGE_FLAG;
 use crate::hevc_decoder::ctx::DecodeSliceContext;
 use crate::hevc_decoder::nal_unit_headers::ChromaFormat;
 use crate::hevc_decoder::raw_frame::{RawFrame, SingleFrame, offset_plane};
-use std::cmp::{Ordering, min};
+use std::cmp::min;
 use std::sync::Arc;
 
 #[derive(Default, Debug, Clone)]
@@ -197,6 +197,20 @@ pub fn read_sao(ctx: &mut DecodeSliceContext, x_ctb: usize, y_ctb: usize) {
     ctx.set_sao_info(x_ctb, y_ctb, sao_info);
 }
 
+/// Apply SAO to the whole (deblocked) picture (spec 8.7.3).
+///
+/// SAO must classify every sample using the deblocked values *before* any SAO
+/// is applied, including samples belonging to neighbouring CTBs. Instead of
+/// cloning whole planes, each plane is processed row by row in raster order
+/// and only two line buffers are kept:
+///
+/// * `cur`  – the pre-SAO copy of the row being modified (left/right neighbours
+///   are read from here because pixels to the left are already modified),
+/// * `prev` – the pre-SAO copy of the row above (already modified in place).
+///
+/// The row below has not been touched yet, so it is read straight from the
+/// plane. CTB rows where no CTB uses SAO for a component are skipped entirely
+/// (no copy at all), so pictures/components without SAO cost nothing.
 pub fn apply_sao_frame(
     frame: &Arc<RawFrame>,
     pic_width: usize,
@@ -204,175 +218,182 @@ pub fn apply_sao_frame(
     ctu_size: usize,
     sao_buffer: &[SaoInfo], // Pass ctx.ctb_sao_buffer here
 ) {
-    let mut luma = frame.luma.lock().unwrap();
-    let mut cb = frame.cb.lock().unwrap();
-    let mut cr = frame.cr.lock().unwrap();
-
-    // SAO must classify samples using the deblocked picture *before* any SAO
-    // is applied (spec 8.7.3), including samples in neighbouring CTBs, so keep
-    // an untouched copy of each plane to read from.
-    let luma_src = luma.pixels.clone();
-    let cb_src = cb.pixels.clone();
-    let cr_src = cr.pixels.clone();
-
     let width_in_ctus = pic_width.div_ceil(ctu_size);
     let height_in_ctus = pic_height.div_ceil(ctu_size);
+    let geom = SaoGeometry { width_in_ctus, height_in_ctus };
 
-    for y_ctb in 0..height_in_ctus {
-        for x_ctb in 0..width_in_ctus {
-            let ctb_addr = y_ctb * width_in_ctus + x_ctb;
-            let info = &sao_buffer[ctb_addr];
+    // line buffers reused across all planes
+    let mut prev = Vec::new();
+    let mut cur = Vec::new();
 
-            // If type_index is 0, SAO is disabled for this entire CTU
-            if info.type_index == 0 {
-                continue;
-            }
-
-            // --- Luma Dimensions ---
-            let l_x = x_ctb * ctu_size;
-            let l_y = y_ctb * ctu_size;
-            let l_w = ctu_size.min(pic_width - l_x);
-            let l_h = ctu_size.min(pic_height - l_y);
-
-            // --- Apply Luma (c_idx = 0) ---
-            let type_luma = info.type_index & 0x3;
-            if type_luma != 0 {
-                apply_sao_component(
-                    &mut luma, &luma_src, l_x, l_y, l_w, l_h, 0, info, type_luma, pic_width, pic_height,
-                );
-            }
-
-            let c_x = l_x / 2;
-            let c_y = l_y / 2;
-            let c_w = l_w / 2;
-            let c_h = l_h / 2;
-            let c_pic_w = pic_width / 2;
-            let c_pic_h = pic_height / 2;
-
-            // --- Apply Cb (c_idx = 1) ---
-            let type_cb = (info.type_index >> 2) & 0x3;
-            if type_cb != 0 {
-                apply_sao_component(
-                    &mut cb, &cb_src, c_x, c_y, c_w, c_h, 1, info, type_cb, c_pic_w, c_pic_h,
-                );
-            }
-
-            // --- Apply Cr (c_idx = 2) ---
-            let type_cr = (info.type_index >> 4) & 0x3;
-            if type_cr != 0 {
-                apply_sao_component(
-                    &mut cr, &cr_src, c_x, c_y, c_w, c_h, 2, info, type_cr, c_pic_w, c_pic_h,
-                );
-            }
-        }
+    {
+        let mut luma = frame.luma.lock().unwrap();
+        sao_plane(
+            &mut luma, 0, ctu_size, ctu_size, pic_width, pic_height, &geom, sao_buffer, &mut prev,
+            &mut cur,
+        );
     }
-}
-#[allow(clippy::too_many_arguments)]
-fn apply_sao_component(
-    plane: &mut SingleFrame, src: &[u8], x0: usize, y0: usize, w: usize, h: usize, c_idx: usize,
-    info: &SaoInfo, type_idx: u8, pic_width: usize, pic_height: usize,
-) {
-    let offsets = info.sao_offset_val[c_idx];
 
-    if type_idx == 1 {
-        // Band Offset
-        let band_pos = info.sao_band_position[c_idx];
-        apply_band_offset(plane, src, x0, y0, w, h, band_pos, offsets);
-    } else if type_idx == 2 {
-        // Edge Offset
-        let eo_class = (info.sao_eo_class >> (c_idx * 2)) & 0x3;
-        apply_edge_offset(
-            plane, src, x0, y0, w, h, eo_class, offsets, pic_width, pic_height,
+    if frame.format == ChromaFormat::Monochrome {
+        return;
+    }
+    let (sub_x, sub_y) = frame.format.get_subsampling();
+    let (ctb_w, ctb_h) = (ctu_size / sub_x, ctu_size / sub_y);
+    let (c_pic_w, c_pic_h) = (pic_width / sub_x, pic_height / sub_y);
+
+    for (c_idx, plane) in [(1, &frame.cb), (2, &frame.cr)] {
+        let mut plane = plane.lock().unwrap();
+        sao_plane(
+            &mut plane, c_idx, ctb_w, ctb_h, c_pic_w, c_pic_h, &geom, sao_buffer, &mut prev,
+            &mut cur,
         );
     }
 }
-#[allow(clippy::explicit_counter_loop, clippy::too_many_arguments)]
-fn apply_band_offset(
-    plane: &mut SingleFrame, src: &[u8], x0: usize, y0: usize, w: usize, h: usize, band_pos: u8,
-    offsets: [i8; 4],
+
+struct SaoGeometry {
+    width_in_ctus:  usize,
+    height_in_ctus: usize,
+}
+
+#[inline(always)]
+fn sao_type_for(info: &SaoInfo, c_idx: usize) -> u8 {
+    (info.type_index >> (2 * c_idx)) & 0x3
+}
+
+#[allow(clippy::too_many_arguments)]
+fn sao_plane(
+    plane: &mut SingleFrame, c_idx: usize, ctb_w: usize, ctb_h: usize, pw: usize, ph: usize,
+    geom: &SaoGeometry, sao_buffer: &[SaoInfo], prev: &mut Vec<u8>, cur: &mut Vec<u8>,
 ) {
-    let mut offset_table = [0i16; 32];
-    let start_band = band_pos as usize;
-
-    for i in 0..4 {
-        let band_idx = (start_band + i) & 31;
-        offset_table[band_idx] = i16::from(offsets[i]);
+    if plane.pixels.is_empty() || pw == 0 || ph == 0 {
+        return;
     }
+    let wc = geom.width_in_ctus;
+    let stride = plane.stride;
 
-    for y in 0..h {
-        let mut idx = offset_plane(plane, x0, y0 + y);
-        for _ in 0..w {
-            let px = src[idx];
-            let band_idx = (px >> 3) as usize; // >> 3 is for 8-bit. Use >> 5 for 10-bit.
-            let offset = offset_table[band_idx];
+    prev.clear();
+    prev.resize(pw, 0);
+    cur.clear();
+    cur.resize(pw, 0);
 
-            if offset != 0 {
-                plane.pixels[idx] = (i16::from(px) + offset).clamp(0, 255) as u8;
+    // true when `prev` holds the pre-SAO copy of the row directly above
+    let mut prev_valid = false;
+
+    for ctb_y in 0..geom.height_in_ctus {
+        let row_infos = &sao_buffer[ctb_y * wc..(ctb_y + 1) * wc];
+        let y0 = ctb_y * ctb_h;
+        let y1 = (y0 + ctb_h).min(ph);
+
+        // Nothing to do for this component in this CTB row: rows stay
+        // unmodified, so the plane itself remains the pre-SAO source.
+        if row_infos.iter().all(|i| sao_type_for(i, c_idx) == 0) {
+            prev_valid = false;
+            continue;
+        }
+        // Row above was not modified, so it can be taken straight from the plane.
+        if y0 > 0 && !prev_valid {
+            let a = offset_plane(plane, 0, y0 - 1);
+            prev.copy_from_slice(&plane.pixels[a..a + pw]);
+        }
+
+        for y in y0..y1 {
+            let row = offset_plane(plane, 0, y);
+            cur.copy_from_slice(&plane.pixels[row..row + pw]);
+
+            for (ctb_x, info) in row_infos.iter().enumerate() {
+                let t = sao_type_for(info, c_idx);
+                if t == 0 {
+                    continue;
+                }
+                let x0 = ctb_x * ctb_w;
+                let x1 = (x0 + ctb_w).min(pw);
+                let offsets = info.sao_offset_val[c_idx];
+                let out = &mut plane.pixels;
+
+                if t == 1 {
+                    band_offset_row(
+                        &mut out[row + x0..row + x1],
+                        &cur[x0..x1],
+                        info.sao_band_position[c_idx],
+                        offsets,
+                    );
+                } else {
+                    let eo_class = (info.sao_eo_class >> (c_idx * 2)) & 0x3;
+                    edge_offset_row(
+                        out, row, stride, cur, prev, x0, x1, y, pw, ph, eo_class, offsets,
+                    );
+                }
             }
-            idx += 1;
+            // the pre-SAO copy of this row becomes the "above" row for the next one
+            std::mem::swap(prev, cur);
+            prev_valid = true;
         }
     }
 }
+
+fn band_offset_row(out: &mut [u8], src: &[u8], band_pos: u8, offsets: [i8; 4]) {
+    let mut offset_table = [0i16; 32];
+    for (i, &o) in offsets.iter().enumerate() {
+        offset_table[(band_pos as usize + i) & 31] = i16::from(o);
+    }
+    for (d, &px) in out.iter_mut().zip(src) {
+        // >> 3 is bitDepth - 5 for 8-bit
+        let offset = offset_table[(px >> 3) as usize];
+        if offset != 0 {
+            *d = (i16::from(px) + offset).clamp(0, 255) as u8;
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
-fn apply_edge_offset(
-    plane: &mut SingleFrame, src: &[u8], x0: usize, y0: usize, w: usize, h: usize, eo_class: u8,
-    offsets: [i8; 4], pic_width: usize, pic_height: usize,
+fn edge_offset_row(
+    out: &mut [u8], row: usize, stride: usize, cur: &[u8], above: &[u8], x0: usize, x1: usize,
+    y: usize, pw: usize, ph: usize, eo_class: u8, offsets: [i8; 4],
 ) {
-    let (dx1, dy1, dx2, dy2): (isize, isize, isize, isize) = match eo_class {
-        0 => (-1, 0, 1, 0),  // Horizontal
-        1 => (0, -1, 0, 1),  // Vertical
-        2 => (-1, -1, 1, 1), // 135 degree
-        3 => (1, -1, -1, 1), // 45 degree
+    // (dx, dy) of the two neighbours, spec Table 8-13 (hPos / vPos)
+    let ((dx1, dy1), (dx2, dy2)): ((isize, isize), (isize, isize)) = match eo_class {
+        0 => ((-1, 0), (1, 0)),   // horizontal
+        1 => ((0, -1), (0, 1)),   // vertical
+        2 => ((-1, -1), (1, 1)),  // 135 degree
+        3 => ((1, -1), (-1, 1)),  // 45 degree
         _ => unreachable!(),
     };
-
+    // Category -> offset; index is 2 + sign(c - n1) + sign(c - n2)
     let eo_offsets: [i16; 5] = [
-        i16::from(offsets[0]), // Category 1 (Valley)
-        i16::from(offsets[1]), // Category 2 (Half-Valley)
-        0,                     // Category 0 (Plane)
-        i16::from(offsets[2]), // Category 3 (Half-Peak)
-        i16::from(offsets[3]), // Category 4 (Peak)
+        i16::from(offsets[0]), // valley
+        i16::from(offsets[1]), // concave corner
+        0,                     // flat
+        i16::from(offsets[2]), // convex corner
+        i16::from(offsets[3]), // peak
     ];
 
-    let stride = plane.stride as isize;
+    // Neighbours outside the picture disable SAO for that sample (spec 8.7.3.2):
+    // shrink the x range and bail out for whole rows when needed.
+    if (dy1 < 0 || dy2 < 0) && y == 0 || (dy1 > 0 || dy2 > 0) && y + 1 >= ph {
+        return;
+    }
+    let x_start = if dx1 < 0 || dx2 < 0 { x0.max(1) } else { x0 };
+    let x_end = if dx1 > 0 || dx2 > 0 { x1.min(pw - 1) } else { x1 };
 
-    let sign = |val: i32| -> isize {
-        match val.cmp(&0) {
-            Ordering::Less => -1,
-            Ordering::Equal => 0,
-            Ordering::Greater => 1,
-        }
+    // Pre-SAO sample at (x + dx, y + dy). Rows above/current come from the
+    // line buffers, the row below is still untouched in the plane.
+    let fetch = |out: &[u8], x: usize, dx: isize, dy: isize| -> i32 {
+        let nx = (x as isize + dx) as usize;
+        i32::from(match dy {
+            -1 => above[nx],
+            0 => cur[nx],
+            _ => out[row + stride + nx],
+        })
     };
 
-    for y in 0..h {
-        let abs_y = y0 + y;
-        for x in 0..w {
-            let abs_x = x0 + x;
-
-            // Spec 8.7.3.2: SaoOffsetVal is 0 when either neighbour lies outside
-            // the picture. Both neighbours must be checked against both bounds,
-            // since for the 45 degree class (3) the first neighbour is at x+1.
-            let (ax, ay) = (abs_x as isize, abs_y as isize);
-            let (pw, ph) = (pic_width as isize, pic_height as isize);
-            let outside = |nx: isize, ny: isize| nx < 0 || ny < 0 || nx >= pw || ny >= ph;
-            if outside(ax + dx1, ay + dy1) || outside(ax + dx2, ay + dy2) {
-                continue;
-            }
-
-            let c_idx = offset_plane(plane, abs_x, abs_y);
-            let n1_idx = (c_idx as isize + dy1 * stride + dx1) as usize;
-            let n2_idx = (c_idx as isize + dy2 * stride + dx2) as usize;
-
-            let c_val = i32::from(src[c_idx]);
-            let n1_val = i32::from(src[n1_idx]);
-            let n2_val = i32::from(src[n2_idx]);
-
-            let edge_idx = (2 + sign(c_val - n1_val) + sign(c_val - n2_val)) as usize;
-            let offset = eo_offsets[edge_idx];
-
-            if offset != 0 {
-                plane.pixels[c_idx] = (c_val as i16 + offset).clamp(0, 255) as u8;
-            }
+    for x in x_start..x_end {
+        let c = i32::from(cur[x]);
+        let n1 = fetch(out, x, dx1, dy1);
+        let n2 = fetch(out, x, dx2, dy2);
+        let edge_idx = (2 + (c - n1).signum() + (c - n2).signum()) as usize;
+        let offset = eo_offsets[edge_idx];
+        if offset != 0 {
+            out[row + x] = (c as i16 + offset).clamp(0, 255) as u8;
         }
     }
 }
