@@ -1,4 +1,5 @@
 use alloc::string::String;
+use crate::hevc_decoder::quadtree::sig_ctx_generator::sig_ctx_map;
 use crate::debug_more;
 use crate::hevc_decoder::DEBUG_MORE;
 use crate::hevc_decoder::cabac_tables::{
@@ -253,40 +254,45 @@ pub fn get_intra_scan_idx(
     // Larger blocks always use Diagonal Scan
     0
 }
+/// Inverse scan tables: `INVERSE_SCAN[log2_size][scan_idx][x + (y << log2_size)]`
+/// is the position of `(x, y)` in that scan order (log2_size 0..=3).
+static INVERSE_SCAN: [[[u8; 64]; 3]; 4] = {
+    const fn invert(table: &[Pos], log2_size: usize) -> [u8; 64] {
+        let mut inv = [0u8; 64];
+        let mut i = 0;
+        while i < table.len() {
+            let p = table[i];
+            inv[p.x as usize + ((p.y as usize) << log2_size)] = i as u8;
+            i += 1;
+        }
+        inv
+    }
+    let one = invert(&SCAN_1X1, 0);
+    [
+        [one, one, one],
+        [invert(&SCAN_2X2_DIAG, 1), invert(&SCAN_2X2_HOR, 1), invert(&SCAN_2X2_VER, 1)],
+        [invert(&SCAN_4X4_DIAG, 2), invert(&SCAN_4X4_HOR, 2), invert(&SCAN_4X4_VER, 2)],
+        [invert(&SCAN_8X8_DIAG, 3), invert(&SCAN_8X8_HOR, 3), invert(&SCAN_8X8_VER, 3)]
+    ]
+};
+
+/// Scan position of coefficient `(x, y)`: its 4x4 sub-block's index in the
+/// sub-block scan, and its index inside that sub-block.
 pub fn get_scan_position(x: u32, y: u32, scan_idx: u8, log2_trafo_size: u8) -> ScanPosition {
-    // 1. Determine CG coordinates (the 4x4 blocks)
-    let cg_x = (x >> 2) as u8;
-    let cg_y = (y >> 2) as u8;
-
-    // 2. Determine local coordinates inside the CG
-    let pos_x = (x & 3) as u8;
-    let pos_y = (y & 3) as u8;
-
-    // 3. Get the tables from the spec (ScanOrder[log2TrafoSize-2][scanIdx])
-    let scan_order_sub = get_scan_order(log2_trafo_size - 2, scan_idx);
-    let scan_order_pos = get_scan_order(2, scan_idx);
-
-    // 4. Search for the CG index (lastSubBlock)
-    let mut sub_block = 0;
-    for (i, pos) in scan_order_sub.iter().enumerate() {
-        if pos.x == cg_x && pos.y == cg_y {
-            sub_block = i as i32;
-            break;
+    let log2_sb = usize::from(log2_trafo_size - 2);
+    let scan = usize::from(scan_idx);
+    let lookup = |log2: usize, x: u32, y: u32| -> i32 {
+        if (x >> log2) != 0 || (y >> log2) != 0 {
+            return 0; // outside the grid (corrupt stream): same fallback as before
         }
-    }
-
-    // 5. Search for the internal scan index (lastScanPos)
-    let mut scan_pos = 0;
-    for (n, pos) in scan_order_pos.iter().enumerate() {
-        if pos.x == pos_x && pos.y == pos_y {
-            scan_pos = n as i32;
-            break;
-        }
-    }
+        i32::from(INVERSE_SCAN[log2][scan][x as usize + ((y as usize) << log2)])
+    };
 
     ScanPosition {
-        scan_pos,
-        sub_block,
+        // 1. index of the 4x4 coefficient group (lastSubBlock)
+        sub_block: lookup(log2_sb, x >> 2, y >> 2),
+        // 2. index inside the group (lastScanPos)
+        scan_pos:  lookup(2, x & 3, y & 3)
     }
 }
 pub fn decode_coded_sub_block_flag(
@@ -619,7 +625,7 @@ pub fn decode_residual_block(
 
     // coded_sub_block_neighbors tracks which 4x4 groups have coefficients
     // Max TU is 32x32, so max sb_width is 8. 8*8 = 64.
-    let mut coded_sub_block_neighbors = vec![0u8; sb_width * sb_width];
+    let mut coded_sub_block_neighbors = [0u8; 64];
 
     // --- 8. Initialize loop state variables ---
     let mut c1 = 1i32;
@@ -744,7 +750,7 @@ pub fn decode_residual_block(
                     // can't propagate this due to rust errors.
                     // immutable borrow
                     let ctx_idx_map =
-                        &ctx.sig_ctx_maps[size_idx][chroma_idx][scan_type_idx][csbf_idx];
+                        sig_ctx_map(size_idx, chroma_idx, scan_type_idx, csbf_idx);
 
                     let idx = xc as usize + ((yc as usize) << (log2_trafo_size as usize));
                     // Standard context lookup using the precomputed map
@@ -783,7 +789,7 @@ pub fn decode_residual_block(
                         // can't propagate this due to rust errors.
                         // immutable borrow
                         let ctx_idx_map =
-                            &ctx.sig_ctx_maps[size_idx][chroma_idx][scan_type_idx][csbf_idx];
+                            sig_ctx_map(size_idx, chroma_idx, scan_type_idx, csbf_idx);
 
                         let idx = x0 as usize + ((y0 as usize) << (log2_trafo_size as usize));
                         // Standard context lookup using the precomputed map

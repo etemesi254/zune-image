@@ -536,7 +536,7 @@ impl CabacDecoder<'_> {
 
     // Updated helper to handle multiple constants
     fn set_init_const(&mut self, qp: i32, idx: usize, iv: u8, len: usize) {
-        let values = vec![iv; len];
-        self.set_init(qp, idx, &values, len);
+        let values = [iv; 8];
+        self.set_init(qp, idx, &values[..len], len);
     }
 }

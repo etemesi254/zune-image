@@ -1,5 +1,4 @@
 use alloc::vec::Vec;
-use core::cmp::Ordering;
 
 use crate::debug_more;
 use crate::hevc_decoder::DEBUG_MORE;
@@ -7,7 +6,6 @@ use crate::hevc_decoder::cabac::{CabacDecoder, NUM_CABAC_CONTEXTS};
 use crate::hevc_decoder::nal_unit_headers::{ChromaFormat, Pps, SliceHeader, Sps};
 use crate::hevc_decoder::neighbor_tracker::NeighborTracker;
 use crate::hevc_decoder::quadtree::sao::SaoInfo;
-use crate::hevc_decoder::quadtree::sig_ctx_generator::generate_all_sig_ctx_maps;
 use crate::hevc_decoder::raw_frame::PlaneBand;
 use crate::hevc_decoder::band::Band;
 #[allow(clippy::struct_excessive_bools)]
@@ -38,8 +36,6 @@ pub struct DecodeSliceContext<'a> {
     pub explicit_rdpcm_flag: bool,
     pub explicit_rdpcm_dir: u8,
     pub transform_skip_flag: [u8; 3],
-    // context significant maps
-    pub sig_ctx_maps: Vec<Vec<Vec<Vec<Vec<u8>>>>>,
     pub stat_coeff: [u8; 4],
     pub coeff_list: [[i16; 32 * 32]; 3],
     pub coeff_pos: [[i16; 32 * 32]; 3],
@@ -96,7 +92,6 @@ impl<'a> DecodeSliceContext<'a> {
             transform_skip_flag: [0; 3],
             explicit_rdpcm_flag: false,
             explicit_rdpcm_dir: 0,
-            sig_ctx_maps: generate_all_sig_ctx_maps(),
             stat_coeff: [0; 4],
             coeff_list: [[0; 32 * 32]; 3],
             coeff_pos: [[0; 32 * 32]; 3],
@@ -137,7 +132,7 @@ impl DecodeSliceContext<'_> {
     pub fn write_block_scratchpad(
         &mut self, c_idx: usize, x0: usize, y0: usize, n_t: usize, bit_depth: u8,
     ) {
-        write_block_and_pad(
+        write_block(
             &mut self.planes[c_idx],
             x0,
             y0,
@@ -439,7 +434,7 @@ impl DecodeSliceContext<'_> {
     ) {
         let residual = residual.unwrap_or(&self.math_scratchpad);
 
-        write_block_and_pad(
+        write_block(
             &mut self.planes[c_idx],
             x0,
             y0,
@@ -557,20 +552,18 @@ impl DecodeSliceContext<'_> {
     }
 }
 
-fn write_block_and_pad(
+fn write_block(
     plane: &mut PlaneBand, x0: usize, y0: usize, n_t: usize, pred: &[u8],
     residual: Option<&[i16]>, bit_depth: u8,
 ) {
     let max_val = (1_i32 << bit_depth) - 1;
-    let (w, h, s, p) = (plane.width, plane.height, plane.stride, plane.padding);
+    let (s, p) = (plane.stride, plane.padding);
 
-    let x_end = x0 + n_t;
-    let y_end = y0 + n_t;
     let frame_ox = p;
     let frame_oy = p;
 
     if let Some(residual) = residual {
-        // --- 1. Reconstruct directly into the padded buffer ---
+        // --- 1. Reconstruct directly into the plane ---
         for (dy, (residual_row, pred_row)) in residual
             .chunks(n_t)
             .zip(pred.chunks(n_t))
@@ -601,7 +594,7 @@ fn write_block_and_pad(
     }
 
     if DEBUG_MORE {
-        crate::dbg_println!("--- Out Padding (N={n_t}) ---");
+        crate::dbg_println!("--- Out Block (N={n_t}) ---");
         for dy in 0..n_t {
             let dst_row = (frame_oy + y0 + dy) * s + (frame_ox + x0);
             for dx in 0..n_t {
@@ -610,52 +603,8 @@ fn write_block_and_pad(
             crate::dbg_println!();
         }
     }
-    // --- 2. Left edge ---
-    if x0 == 0 {
-        for dy in 0..n_t {
-            let row = (frame_oy + y0 + dy) * s + frame_ox;
-            let val = plane.get(row);
-            plane.slice_mut(row - p, p).fill(val);
-        }
-    }
-
-    // --- 3. Right edge ---
-    if x_end == w {
-        for dy in 0..n_t {
-            let row_last = (frame_oy + y0 + dy) * s + frame_ox + w - 1;
-            let val = plane.get(row_last);
-            plane.slice_mut(row_last + 1, p).fill(val);
-        }
-    }
-
-    // --- 4. Top edge ---
-    if y0 == 0 {
-        let src_row_base = frame_oy * s;
-        let x_start = if x0 == 0 { 0 } else { frame_ox + x0 };
-        let x_stop = if x_end == w { s } else { frame_ox + x_end };
-        for py in 1..=p {
-            plane.copy_within(
-                src_row_base + x_start,
-                src_row_base - py * s + x_start,
-                x_stop - x_start,
-            );
-        }
-    }
-
-    // --- 5. Bottom edge ---
-    if y_end == h {
-        let src_row_base = (frame_oy + h - 1) * s;
-        let x_start = if x0 == 0 { 0 } else { frame_ox + x0 };
-        let x_stop = if x_end == w { s } else { frame_ox + x_end };
-        for py in 1..=p {
-            plane.copy_within(
-                src_row_base + x_start,
-                src_row_base + py * s + x_start,
-                x_stop - x_start,
-            );
-        }
-    }
 }
+
 pub fn print_available(available: &[bool], n_t: usize) {
     let total = 4 * n_t;
 
@@ -765,80 +714,65 @@ fn check_availability(
 fn perform_padding(
     plane: &PlaneBand, p: &mut [u8], available: &[bool], x0: usize, y0: usize, n_t: usize,
 ) {
+    // Layout of `p` (4N + 1 samples):
+    //   p[0..2N]        left column, bottom-left upwards: (x0-1, y0+2N-1-i)
+    //   p[2N]           top-left corner (x0-1, y0-1)
+    //   p[2N+1..=4N]    row above, left to right: (x0+i-2N-1, y0-1)
     let total = 4 * n_t + 1;
-
-    // 1. Fetch available pixels into the strictly linear 0..4N array
-    // and
-    // 2. HEVC Reference Sample Substitution (Spec 8.4.4.2.2)
-
+    let n2 = 2 * n_t;
     let (stride, pad) = (plane.stride, plane.padding);
+    // padded-buffer index of logical (x, y)
+    let index = |x: usize, y: usize| (y + pad) * stride + x + pad;
 
-    let mut first_availability = -1;
-    // SAFE GET_P: Add pad as isize FIRST to prevent usize::MAX overflow
-    let pad_i = pad as isize;
-    let get_p =
-        |px: isize, py: isize| plane.get(((py + pad_i) as usize) * stride + ((px + pad_i) as usize));
-
-    for i in 0..total {
-        if available[i] {
-            if first_availability == -1 {
-                // first available item
-                first_availability = i as i32;
+    // 1. Fetch available samples (Spec 8.4.4.2.2). Unavailable entries keep
+    //    the 128 they were initialised with.
+    if x0 > 0 {
+        // left column (and below-left): strided reads, bottom to top
+        let mut idx = index(x0 - 1, y0 + n2 - 1);
+        for i in 0..n2 {
+            if available[i] {
+                p[i] = plane.get(idx);
             }
-            // Map the 1D linear index 'i' back to 2D image coordinates
-            let (px, py) = {
-                let other = 2 * n_t;
-                let comparision = i.cmp(&other);
-                match comparision {
-                    Ordering::Less => {
-                        // Indices 0 to 2*nT - 1: Below-Left and Left
-                        (x0 as isize - 1, y0 as isize + (other - 1 - i) as isize)
-                    }
-                    Ordering::Equal => {
-                        // Index 2*nT: Top-Left Corner
-
-                        (x0 as isize - 1, y0 as isize - 1)
-                    }
-                    Ordering::Greater => {
-                        // Indices 2*nT + 1 to 4*nT: Top and Top-Right
-                        (x0 as isize + (i - other - 1) as isize, y0 as isize - 1)
-                    }
-                }
-            };
-
-            p[i] = get_p(px, py);
+            idx = idx.wrapping_sub(stride);
         }
     }
-    // if all items are not availalbe aka its -1, spec says
-    // we prefill with 128/mid grey, so that was already done when
-    // initializing this (check where it is called) so no need
-    // to do anything. like fill(128)
-    if first_availability != -1 {
-        // something is present, and its position is first_idx,
-        // optimistically check if the whole array is available
-        let available_len = available.len();
+    if available[n2] {
+        p[n2] = plane.get(index(x0 - 1, y0 - 1));
+    }
+    if y0 > 0 {
+        // row above (and above-right): copy each run of available samples
+        let row = index(x0, y0 - 1);
+        let top = &mut p[n2 + 1..=2 * n2];
+        let avail = &available[n2 + 1..=2 * n2];
+        let mut i = 0;
+        while i < n2 {
+            if !avail[i] {
+                i += 1;
+                continue;
+            }
+            let start = i;
+            while i < n2 && avail[i] {
+                i += 1;
+            }
+            plane.copy_to(row + start, &mut top[start..i]);
+        }
+    }
 
-        // this bool check optimistically checks corners/boundaries which are a good indicator of
-        // all neighbours being available
-        if available[0] && available[available_len / 2] && available[available_len - 1] {
-            // optimistic of their availability, so confirm that its all values present
-            let first_unavailable = available.iter().find(|&a| !a);
-            if first_unavailable.is_none() {
-                // no unavailable item, so no need for the reference sweep, return
-                return;
-            }
-        }
-        let first_idx = first_availability as usize;
-        // partial availability, some present some are not, mainly in edges. so pad the items
-        if first_availability > 0 {
-            let first_value = p[first_availability as usize];
-            p[0..first_idx].fill(first_value);
-        }
-        // Forward fill: Propagate the previous valid value into any remaining gaps
-        for i in (first_idx + 1)..total {
-            if !available[i] {
-                p[i] = p[i - 1];
-            }
+    // 2. Substitution of unavailable samples
+    let Some(first_idx) = available[..total].iter().position(|&a| a) else {
+        // nothing available: all samples stay 1 << (bitDepth - 1) = 128
+        return;
+    };
+    if first_idx == 0 && available[..total].iter().all(|&a| a) {
+        return;
+    }
+    // everything before the first available sample takes its value
+    let first_value = p[first_idx];
+    p[..first_idx].fill(first_value);
+    // forward fill the remaining gaps with the previous sample
+    for i in (first_idx + 1)..total {
+        if !available[i] {
+            p[i] = p[i - 1];
         }
     }
 }

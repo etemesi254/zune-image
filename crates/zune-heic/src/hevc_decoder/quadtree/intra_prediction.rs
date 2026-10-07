@@ -146,6 +146,11 @@ const INV_ANGLES: [i16; 35] = [
     0, 0, 0, 0, 0, 0, 0, 0, 0                     // 26-34: Positive Vertical
 ];
 
+#[inline(always)]
+fn interpolate(a: u8, b: u8, frac: u16) -> u8 {
+    (((32 - frac) * u16::from(a) + frac * u16::from(b) + 16) >> 5) as u8
+}
+
 pub fn predict_angular(
     p: &[u8], dst: &mut [u8], ref_main_buf: &mut [u8], n_t: usize, mode: u8, is_luma: bool
 ) {
@@ -204,24 +209,38 @@ pub fn predict_angular(
     }
 
     // ── 2. Project into dst (1/32-pixel interpolation) ───────────
+    // Each output line (a row for vertical modes, a column for horizontal
+    // ones) is one contiguous run of `ref_main` at a fixed fraction, so the
+    // fraction test is hoisted out of the pixel loop. Whole-sample angles
+    // (modes 2, 10, 18, 26, 34 and every line where `frac == 0`) are copies.
     for y in 0..n_t {
         let pos = ((y + 1) as i32) * i32::from(angle);
-        let int_pos = pos >> 5;
-        let frac = (pos & 31) as u32;
+        let start = (offset as i32 + (pos >> 5) + 1) as usize;
+        let frac = (pos & 31) as u16;
+        // the interpolating case reads one sample past the line
+        let src = &ref_main_buf[start..start + n_t + usize::from(frac != 0)];
 
-        for x in 0..n_t {
-            let base = (offset as i32 + x as i32 + int_pos + 1) as usize;
-
-            let val = if frac != 0 {
-                let s1 = u32::from(ref_main_buf[base]);
-                let s2 = u32::from(ref_main_buf[base + 1]);
-                (((32 - frac) * s1 + frac * s2 + 16) >> 5) as u8
+        if is_vert {
+            let row = &mut dst[y * n_t..(y + 1) * n_t];
+            if frac == 0 {
+                row.copy_from_slice(&src[..n_t]);
             } else {
-                ref_main_buf[base]
-            };
-
-            let (row, col) = if is_vert { (y, x) } else { (x, y) };
-            dst[row * n_t + col] = val;
+                for (d, w) in row.iter_mut().zip(src.windows(2)) {
+                    *d = interpolate(w[0], w[1], frac);
+                }
+            }
+        } else {
+            // transposed: output column y, pixel x goes to dst[x * n_t + y]
+            let column = dst[y..].iter_mut().step_by(n_t);
+            if frac == 0 {
+                for (d, &s) in column.zip(src) {
+                    *d = s;
+                }
+            } else {
+                for (d, w) in column.zip(src.windows(2)) {
+                    *d = interpolate(w[0], w[1], frac);
+                }
+            }
         }
     }
 

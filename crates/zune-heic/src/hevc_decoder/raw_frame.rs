@@ -31,7 +31,9 @@ impl RawFrame {
     pub fn new(width: usize, height: usize, format: ChromaFormat) -> Self {
         let (sub_x, sub_y) = format.get_subsampling();
 
-        let padding = 32; // Standard padding for motion compensation filters
+        // Still images are intra only: nothing reads outside the picture, so
+        // the planes need no border (inter prediction would want ~80 px).
+        let padding = 0;
 
         // Helper to build a plane
         let make_plane = |w: usize, h: usize, is_active: bool| {
@@ -202,6 +204,22 @@ impl<'a> PlaneBand<'a> {
                 .copied()
                 .expect("pixel outside this CTU row and the row above it")
         }
+    }
+
+    /// Copy `dst.len()` pixels starting at picture index `index` into `dst`.
+    /// The run must lie entirely inside the band or entirely inside the row
+    /// above it.
+    #[inline(always)]
+    pub fn copy_to(&self, index: usize, dst: &mut [u8]) {
+        let src = if index >= self.start {
+            &self.band[index - self.start..]
+        } else {
+            index
+                .checked_sub(self.above_start)
+                .and_then(|i| self.above.get(i..))
+                .expect("pixel outside this CTU row and the row above it")
+        };
+        dst.copy_from_slice(&src[..dst.len()]);
     }
 
     /// Pixels `index..index + len` of the band itself
