@@ -8,7 +8,7 @@ use alloc::string::ToString;
 
 use zune_core::bytestream::ZByteReaderTrait;
 use zune_core::log::{trace, warn};
-use zune_inflate::DeflateDecoder;
+use zune_inflate::{DeflateDecoder, DeflateOptions};
 
 use crate::apng::{ActlChunk, BlendOp, DisposeOp, FrameInfo, SingleFrame};
 use crate::decoder::{ChrmInfo, CicpInfo, ItxtChunk, PLTEEntry, PngChunk, TextChunk, TimeInfo, ZtxtChunk};
@@ -318,7 +318,10 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             let data = self.stream.peek_at(0, remainder)?;
 
             // decode to vec
-            if let Ok(icc_uncompressed) = DeflateDecoder::new(data).decode_zlib() {
+            let options = DeflateOptions::default().set_limit(self.options.inflate_get_limit());
+            if let Ok(icc_uncompressed) =
+                DeflateDecoder::new_with_options(data, options).decode_zlib()
+            {
                 self.png_info.icc_profile = Some(icc_uncompressed);
             } else {
                 warn!("Could not decode ICC profile, error with zlib stream");
@@ -424,7 +427,8 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             let data = self.stream.peek_at(0, remainder)?;
 
             // decode to vec
-            if let Ok(ztxt) = DeflateDecoder::new(data).decode_zlib() {
+            let options = DeflateOptions::default().set_limit(self.options.inflate_get_limit());
+            if let Ok(ztxt) = DeflateDecoder::new_with_options(data, options).decode_zlib() {
                 let chunk = ZtxtChunk {
                     keyword,
                     text: ztxt,
@@ -466,7 +470,6 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             )));
         }
 
-        self.num_fctl_seen += 1;
         self.frames.push(SingleFrame::new(fctl_info));
         // let the current frame be the last frame there
         self.current_frame = self.frames.len() - 1;
@@ -489,6 +492,13 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         let delay_denom = self.stream.get_u16_be();
         let dispose_op = DisposeOp::from_int(self.stream.read_u8())?;
         let blend_op = BlendOp::from_int(self.stream.read_u8())?;
+
+        // APNG specification, constraints on frame regions: width > 0 and height > 0
+        if width == 0 || height == 0 {
+            return Err(PngDecodeErrors::GenericStatic(
+                "APNG frame with zero width or height"
+            ));
+        }
 
         // Validate frame bounds against the image canvas.
         // Prevent overflow and reject frames extending past the canvas.

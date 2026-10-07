@@ -311,6 +311,11 @@ where
     pub fn process_frame(
         &mut self, frame_info: &FrameInfo, current_frame: &[T], output: &mut [T],
     ) -> Result<(), PngDecodeErrors> {
+        if frame_info.width == 0 || frame_info.height == 0 {
+            return Err(PngDecodeErrors::GenericStatic(
+                "Frame width and height must be greater than zero"
+            ));
+        }
         let expected_size = frame_info.width * frame_info.height * self.colorspace.num_components();
         if expected_size > output.len() {
             return Err(PngDecodeErrors::Generic(format!(

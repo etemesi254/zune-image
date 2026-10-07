@@ -242,7 +242,7 @@ fn color_convert_ycck_to_rgb<const NUM_COMPONENTS: usize>(
         output
     );
     for (pix_w, m_w) in output
-        .chunks_exact_mut(width * 3)
+        .chunks_exact_mut(width * NUM_COMPONENTS)
         .zip(mcu_block[3].chunks_exact(padded_width))
     {
         for (pix, m) in pix_w.chunks_exact_mut(NUM_COMPONENTS).zip(m_w) {
@@ -266,7 +266,7 @@ fn color_convert_cymk_to_rgb<const NUM_COMPONENTS: usize>(
         .zip(mcu_block[3].chunks_exact(padded_width))
     {
         for ((((pix, c), m), y), k) in pix_w
-            .chunks_exact_mut(3)
+            .chunks_exact_mut(NUM_COMPONENTS)
             .zip(c_w)
             .zip(m_w)
             .zip(y_w)
@@ -280,6 +280,9 @@ fn color_convert_cymk_to_rgb<const NUM_COMPONENTS: usize>(
             pix[0] = blinn_8x8(c, k);
             pix[1] = blinn_8x8(m, k);
             pix[2] = blinn_8x8(y, k);
+            if NUM_COMPONENTS == 4 {
+                pix[3] = 255;
+            }
         }
     }
 }

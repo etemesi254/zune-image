@@ -468,7 +468,7 @@ impl DecoderOptions {
     /// false if it's not present
     #[allow(unreachable_code)]
     pub fn use_sse2(&self) -> bool {
-        let opt = self.flags.zune_use_sse2 | self.flags.zune_use_unsafe;
+        let opt = self.flags.zune_use_sse2 & self.flags.zune_use_unsafe;
         // options says no
         if !opt {
             return false;
@@ -501,7 +501,7 @@ impl DecoderOptions {
     /// it's not present
     #[allow(unreachable_code)]
     pub fn use_sse3(&self) -> bool {
-        let opt = self.flags.zune_use_sse3 | self.flags.zune_use_unsafe;
+        let opt = self.flags.zune_use_sse3 & self.flags.zune_use_unsafe;
         // options says no
         if !opt {
             return false;
@@ -533,7 +533,7 @@ impl DecoderOptions {
     /// is not present
     #[allow(unreachable_code)]
     pub fn use_sse41(&self) -> bool {
-        let opt = self.flags.zune_use_sse41 | self.flags.zune_use_unsafe;
+        let opt = self.flags.zune_use_sse41 & self.flags.zune_use_unsafe;
         // options says no
         if !opt {
             return false;
@@ -565,7 +565,7 @@ impl DecoderOptions {
     /// not present
     #[allow(unreachable_code)]
     pub fn use_avx(&self) -> bool {
-        let opt = self.flags.zune_use_avx | self.flags.zune_use_unsafe;
+        let opt = self.flags.zune_use_avx & self.flags.zune_use_unsafe;
         // options says no
         if !opt {
             return false;
@@ -597,7 +597,7 @@ impl DecoderOptions {
     /// present
     #[allow(unreachable_code)]
     pub fn use_avx2(&self) -> bool {
-        let opt = self.flags.zune_use_avx2 | self.flags.zune_use_unsafe;
+        let opt = self.flags.zune_use_avx2 & self.flags.zune_use_unsafe;
         // options says no
         if !opt {
             return false;
@@ -625,7 +625,7 @@ impl DecoderOptions {
 
     #[allow(unreachable_code)]
     pub fn use_neon(&self) -> bool {
-        let opt = self.flags.zune_use_neon | self.flags.zune_use_unsafe;
+        let opt = self.flags.zune_use_neon & self.flags.zune_use_unsafe;
         // options says no
         if !opt {
             return false;
@@ -728,5 +728,21 @@ impl Default for DecoderOptions {
             num_threads:        4,
             endianness:         ByteEndian::BE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DecoderOptions;
+
+    #[test]
+    fn set_use_unsafe_false_disables_intrinsics() {
+        let options = DecoderOptions::default().set_use_unsafe(false);
+        assert!(!options.use_sse2());
+        assert!(!options.use_sse3());
+        assert!(!options.use_sse41());
+        assert!(!options.use_avx());
+        assert!(!options.use_avx2());
+        assert!(!options.use_neon());
     }
 }

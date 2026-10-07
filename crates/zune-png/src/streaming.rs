@@ -75,7 +75,8 @@ where
         ) -> Result<(ProcessingStatus, bool), PngDecodeErrors>,
     {
         let mut processed_bytes = 0;
-        let mut skipped_zlib_header = false;
+        // The 2-byte zlib header may be split across IDAT chunks
+        let mut zlib_header_left = 2;
         let mut is_final_chunk = false;
         let mut finished = false;
 
@@ -113,7 +114,10 @@ where
                 return Ok(());
             }
 
-            if self.stream.eof()? {
+            // After the last IDAT the decoder still has to be called once with an empty
+            // final chunk, even when the file ends right after the chunk header that
+            // ended the IDAT run.
+            if !is_final_chunk && self.stream.eof()? {
                 return Ok(());
             }
 
@@ -127,9 +131,10 @@ where
             self.current_idat_bytes_left = self.current_idat_bytes_left.saturating_sub(chunk_size);
             decoder.reset_position();
 
-            if !skipped_zlib_header && chunk_size >= 2 {
-                chunk_pos += 2;
-                skipped_zlib_header = true;
+            if zlib_header_left > 0 {
+                let skip = zlib_header_left.min(chunk_size.saturating_sub(chunk_pos));
+                chunk_pos += skip;
+                zlib_header_left -= skip;
             }
 
             'decoding: loop {
@@ -577,6 +582,9 @@ where
         } else {
             self.decode_stream_interlaced(out)?;
         }
+        if self.frame_info().is_some_and(|frame| frame.is_part_of_seq) {
+            self.num_fctl_seen += 1;
+        }
 
         if let Some(last_read_header) = self.non_parsed_header.as_ref() {
             if last_read_header.chunk_type == PngChunkType::IEND {
@@ -587,6 +595,11 @@ where
                 // may be a fCTL chunk
                 self.decoding_state = DecodingState::DecodingHeaders;
             }
+        } else {
+            // The image data ran to the end of the input without a following chunk: there
+            // is no further frame. Otherwise more_frames() would stay true and every call
+            // would decode the same frame again.
+            self.decoding_state = DecodingState::Done;
         }
         Ok(())
     }
@@ -855,7 +868,8 @@ where
         // If an image is < 8-bit depth, not paletted, but requires an alpha channel,
         // we must expand the bits AND inject the alpha bytes simultaneously.
         if info.depth < 8 && (has_trns || add_alpha_channel) {
-            // Pre-calculate the scaled tRNS match value
+            // Pre-calculate the scaled tRNS match value. Without a tRNS chunk (alpha added by
+            // png_set_add_alpha_channel) every pixel is opaque.
             let trns_val_scaled = if has_trns {
                 let depth_mask = (1_u16 << info.depth) - 1;
                 let scale = match info.depth {
@@ -864,9 +878,9 @@ where
                     4 => 0x11,
                     _ => 0,
                 };
-                ((self.trns_bytes[0] & 0xFF & depth_mask) as u8) * scale
+                Some(((self.trns_bytes[0] & 0xFF & depth_mask) as u8) * scale)
             } else {
-                return Err(PngDecodeErrors::GenericStatic("No tRNS chunk found"));
+                None
             };
 
             let scale = match info.depth {
@@ -898,7 +912,7 @@ where
 
                     final_output[out_idx] = expanded_luma;
 
-                    if has_trns && expanded_luma == trns_val_scaled {
+                    if trns_val_scaled == Some(expanded_luma) {
                         final_output[out_idx + 1] = 0; // Fully transparent
                     } else {
                         final_output[out_idx + 1] = 255; // Fully opaque
@@ -917,10 +931,34 @@ where
                 row_width,
                 usize::from(info.depth),
                 n_components,
-                self.seen_ptle,
+                is_palette,
                 raw_input,
                 final_output,
             );
+            return Ok(());
+        }
+
+        // --- 4a. 16-BIT tRNS OR ADD ALPHA, STRIPPED TO 8 BITS ---
+        // The alpha passes below write 16-bit samples, but `final_output` holds 8-bit ones:
+        // keep the high byte of each sample and append the alpha byte here instead.
+        if info.depth == 16
+            && self.options.png_get_strip_to_8bit()
+            && (has_trns || add_alpha_channel)
+        {
+            let mut trns = [0_u8; 6];
+            for (pair, value) in trns.chunks_exact_mut(2).zip(self.trns_bytes) {
+                pair.copy_from_slice(&value.to_be_bytes());
+            }
+            let trns = &trns[..2 * n_components];
+            for (in_px, out_px) in raw_input
+                .chunks_exact(2 * n_components)
+                .zip(final_output.chunks_exact_mut(n_components + 1))
+            {
+                for (sample, out) in in_px.chunks_exact(2).zip(out_px.iter_mut()) {
+                    *out = sample[0];
+                }
+                out_px[n_components] = if has_trns && in_px == trns { 0 } else { 255 };
+            }
             return Ok(());
         }
 
@@ -974,7 +1012,10 @@ where
         let add_alpha =
             self.options.png_get_add_alpha_channel() && !self.png_info.color.has_alpha();
         let depth_thing = self.options.png_get_strip_to_8bit() && self.png_info.depth == 16;
-        self.seen_trns | self.seen_ptle | (self.png_info.depth < 8) | add_alpha | depth_thing
+        // A PLTE chunk only matters for indexed images. Truecolor images may carry one as a
+        // suggested palette (PNG spec 11.2.3), which must not change how they are decoded.
+        let palette = self.seen_ptle && self.png_info.color == PngColor::Palette;
+        self.seen_trns | palette | (self.png_info.depth < 8) | add_alpha | depth_thing
     }
 }
 

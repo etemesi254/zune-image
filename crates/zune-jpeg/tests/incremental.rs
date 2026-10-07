@@ -15,10 +15,10 @@ use zune_core::bytestream::{ZByteReaderTrait, ZCursor};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::DecoderOptions;
 use zune_jpeg::errors::DecodeErrors;
-use zune_jpeg::{JpegDecoder, RawDecodeSession};
+use zune_jpeg::{JpegDecoder, RawDecodeSession, RawImcuRowStatus};
 
 use std::cell::{Cell, RefCell};
-use std::io::{BufRead, Read, Seek, SeekFrom};
+use std::io::{BufRead, Cursor, Read, Seek, SeekFrom};
 use std::rc::Rc;
 
 /// A cursor over a byte slice with an adjustable visibility limit.
@@ -105,6 +105,44 @@ impl Seek for GrowableCursor<'_> {
             seek_log.borrow_mut().push(self.position);
         }
         Ok(self.position as u64)
+    }
+}
+
+struct PositionFailCursor<'a> {
+    inner:       Cursor<&'a [u8]>,
+    calls:       Rc<Cell<usize>>,
+    fail_on_call: Rc<Cell<usize>>
+}
+
+impl Read for PositionFailCursor<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.inner.read(buf)
+    }
+}
+
+impl BufRead for PositionFailCursor<'_> {
+    fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
+        self.inner.fill_buf()
+    }
+
+    fn consume(&mut self, amt: usize) {
+        self.inner.consume(amt);
+    }
+}
+
+impl Seek for PositionFailCursor<'_> {
+    fn seek(&mut self, position: SeekFrom) -> std::io::Result<u64> {
+        if position == SeekFrom::Current(0) {
+            let call = self.calls.get() + 1;
+            self.calls.set(call);
+            if self.fail_on_call.get() == call {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "injected position failure"
+                ));
+            }
+        }
+        self.inner.seek(position)
     }
 }
 
@@ -458,6 +496,78 @@ fn assert_incremental_raw_strided_decode_matches_oneshot(name: &str, data: &[u8]
     }
 }
 
+fn assert_incremental_raw_pull_matches_oneshot(name: &str, data: &[u8], step: usize) {
+    let expected = decode_raw_oneshot(data);
+    let limit = Rc::new(Cell::new(0usize));
+    let cursor = GrowableCursor::new(data, Rc::clone(&limit));
+    let mut decoder = JpegDecoder::new(cursor);
+    let mut available = 0usize;
+
+    loop {
+        available = (available + step).min(data.len());
+        limit.set(available);
+        match decoder.decode_headers() {
+            Ok(()) => break,
+            Err(error) if error.is_recoverable_eof() => continue,
+            Err(error) => panic!("{name}: unexpected header error: {error:?}")
+        }
+    }
+
+    let mut raw = decoder.raw_output();
+    let layout = raw.layout().unwrap();
+    let count = raw.num_components().unwrap();
+    let strides: Vec<usize> = layout[..count].iter().map(|plane| plane.width).collect();
+    let mut actual: Vec<Vec<u8>> = layout[..count]
+        .iter()
+        .map(|plane| vec![0; plane.width * plane.height])
+        .collect();
+    let mut rows_emitted = [0usize; 4];
+    let mut suspended_before_first_row = false;
+
+    loop {
+        let mut stripe_storage: Vec<Vec<u8>> = layout[..count]
+            .iter()
+            .map(|plane| vec![0xCD; plane.width * plane.vertical_sampling_factor * 8])
+            .collect();
+        let mut refs: Vec<&mut [u8]> = stripe_storage.iter_mut().map(Vec::as_mut_slice).collect();
+
+        match raw.decode_next_imcu_row(&mut refs, &strides).unwrap() {
+            RawImcuRowStatus::RowReady { rows_written } => {
+                for index in 0..count {
+                    let bytes = rows_written[index] * strides[index];
+                    let dst = rows_emitted[index] * strides[index];
+                    actual[index][dst..dst + bytes]
+                        .copy_from_slice(&stripe_storage[index][..bytes]);
+                    rows_emitted[index] += rows_written[index];
+                }
+            }
+            RawImcuRowStatus::NeedMoreInput => {
+                assert!(
+                    stripe_storage.iter().flatten().all(|byte| *byte == 0xCD),
+                    "{name}: suspended pull modified caller storage"
+                );
+                if rows_emitted[..count].iter().all(|rows| *rows == 0) {
+                    suspended_before_first_row = true;
+                }
+                assert!(available < data.len(), "{name}: suspended with full input");
+                available = (available + step).min(data.len());
+                limit.set(available);
+            }
+            RawImcuRowStatus::Complete => {
+                assert!(
+                    suspended_before_first_row,
+                    "{name}: test did not suspend before publishing its first row"
+                );
+                assert_raw_strided_planes_match_padded(
+                    &actual, &strides, &expected, name, data, available
+                );
+                return;
+            }
+            _ => unreachable!("unknown raw iMCU-row status")
+        }
+    }
+}
+
 fn assert_decode_raw_replay_matches_oneshot(name: &str, data: &[u8]) {
     let expected = decode_raw_oneshot(data);
 
@@ -647,6 +757,46 @@ fn chunked_fresh_decoder_byte_by_byte() {
             }
             Err(e) => panic!("unexpected error at byte {available}: {e:?}"),
         }
+    }
+}
+
+#[test]
+fn progressive_resume_keeps_first_sos_quantization_tables() {
+    // Insert a DQT redefining table 0 before the second scan of a progressive image.
+    // Components keep the tables in effect at the first SOS, so a decode resumed at
+    // a later scan must use those, not the later DQT.
+    let base = include_bytes!("../../../test-images/jpeg/weird_sampling_3.jpg");
+    let second_sos = base
+        .windows(2)
+        .enumerate()
+        .filter(|(_, w)| *w == [0xFF, 0xDA])
+        .nth(1)
+        .expect("progressive image has a second SOS")
+        .0;
+    let mut dqt_body = vec![0x00];
+    dqt_body.extend_from_slice(&[99; 64]);
+    let mut data = base[..second_sos].to_vec();
+    data.extend_from_slice(&marker_segment(0xDB, &dqt_body));
+    data.extend_from_slice(&base[second_sos..]);
+    let data = &data[..];
+
+    let expected = decode_oneshot(data);
+    for cutoff in (second_sos + 69..data.len()).step_by(16) {
+        let limit = Rc::new(Cell::new(data.len()));
+        let cursor = GrowableCursor::new(data, Rc::clone(&limit));
+        let mut decoder = JpegDecoder::new(cursor);
+        decoder.set_incremental_mode(true);
+        decoder
+            .decode_headers()
+            .expect("headers are before the cutoff");
+        let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+        limit.set(cutoff);
+        let _ = decoder.decode_into(&mut out);
+        limit.set(data.len());
+        decoder
+            .decode_into(&mut out)
+            .expect("full input should complete the decode");
+        assert_pixels_match(&out, &expected, "progressive_dqt_between_scans", cutoff);
     }
 }
 
@@ -1896,6 +2046,88 @@ fn raw_strided_incremental_parity() {
 }
 
 #[test]
+fn raw_pull_incremental_parity() {
+    assert_incremental_raw_pull_matches_oneshot(
+        "baseline_pull",
+        include_bytes!("../../../test-images/jpeg/synthetic_image.jpg"),
+        37
+    );
+    assert_incremental_raw_pull_matches_oneshot(
+        "progressive_pull",
+        include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg"),
+        31
+    );
+    assert_incremental_raw_pull_matches_oneshot(
+        "restart_pull",
+        include_bytes!("../../../test-images/jpeg/four_components.jpg"),
+        97
+    );
+    assert_incremental_raw_pull_matches_oneshot(
+        "multi_sos_pull",
+        include_bytes!("../../../test-images/jpeg/non_interleaved_420_64x64.jpg"),
+        31
+    );
+}
+
+#[test]
+fn raw_pull_checkpoint_failure_is_atomic() {
+    let data = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let calls = Rc::new(Cell::new(0usize));
+    let fail_on_call = Rc::new(Cell::new(0usize));
+    let cursor = PositionFailCursor {
+        inner: Cursor::new(data.as_slice()),
+        calls: Rc::clone(&calls),
+        fail_on_call: Rc::clone(&fail_on_call)
+    };
+    let mut decoder = JpegDecoder::new(cursor);
+    decoder.decode_headers().unwrap();
+    calls.set(0);
+    fail_on_call.set(2);
+
+    let mut raw = decoder.raw_output();
+    let layout = raw.layout().unwrap();
+    let count = raw.num_components().unwrap();
+    let strides: Vec<usize> = layout[..count].iter().map(|plane| plane.width).collect();
+    let mut storage: Vec<Vec<u8>> = layout[..count]
+        .iter()
+        .map(|plane| vec![0xCD; plane.width * plane.vertical_sampling_factor * 8])
+        .collect();
+    let mut refs: Vec<&mut [u8]> = storage.iter_mut().map(Vec::as_mut_slice).collect();
+    assert_eq!(
+        raw.decode_next_imcu_row(&mut refs, &strides).unwrap(),
+        RawImcuRowStatus::NeedMoreInput
+    );
+    assert!(storage.iter().flatten().all(|byte| *byte == 0xCD));
+
+    fail_on_call.set(0);
+    let mut retry_storage: Vec<Vec<u8>> = layout[..count]
+        .iter()
+        .map(|plane| vec![0; plane.width * plane.vertical_sampling_factor * 8])
+        .collect();
+    let mut retry_refs: Vec<&mut [u8]> =
+        retry_storage.iter_mut().map(Vec::as_mut_slice).collect();
+    assert!(matches!(
+        raw.decode_next_imcu_row(&mut retry_refs, &strides).unwrap(),
+        RawImcuRowStatus::RowReady { .. }
+    ));
+}
+
+#[test]
+#[cfg(feature = "arith")]
+fn arithmetic_raw_pull_incremental_parity() {
+    assert_incremental_raw_pull_matches_oneshot(
+        "arithmetic_restart_pull",
+        include_bytes!("../../../test-images/jpeg/arith/seq-restart.jpg"),
+        23
+    );
+    assert_incremental_raw_pull_matches_oneshot(
+        "arithmetic_progressive_pull",
+        include_bytes!("../../../test-images/jpeg/arith/prog.jpg"),
+        23
+    );
+}
+
+#[test]
 #[cfg(feature = "arith")]
 fn arithmetic_incremental_parity() {
     assert_incremental_decode_matrix(&[
@@ -2764,6 +2996,43 @@ fn switching_checkpointed_pixel_decode_to_whole_raw_replays_from_start() {
 }
 
 #[test]
+fn switching_checkpointed_pixel_decode_to_raw_pull_replays_from_start() {
+    let data = include_bytes!("../../../test-images/jpeg/sampling_factors.jpg");
+    let entropy_start = entropy_start(data);
+    let cutoff = entropy_start + (data.len() - entropy_start) * 60 / 100;
+    let expected = decode_raw_oneshot(data);
+    let (mut decoder, limit) =
+        checkpointed_pixel_decoder(data, cutoff, DecoderOptions::default());
+    limit.set(data.len());
+
+    let mut raw = decoder.raw_output();
+    let layout = raw.layout().unwrap();
+    let count = raw.num_components().unwrap();
+    let strides: Vec<_> = layout[..count].iter().map(|plane| plane.width).collect();
+    let mut storage: Vec<Vec<u8>> = layout[..count]
+        .iter()
+        .map(|plane| vec![0; plane.width * plane.vertical_sampling_factor * 8])
+        .collect();
+    let mut planes: Vec<&mut [u8]> = storage.iter_mut().map(Vec::as_mut_slice).collect();
+    let rows_written = match raw
+        .decode_next_imcu_row(&mut planes, &strides)
+        .unwrap()
+    {
+        RawImcuRowStatus::RowReady { rows_written } => rows_written,
+        _ => panic!("raw pull did not replay its first stripe")
+    };
+    for index in 0..count {
+        for row in 0..rows_written[index] {
+            assert_eq!(
+                &storage[index][row * strides[index]..(row + 1) * strides[index]],
+                &expected[index]
+                    [row * layout[index].stride..row * layout[index].stride + strides[index]]
+            );
+        }
+    }
+}
+
+#[test]
 fn changing_options_replays_pixel_output_and_invalidates_progress() {
     let baseline = include_bytes!("../../../test-images/jpeg/2029.jpg");
     let luma = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::Luma);
@@ -2858,4 +3127,49 @@ fn per_row_checkpoint_preserves_vertical_upsampling_state() {
         matches!(resume_pos, Some(pos) if pos > entropy_start),
         "retry should resume inside entropy data, got {seeks:?}"
     );
+}
+
+#[test]
+fn stable_prefix_excludes_rows_decoded_past_eof() {
+    // With the input cut a few bytes into the last MCU row, the row can still be
+    // completed from the bit reader's zero padding. Those pixels change once the
+    // real bits arrive, so they must not be reported as stable.
+    for (name, data, cutoffs) in [
+        (
+            "sampling_factors",
+            include_bytes!("../../../test-images/jpeg/sampling_factors.jpg").as_slice(),
+            3000..3060
+        ),
+        (
+            "weid_sampling_factors",
+            include_bytes!("../../../test-images/jpeg/weid_sampling_factors.jpg").as_slice(),
+            1700..1760
+        )
+    ] {
+        let expected = decode_oneshot(data);
+        for cutoff in cutoffs {
+            let limit = Rc::new(Cell::new(cutoff));
+            let cursor = GrowableCursor::new(data, Rc::clone(&limit));
+            let mut decoder = JpegDecoder::new(cursor);
+            decoder.set_incremental_mode(true);
+            decoder
+                .decode_headers()
+                .expect("headers are before the cutoff");
+            let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+            if decoder.decode_into(&mut out).is_ok() {
+                continue;
+            }
+            let stable = decoder.decoded_output_bytes().unwrap();
+            if let Some(index) = out[..stable]
+                .iter()
+                .zip(&expected)
+                .position(|(left, right)| left != right)
+            {
+                panic!(
+                    "{name}: {stable} stable bytes with {cutoff} of {} bytes visible, but byte {index} changes later",
+                    data.len()
+                );
+            }
+        }
+    }
 }

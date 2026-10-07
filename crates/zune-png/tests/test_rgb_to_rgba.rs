@@ -66,3 +66,27 @@ fn test_rgb_to_rgba() {
     let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basi3p08.png";
     test_decoding(path);
 }
+
+#[test]
+fn test_low_bit_gray_to_gray_alpha() {
+    // 1, 2 and 4 bit grayscale without tRNS: the gray samples, each with an opaque alpha
+    for name in [
+        "basn0g01.png",
+        "basn0g02.png",
+        "basn0g04.png",
+        "basi0g04.png"
+    ] {
+        let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/" + name;
+        let contents = open_and_read(path);
+        let gray = PngDecoder::new(ZCursor::new(&contents))
+            .decode_raw()
+            .unwrap();
+
+        let options = DecoderOptions::default().png_set_add_alpha_channel(true);
+        let mut decoder = PngDecoder::new_with_options(ZCursor::new(&contents), options);
+        let gray_alpha = decoder.decode_raw().unwrap();
+
+        let expected: Vec<u8> = gray.iter().flat_map(|&luma| [luma, 255]).collect();
+        assert_eq!(gray_alpha, expected, "{name}");
+    }
+}

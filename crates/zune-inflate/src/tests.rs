@@ -231,6 +231,77 @@ mod tests {
         run_streaming_test(&data, &compressed, 37, data.len());
     }
 
+    /// Store blocks followed by more blocks, with chunks large enough that the bulk copy
+    /// runs while the bit reader has already loaded bytes past the block: those loaded
+    /// bytes must not leak into the next block header. Driven like zune-png drives the
+    /// decoder: `reset_position()` before each new chunk.
+    #[test]
+    fn test_store_block_then_next_block_in_one_chunk() {
+        // miniz splits level 0 output into store blocks of 31745 bytes
+        let data: Vec<u8> = (0..70_000).map(|i| ((i * 31) ^ (i >> 8)) as u8).collect();
+        let compressed = compress_deflate(&data, 0);
+        for chunk_size in [compressed.len(), 4096, 65536] {
+            let mut decoder = StreamingDecoder::new();
+            let mut out = vec![0u8; data.len()];
+            let mut start = 0;
+            let decoded = loop {
+                let end = (start + chunk_size).min(compressed.len());
+                let is_final = end == compressed.len();
+                decoder.reset_position();
+                match decoder.decode_chunk(&compressed[start..end], is_final, &mut out) {
+                    DecodeStatus::NeedsMoreInput if !is_final => start = end,
+                    DecodeStatus::Finished => break decoder.current_dest_offset(),
+                    DecodeStatus::Error(e) => panic!("chunk size {chunk_size}: {e:?}"),
+                    _ => panic!("chunk size {chunk_size}: unexpected status")
+                }
+            };
+            assert_eq!(decoded, data.len(), "chunk size {chunk_size}");
+            assert!(out == data, "chunk size {chunk_size}: output differs");
+        }
+    }
+
+    /// Stored blocks after the window has slid, with the limit set to exactly the output
+    /// size (as zune-png sets it): the bytes already slid out must count once toward the
+    /// limit, not twice.
+    #[test]
+    fn test_store_block_limit_after_window_slide() {
+        let data: Vec<u8> = (0..120_000).map(|i| ((i * 31) ^ (i >> 8)) as u8).collect();
+        // stored blocks of 20 000 bytes
+        let mut compressed = Vec::new();
+        let blocks: Vec<&[u8]> = data.chunks(20_000).collect();
+        for (i, block) in blocks.iter().enumerate() {
+            compressed.push(u8::from(i + 1 == blocks.len()));
+            compressed.extend_from_slice(&(block.len() as u16).to_le_bytes());
+            compressed.extend_from_slice(&(!(block.len() as u16)).to_le_bytes());
+            compressed.extend_from_slice(block);
+        }
+        let mut decoder = StreamingDecoder::new();
+        decoder.set_limit(data.len());
+        let mut window = vec![0u8; 40_000];
+        let mut out = Vec::new();
+        let status = loop {
+            match decoder.decode_chunk(&compressed, true, &mut window) {
+                DecodeStatus::NeedsMoreOutput { .. } => {
+                    // keep the last 32 KiB for back references, slide the rest out
+                    let dest = decoder.current_dest_offset();
+                    let amount = dest - 32_768;
+                    out.extend_from_slice(&window[..amount]);
+                    window.copy_within(amount..dest, 0);
+                    decoder.slide_window(amount);
+                }
+                DecodeStatus::Finished => {
+                    out.extend_from_slice(&window[..decoder.current_dest_offset()]);
+                    break "finished".to_string();
+                }
+                DecodeStatus::Error(e) => break format!("{e:?}"),
+                _ => break "unexpected status".to_string()
+            }
+        };
+        assert_eq!(status, "finished");
+        assert_eq!(out.len(), data.len());
+        assert!(out == data);
+    }
+
     /// Uncompressed block with tiny output buffer — exercises NeedsMoreOutput
     /// during the bulk-copy phase.
     #[test]
