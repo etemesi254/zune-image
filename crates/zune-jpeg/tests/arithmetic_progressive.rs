@@ -224,5 +224,4 @@ fn arithmetic_conditioning_table_fifteen_decodes() {
         table_fifteen[sos + 6] = 0xFF;
     }
     assert_eq!(decode(&table_fifteen, true), expected);
-    assert_eq!(decode(&table_fifteen, true), expected);
 }
