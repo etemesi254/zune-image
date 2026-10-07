@@ -272,7 +272,7 @@ pub fn idct_2d_scalar<const N: usize>(
 // CPU feature detection: at runtime with `std`, at compile time without
 // ---------------------------------------------------------------------------
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_arch = "x86_64", target_feature = "sse2"))]
 #[inline]
 fn has_sse41() -> bool {
     #[cfg(feature = "std")]
@@ -285,7 +285,7 @@ fn has_sse41() -> bool {
     }
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 #[inline]
 fn has_neon() -> bool {
     #[cfg(feature = "std")]
@@ -307,13 +307,13 @@ pub fn idst_4x4_hevc(block: &mut [i16; 16], scratchpad: &mut [i16; 1024], bit_de
     {
         return std_simd::idst_4x4_hevc(block, scratchpad, bit_depth);
     }
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(all(target_arch = "x86_64", target_feature = "sse2"))]
     {
         if has_sse41() {
             return x86_64::idst_4x4_hevc(block, scratchpad, bit_depth);
         }
     }
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     {
         if has_neon() {
             return aarch64::idst_4x4_hevc(block, scratchpad, bit_depth);
@@ -328,13 +328,13 @@ pub fn idct_4x4_hevc(block: &mut [i16; 16], scratchpad: &mut [i16; 1024], bit_de
     {
         return std_simd::idct_4x4_hevc(block, scratchpad, bit_depth);
     }
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(all(target_arch = "x86_64", target_feature = "sse2"))]
     {
         if has_sse41() {
             return x86_64::idct_4x4_hevc(block, scratchpad, bit_depth);
         }
     }
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     {
         if has_neon() {
             return aarch64::idct_4x4_hevc(block, scratchpad, bit_depth);
@@ -349,13 +349,13 @@ pub fn idct_8x8_hevc(block: &mut [i16; 64], scratchpad: &mut [i16; 1024], bit_de
     {
         return std_simd::idct_8x8_hevc(block, scratchpad, bit_depth);
     }
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(all(target_arch = "x86_64", target_feature = "sse2"))]
     {
         if has_sse41() {
             return x86_64::idct_8x8_hevc(block, scratchpad, bit_depth);
         }
     }
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     {
         if has_neon() {
             return aarch64::idct_8x8_hevc(block, scratchpad, bit_depth);
@@ -370,13 +370,13 @@ pub fn idct_16x16_hevc(block: &mut [i16; 256], scratchpad: &mut [i16; 1024], bit
     {
         return std_simd::idct_16x16_hevc(block, scratchpad, bit_depth);
     }
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(all(target_arch = "x86_64", target_feature = "sse2"))]
     {
         if has_sse41() {
             return x86_64::idct_16x16_hevc(block, scratchpad, bit_depth);
         }
     }
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     {
         if has_neon() {
             return aarch64::idct_16x16_hevc(block, scratchpad, bit_depth);
@@ -391,13 +391,13 @@ pub fn idct_32x32_hevc(block: &mut [i16; 1024], scratchpad: &mut [i16; 1024], bi
     {
         return std_simd::idct_32x32_hevc(block, scratchpad, bit_depth);
     }
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(all(target_arch = "x86_64", target_feature = "sse2"))]
     {
         if has_sse41() {
             return x86_64::idct_32x32_hevc(block, scratchpad, bit_depth);
         }
     }
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     {
         if has_neon() {
             return aarch64::idct_32x32_hevc(block, scratchpad, bit_depth);

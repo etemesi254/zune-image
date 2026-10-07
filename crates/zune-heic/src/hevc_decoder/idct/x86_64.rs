@@ -1,4 +1,5 @@
-#![cfg(target_arch = "x86_64")]
+// Soft-float x86_64 targets (e.g. x86_64-unknown-uefi) have no SSE.
+#![cfg(all(target_arch = "x86_64", target_feature = "sse2"))]
 #![allow(unreachable_code)]
 
 use core::arch::x86_64::*;
