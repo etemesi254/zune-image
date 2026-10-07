@@ -99,29 +99,26 @@ impl<'a> CabacDecoder<'a> {
     }
 
     pub fn init_cabac(&mut self) {
-        // Ensure we have at least 2 bytes available from the current cursor
-        if self.data.len() >= self.cursor + 2 {
-            // 1. Read 16 bits starting from the current cursor (byte-aligned)
-            // This is the 'iv' value in the spec (Initial Value)
-            self.value = (self.read_byte() << 8) | self.read_byte();
+        // Note: `self.cursor` runs ahead of the logical read position because
+        // bytes are pre-loaded into `self.cache`, so it must not be used to
+        // decide whether data is available. `read_byte` already pads with
+        // zeros past the end of the buffer, so always initialise (spec 9.3.2.5).
+        // This matters for short trailing WPP substreams (e.g. 1 byte).
+        self.value = (self.read_byte() << 8) | self.read_byte();
 
-            // 3. Reset the Arithmetic range to 510 as per Section 9.3.2.2
-            self.range = 510;
+        // Reset the Arithmetic range to 510 as per Section 9.3.2.5
+        self.range = 510;
 
-            // 4. bits_needed = -8 indicates that the next 'renorm'
-            // will trigger a read of the next byte.
-            self.bits_needed = -8;
+        // bits_needed = -8 indicates that the next 'renorm'
+        // will trigger a read of the next byte.
+        self.bits_needed = -8;
 
-            debug_more!(
-                "init_CABAC_decode_2 range :{} value :{} cursor: {}",
-                self.range,
-                self.value,
-                self.cursor
-            );
-        } else {
-            // Handle end of stream / error case
-            debug_more!("init_CABAC_decode_2: NOT ENOUGH DATA");
-        }
+        debug_more!(
+            "init_CABAC_decode_2 range :{} value :{} cursor: {}",
+            self.range,
+            self.value,
+            self.cursor
+        );
     }
 
     /// Batch renorm: shifts value/range by `shift` bits and reads at most one
