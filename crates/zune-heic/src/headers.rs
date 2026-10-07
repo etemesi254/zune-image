@@ -1,3 +1,4 @@
+use alloc::{string::String, vec::Vec};
 use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 use zune_core::log::{trace, warn};
 use zune_isobmff::{BoxHeader, BoxSize, FourCC};

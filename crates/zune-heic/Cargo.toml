@@ -9,7 +9,11 @@ zune-isobmff = { version = "0.5.0", path = "../zune-isobmff" }
 
 [features]
 simd = []
-default = []
+# Standard library support: multi-threaded decoding (grid tiles in parallel,
+# WPP CTU rows in parallel), runtime CPU feature detection and the Apple
+# VideoToolbox decoder. Without it the crate is `#![no_std]` (+ `alloc`).
+std = ["zune-core/std"]
+default = ["std"]
 
 
 [dev-dependencies]

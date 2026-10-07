@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 /// HEVC Deblocking Filter — ITU-T H.265 Section 8.7
 ///
 /// Pipeline:

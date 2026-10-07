@@ -1,4 +1,5 @@
 
+use alloc::{string::ToString, vec::Vec};
 use zune_core::log::trace;
 
 use crate::hevc_decoder::cabac::NUM_CABAC_CONTEXTS;

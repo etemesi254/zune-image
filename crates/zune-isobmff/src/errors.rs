@@ -1,5 +1,6 @@
 // isobmff/src/error.rs
 
+use alloc::string::String;
 use core::fmt;
 
 use zune_core::bytestream::ZByteIoError;

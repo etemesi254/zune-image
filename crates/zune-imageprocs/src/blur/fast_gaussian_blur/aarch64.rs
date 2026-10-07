@@ -32,11 +32,6 @@ pub unsafe fn horizontal_blur_gaussian_inner_u8_neon(
     let start_x = -radius.cast_signed() * 2;
     let width_isize = width.cast_signed();
     let radius_isize = radius.cast_signed();
-
-    let mut tmp_buffer: [i32; 4] = [0; 4];
-    let start_x = -radius.cast_signed() * 2;
-    let width_isize = width.cast_signed();
-    let radius_isize = radius.cast_signed();
     let mut tmp_buffer: [i32; 4] = [0; 4];
 
     // -------------------------------------------------------------------------

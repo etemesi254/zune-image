@@ -26,24 +26,39 @@
 macro_rules! debug_more {
     ($cond:expr => $($arg:tt)*) => {
         if DEBUG_MORE && $cond {
-            println!(
-                "{}",
-                //file!(),
-                //line!(),
-                format_args!($($arg)*)
-            );
+            $crate::dbg_println!("{}", format_args!($($arg)*));
         }
-            
     };
     ($($arg:tt)*) => {
         if DEBUG_MORE {
-            println!(
-                "{}",
-                // file!(),
-                // line!(),
-                format_args!($($arg)*)
-            );
-
-            }
+            $crate::dbg_println!("{}", format_args!($($arg)*));
+        }
     };
+}
+
+/// `println!` for debug tracing; compiled out (arguments still type-checked)
+/// without the `std` feature.
+#[macro_export]
+macro_rules! dbg_println {
+    () => {{
+        #[cfg(feature = "std")]
+        ::std::println!();
+    }};
+    ($($arg:tt)*) => {{
+        #[cfg(feature = "std")]
+        ::std::println!($($arg)*);
+        #[cfg(not(feature = "std"))]
+        let _ = format_args!($($arg)*);
+    }};
+}
+
+/// `print!` for debug tracing; compiled out without the `std` feature.
+#[macro_export]
+macro_rules! dbg_print {
+    ($($arg:tt)*) => {{
+        #[cfg(feature = "std")]
+        ::std::print!($($arg)*);
+        #[cfg(not(feature = "std"))]
+        let _ = format_args!($($arg)*);
+    }};
 }

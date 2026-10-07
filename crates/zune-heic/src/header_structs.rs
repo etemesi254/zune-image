@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use alloc::{string::String, vec::Vec};
 use zune_isobmff::FourCC;
 
 #[derive(Debug, Clone)]

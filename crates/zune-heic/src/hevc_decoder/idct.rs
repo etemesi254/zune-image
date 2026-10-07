@@ -141,7 +141,7 @@ fn transform8_1d(input: &[i16], output: &mut [i32]) {
         i32::from(input[5]),
         i32::from(input[7])
     ];
-    let o: [i32; 4] = std::array::from_fn(|i| {
+    let o: [i32; 4] = core::array::from_fn(|i| {
         let r = &T8[i];
         i1 * i32::from(r[0]) + i3 * i32::from(r[1]) + i5 * i32::from(r[2]) + i7 * i32::from(r[3])
     });
@@ -155,13 +155,13 @@ fn transform8_1d(input: &[i16], output: &mut [i32]) {
 #[inline(always)]
 fn transform16_1d(input: &[i16], output: &mut [i32]) {
     // Even part via transform8 on even-indexed inputs
-    let even_in: [i16; 8] = std::array::from_fn(|i| input[i * 2]);
+    let even_in: [i16; 8] = core::array::from_fn(|i| input[i * 2]);
     let mut e = [0i32; 8];
     transform8_1d(&even_in, &mut e);
 
     // Odd part — hoist odd inputs once, dot with each basis row
-    let odds: [i32; 8] = std::array::from_fn(|j| i32::from(input[j * 2 + 1]));
-    let o: [i32; 8] = std::array::from_fn(|i| {
+    let odds: [i32; 8] = core::array::from_fn(|j| i32::from(input[j * 2 + 1]));
+    let o: [i32; 8] = core::array::from_fn(|i| {
         let r = &T16[i];
         odds.iter()
             .zip(r.iter())
@@ -178,13 +178,13 @@ fn transform16_1d(input: &[i16], output: &mut [i32]) {
 #[inline(always)]
 fn transform32_1d(input: &[i16], output: &mut [i32]) {
     // Even part via transform16 on even-indexed inputs
-    let even_in: [i16; 16] = std::array::from_fn(|i| input[i * 2]);
+    let even_in: [i16; 16] = core::array::from_fn(|i| input[i * 2]);
     let mut e = [0i32; 16];
     transform16_1d(&even_in, &mut e);
 
     // Odd part — hoist odd inputs once, dot with each basis row
-    let odds: [i32; 16] = std::array::from_fn(|j| i32::from(input[j * 2 + 1]));
-    let o: [i32; 16] = std::array::from_fn(|i| {
+    let odds: [i32; 16] = core::array::from_fn(|j| i32::from(input[j * 2 + 1]));
+    let o: [i32; 16] = core::array::from_fn(|i| {
         let r = &T32[i];
         odds.iter()
             .zip(r.iter())
@@ -269,6 +269,36 @@ pub fn idct_2d_scalar<const N: usize>(
 }
 
 // ---------------------------------------------------------------------------
+// CPU feature detection: at runtime with `std`, at compile time without
+// ---------------------------------------------------------------------------
+
+#[cfg(target_arch = "x86_64")]
+#[inline]
+fn has_sse41() -> bool {
+    #[cfg(feature = "std")]
+    {
+        std::arch::is_x86_feature_detected!("sse4.1")
+    }
+    #[cfg(not(feature = "std"))]
+    {
+        cfg!(target_feature = "sse4.1")
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+#[inline]
+fn has_neon() -> bool {
+    #[cfg(feature = "std")]
+    {
+        std::arch::is_aarch64_feature_detected!("neon")
+    }
+    #[cfg(not(feature = "std"))]
+    {
+        cfg!(target_feature = "neon")
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Public Entry Points
 // ---------------------------------------------------------------------------
 
@@ -279,15 +309,13 @@ pub fn idst_4x4_hevc(block: &mut [i16; 16], scratchpad: &mut [i16; 1024], bit_de
     }
     #[cfg(target_arch = "x86_64")]
     {
-        if is_x86_feature_detected!("sse4.1") {
+        if has_sse41() {
             return x86_64::idst_4x4_hevc(block, scratchpad, bit_depth);
         }
     }
     #[cfg(target_arch = "aarch64")]
     {
-        use std::arch::is_aarch64_feature_detected;
-
-        if is_aarch64_feature_detected!("neon") {
+        if has_neon() {
             return aarch64::idst_4x4_hevc(block, scratchpad, bit_depth);
         }
     }
@@ -302,14 +330,13 @@ pub fn idct_4x4_hevc(block: &mut [i16; 16], scratchpad: &mut [i16; 1024], bit_de
     }
     #[cfg(target_arch = "x86_64")]
     {
-        if is_x86_feature_detected!("sse4.1") {
+        if has_sse41() {
             return x86_64::idct_4x4_hevc(block, scratchpad, bit_depth);
         }
     }
     #[cfg(target_arch = "aarch64")]
     {
-        use std::arch::is_aarch64_feature_detected;
-        if is_aarch64_feature_detected!("neon") {
+        if has_neon() {
             return aarch64::idct_4x4_hevc(block, scratchpad, bit_depth);
         }
     }
@@ -324,15 +351,13 @@ pub fn idct_8x8_hevc(block: &mut [i16; 64], scratchpad: &mut [i16; 1024], bit_de
     }
     #[cfg(target_arch = "x86_64")]
     {
-        if is_x86_feature_detected!("sse4.1") {
+        if has_sse41() {
             return x86_64::idct_8x8_hevc(block, scratchpad, bit_depth);
         }
     }
     #[cfg(target_arch = "aarch64")]
     {
-        use std::arch::is_aarch64_feature_detected;
-
-        if is_aarch64_feature_detected!("neon") {
+        if has_neon() {
             return aarch64::idct_8x8_hevc(block, scratchpad, bit_depth);
         }
     }
@@ -347,15 +372,13 @@ pub fn idct_16x16_hevc(block: &mut [i16; 256], scratchpad: &mut [i16; 1024], bit
     }
     #[cfg(target_arch = "x86_64")]
     {
-        if is_x86_feature_detected!("sse4.1") {
+        if has_sse41() {
             return x86_64::idct_16x16_hevc(block, scratchpad, bit_depth);
         }
     }
     #[cfg(target_arch = "aarch64")]
     {
-        use std::arch::is_aarch64_feature_detected;
-
-        if is_aarch64_feature_detected!("neon") {
+        if has_neon() {
             return aarch64::idct_16x16_hevc(block, scratchpad, bit_depth);
         }
     }
@@ -370,15 +393,13 @@ pub fn idct_32x32_hevc(block: &mut [i16; 1024], scratchpad: &mut [i16; 1024], bi
     }
     #[cfg(target_arch = "x86_64")]
     {
-        if is_x86_feature_detected!("sse4.1") {
+        if has_sse41() {
             return x86_64::idct_32x32_hevc(block, scratchpad, bit_depth);
         }
     }
     #[cfg(target_arch = "aarch64")]
     {
-        use std::arch::is_aarch64_feature_detected;
-
-        if is_aarch64_feature_detected!("neon") {
+        if has_neon() {
             return aarch64::idct_32x32_hevc(block, scratchpad, bit_depth);
         }
     }

@@ -1,4 +1,8 @@
+use alloc::{borrow::ToOwned, string::ToString, vec::Vec};
+use alloc::collections::BTreeMap;
+#[cfg(feature = "std")]
 use std::collections::HashMap;
+#[cfg(feature = "std")]
 use std::sync::{Arc, Mutex};
 
 use zune_core::bytestream::{ZByteReaderTrait, ZReader, ZSeekFrom};
@@ -15,13 +19,16 @@ use crate::headers::{decode_ftyp, decode_meta};
 use crate::hevc_decoder::HevcDecoder;
 use crate::hevc_decoder::nal_parser::NalFraming;
 use crate::processor::HevcSample;
+use crate::utils::Lock;
 
+#[cfg(feature = "std")]
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) struct SingleDecodedTile {
     pub pixels: Vec<u8>,
     pub width: usize,
     pub height: usize,
 }
+#[cfg(feature = "std")]
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) type TileMap = Arc<Mutex<HashMap<u32, Result<SingleDecodedTile, HeicErrors>>>>;
 
@@ -408,7 +415,7 @@ where
 
         let mut output = vec![0; w * h * colors];
 
-        #[cfg(target_os = "macos")]
+        #[cfg(all(target_os = "macos", feature = "std"))]
         {
             if self.options.hvec_use_apple_videotoolbox() {
                 trace!("HEVC using apple video toolbox");
@@ -432,11 +439,11 @@ where
 
             // One lock per canvas row: tiles in the same grid row share canvas
             // rows, so they may be written concurrently from different threads.
-            let canvas_rows: Vec<Mutex<&mut [u8]>> =
-                canvas.chunks_mut(w * colors).map(Mutex::new).collect();
+            let canvas_rows: Vec<Lock<&mut [u8]>> =
+                canvas.chunks_mut(w * colors).map(Lock::new).collect();
 
             // item_id -> grid positions (an item may in theory be referenced more than once)
-            let mut placements: HashMap<u32, Vec<usize>> = HashMap::new();
+            let mut placements: BTreeMap<u32, Vec<usize>> = BTreeMap::new();
             for (index, &item_id) in self.ordered_tile_ids.iter().enumerate() {
                 placements.entry(item_id).or_default().push(index);
             }
@@ -444,13 +451,13 @@ where
 
             // Grid tiles are already decoded in parallel (one tile per thread),
             // so only a single picture spreads its CTU rows over the CPUs.
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
             let row_threads = if self.is_grid {
                 1
             } else {
-                std::thread::available_parallelism().map_or(1, std::num::NonZero::get)
+                std::thread::available_parallelism().map_or(1, core::num::NonZero::get)
             };
-            #[cfg(target_arch = "wasm32")]
+            #[cfg(any(not(feature = "std"), target_arch = "wasm32"))]
             let row_threads = 1;
 
             let processor = |sample: HevcSample| -> Result<(), HeicErrors> {
@@ -491,15 +498,15 @@ where
                 }
                 Ok(())
             };
-            // wasm threads not a thing
-            #[cfg(target_arch = "wasm32")]
+            // no threads without std (or on wasm)
+            #[cfg(any(not(feature = "std"), target_arch = "wasm32"))]
             {
                 trace!("Using single threaded sample processor");
 
                 self.process_hevc_samples(processor)?;
             }
 
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
             {
                 if self.is_grid {
                     trace!("Using parallel sample decoder");
@@ -742,9 +749,9 @@ where
 //         let mut decoder = HeifDecoder::new_with_options(data, opt);
 //         decoder.decode_headers().unwrap();
 //         let colorspace = decoder.colorspace().unwrap();
-//         println!("{colorspace:?}");
-//         println!("{:?}", decoder.width().unwrap());
-//         println!("{:?}", decoder.height().unwrap());
+//         crate::dbg_println!("{colorspace:?}");
+//         crate::dbg_println!("{:?}", decoder.width().unwrap());
+//         crate::dbg_println!("{:?}", decoder.height().unwrap());
 //         let data = decoder.decode().unwrap();
 //
 //         // 4. Final Write

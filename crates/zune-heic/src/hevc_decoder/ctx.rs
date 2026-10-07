@@ -1,5 +1,5 @@
-use std::cmp::Ordering;
-use std::sync::Mutex;
+use alloc::vec::Vec;
+use core::cmp::Ordering;
 
 use crate::debug_more;
 use crate::hevc_decoder::DEBUG_MORE;
@@ -62,16 +62,16 @@ pub struct DecodeSliceContext<'a> {
 
     /// Per-CTB SAO parameters of this CTU row (or picture)
     pub ctb_sao_buffer: Band<'a, SaoInfo>,
-    /// CABAC contexts saved after CTU 1 of each row, used to start the next
-    /// row (WPP, spec 9.3.1).
-    pub ctb_context: &'a [Mutex<Option<[u8; NUM_CABAC_CONTEXTS]>>],
+    /// CABAC contexts saved after CTU 1 of the current row, used to start
+    /// the next row (WPP, spec 9.3.1).
+    pub wpp_saved_contexts: Option<[u8; NUM_CABAC_CONTEXTS]>,
 }
 impl<'a> DecodeSliceContext<'a> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         sps: &'a Sps, pps: &'a Pps, slice_header: &'a SliceHeader, cabac_engine: CabacDecoder<'a>,
         neighbor_tracker: NeighborTracker<'a>, last_qp_in_slice: i8, planes: [PlaneBand<'a>; 3],
-        ctb_sao_buffer: Band<'a, SaoInfo>, ctb_context: &'a [Mutex<Option<[u8; NUM_CABAC_CONTEXTS]>>],
+        ctb_sao_buffer: Band<'a, SaoInfo>,
     ) -> Self {
         Self {
             sps,
@@ -111,7 +111,7 @@ impl<'a> DecodeSliceContext<'a> {
             idct_scratchpad: vec![0; 1024],
             res_scale_val: -1,
             ctb_sao_buffer,
-            ctb_context,
+            wpp_saved_contexts: None,
         }
     }
 }
@@ -259,7 +259,7 @@ impl DecodeSliceContext<'_> {
 
                 let final_clipped = scaled.clamp(-32768, 32767);
                 if DEBUG_MORE {
-                    println!(
+                    crate::dbg_println!(
                         "TRACE_SCALE: i={i:>2} pos={pos:>4} level={level:>4} m_x_y={m_x_y:>3} fact={fact:>8} bdShift={bd_shift:>2} final={final_clipped:>5}"
                     );
                 }
@@ -281,7 +281,7 @@ impl DecodeSliceContext<'_> {
                 let scaled = (level * i64::from(fact) + i64::from(offset)) >> bd_shift;
 
                 if DEBUG_MORE {
-                    println!(
+                    crate::dbg_println!(
                         "TRACE_SCALE: i={:>2} pos={:>4} level={:>4}  fact={:>8} bdShift={:>2} final={:>5}",
                         i,
                         pos,
@@ -300,15 +300,15 @@ impl DecodeSliceContext<'_> {
         // Note: We only print if n_t is 4 or 8 to prevent overwhelming the console.
         // In a real debug session, you might remove this check.
         if DEBUG_MORE && n_t <= 32 {
-            println!("coefficients OUT (cIdx:{c_idx} at {x_t},{y_t} size:{n_t}):");
+            crate::dbg_println!("coefficients OUT (cIdx:{c_idx} at {x_t},{y_t} size:{n_t}):");
             for y in 0..n_t {
-                print!("  ");
+                crate::dbg_print!("  ");
                 for x in 0..n_t {
                     // In your Rust port, coeffStride is just n_t since coeff_buffer is 1D
                     let val = self.math_scratchpad[y * n_t + x];
-                    print!("{val:3} ");
+                    crate::dbg_print!("{val:3} ");
                 }
-                println!();
+                crate::dbg_println!();
             }
         }
     }
@@ -524,7 +524,7 @@ impl DecodeSliceContext<'_> {
         );
 
         if DEBUG_MORE {
-            println!("--- Reference Border (N={n_t}) ---");
+            crate::dbg_println!("--- Reference Border (N={n_t}) ---");
             print_available(&self.ref_samples_available[..p_len], n_t);
         }
 
@@ -538,7 +538,7 @@ impl DecodeSliceContext<'_> {
             n_t,
         );
         if DEBUG_MORE {
-            println!("--- Reference Border (N={n_t}) ---");
+            crate::dbg_println!("--- Reference Border (N={n_t}) ---");
             print_border(&self.ref_samples_p[..p_len], n_t);
         }
 
@@ -585,7 +585,7 @@ fn write_block_and_pad(
             {
                 let sum = i32::from(bv) + i32::from(residual_value);
                 if DEBUG_MORE && sum > 255 {
-                    println!("CLIPPING DETECTED: Pred={residual_value} + Residual={bv} = {sum}");
+                    crate::dbg_println!("CLIPPING DETECTED: Pred={residual_value} + Residual={bv} = {sum}");
                 }
                 *dst = sum.clamp(0, max_val) as u8;
             }
@@ -601,13 +601,13 @@ fn write_block_and_pad(
     }
 
     if DEBUG_MORE {
-        println!("--- Out Padding (N={n_t}) ---");
+        crate::dbg_println!("--- Out Padding (N={n_t}) ---");
         for dy in 0..n_t {
             let dst_row = (frame_oy + y0 + dy) * s + (frame_ox + x0);
             for dx in 0..n_t {
-                print!("{} ", plane.get(dst_row + dx));
+                crate::dbg_print!("{} ", plane.get(dst_row + dx));
             }
-            println!();
+            crate::dbg_println!();
         }
     }
     // --- 2. Left edge ---
@@ -660,30 +660,30 @@ pub fn print_available(available: &[bool], n_t: usize) {
     let total = 4 * n_t;
 
     for i in 0..=total {
-        print!("{}", u8::from(available[i]));
+        crate::dbg_print!("{}", u8::from(available[i]));
 
         if i == n_t - 1 || i == 2 * n_t - 1 || i == 2 * n_t || i == 3 * n_t {
-            println!("|");
+            crate::dbg_println!("|");
         } else if i != total {
-            print!(" ");
+            crate::dbg_print!(" ");
         }
     }
-    println!();
+    crate::dbg_println!();
 }
 
 pub fn print_border(p: &[u8], n_t: usize) {
     let total = 4 * n_t;
 
     for i in 0..=total {
-        print!("{}", p[i]);
+        crate::dbg_print!("{}", p[i]);
 
         if i == n_t - 1 || i == 2 * n_t - 1 || i == 2 * n_t || i == 3 * n_t {
-            println!("|");
+            crate::dbg_println!("|");
         } else if i != total {
-            print!(" ");
+            crate::dbg_print!(" ");
         }
     }
-    println!();
+    crate::dbg_println!();
 }
 #[allow(clippy::too_many_arguments)]
 fn check_availability(

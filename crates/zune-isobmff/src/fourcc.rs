@@ -56,6 +56,8 @@ impl PartialEq<&[u8; 4]> for FourCC {
 }
 
 mod tests {
+    use alloc::vec::Vec;
+
     #[test]
     fn test_construct() {
         let uut = crate::FourCC([b'a', b'b', b'c', b'd']);

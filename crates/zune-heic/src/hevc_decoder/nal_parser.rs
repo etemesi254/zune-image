@@ -8,7 +8,8 @@
 //  - Hand zero-copy NalUnit views to a caller-supplied visitor
 // ============================================================
 #![allow(dead_code)]
-use std::fmt;
+use alloc::{string::String, vec::Vec};
+use core::fmt;
 
 // ── Errors ────────────────────────────────────────────────────────────────────
 

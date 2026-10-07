@@ -1,3 +1,4 @@
+use alloc::string::String;
 // isobmff/src/error.rs
 
 use core::fmt;
