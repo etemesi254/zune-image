@@ -866,7 +866,9 @@ fn perform_padding(
     }
 }
 fn apply_reference_smoothing(p: &mut [u8], n_t: usize, mode: u8, strong_enabled: bool) {
-    if n_t == 4 {
+    // Spec 8.4.4.2.3: filterFlag gates *both* the [1,2,1] filter and the
+    // strong (bi-linear) 32x32 filter.
+    if !is_filtering_required(mode, n_t) {
         return;
     }
 
@@ -886,7 +888,7 @@ fn apply_reference_smoothing(p: &mut [u8], n_t: usize, mode: u8, strong_enabled:
         }
     }
 
-    if is_filtering_required(mode, n_t) {
+    {
         // Store the unmodified p[0] before the loop begins
         let mut prev = p[0];
 
@@ -926,10 +928,19 @@ fn apply_strong_smoothing(p: &mut [u8], n_t: usize) {
 }
 
 fn is_filtering_required(mode: u8, n_t: usize) -> bool {
-    // HEVC Table 8-3
-    match n_t {
-        8 => mode == 0 || mode == 2 || mode == 18 || mode == 34,
-        16 | 32 => mode != 1 && mode != 10 && mode != 26,
-        _ => false,
+    // Spec 8.4.4.2.3 / Table 8-3:
+    //   filterFlag = 0 for DC or nTbS == 4, otherwise
+    //   filterFlag = min(|mode - 26|, |mode - 10|) > intraHorVerDistThres[nTbS]
+    if mode == 1 {
+        return false;
     }
+    let thres = match n_t {
+        8 => 7,
+        16 => 1,
+        32 => 0,
+        _ => return false,
+    };
+    let m = i32::from(mode);
+    let min_dist = (m - 26).abs().min((m - 10).abs());
+    min_dist > thres
 }
