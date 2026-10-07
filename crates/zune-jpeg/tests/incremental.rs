@@ -528,7 +528,15 @@ fn input_cut_inside_fill_bytes_resumes_correctly() {
             .expect("headers are before the cutoff");
         let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
         limit.set(cutoff);
-        let _ = decoder.decode_into(&mut out);
+        // The cut call must report a recoverable end of input: success or another error
+        // would be hidden by the full-input call below, which replays the decode.
+        match decoder.decode_into(&mut out) {
+            Err(e) => assert!(
+                e.is_recoverable_eof(),
+                "cutoff {cutoff}: expected a recoverable EOF, got {e:?}"
+            ),
+            Ok(()) => panic!("cutoff {cutoff}: decode succeeded on truncated input")
+        }
         limit.set(data.len());
         decoder
             .decode_into(&mut out)
