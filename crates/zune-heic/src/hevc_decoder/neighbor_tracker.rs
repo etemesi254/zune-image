@@ -15,7 +15,11 @@ pub struct BlockState {
     pub intra_mode_chroma: u8,   // 0-34 (The mapped direction)
     pub is_chroma_dm:      bool, // True if syntax element was 4
     pub qp:                i8,
-    pub has_nonzero_coeff: bool
+    pub has_nonzero_coeff: bool,
+    /// A transform/prediction block boundary lies on the left edge of this 4x4 unit
+    pub edge_left:         bool,
+    /// A transform/prediction block boundary lies on the top edge of this 4x4 unit
+    pub edge_top:          bool
 }
 
 impl Default for BlockState {
@@ -32,7 +36,9 @@ impl Default for BlockState {
             slice_id:          0,
             has_nonzero_coeff: false,
             intra_mode_chroma: 1, // Default to DC
-            is_chroma_dm:      false
+            is_chroma_dm:      false,
+            edge_left:         false,
+            edge_top:          false
         }
     }
 }
@@ -425,6 +431,22 @@ impl NeighborTracker {
     }
 }
 impl NeighborTracker {
+    /// Record the left and top boundaries of a (luma) block of size `size`
+    /// at `(x, y)` as deblocking edges (spec 8.7.2.2 / 8.7.2.3).
+    pub fn mark_block_edges(&mut self, x: usize, y: usize, size: usize) {
+        let ux = x >> self.log2_unit_size;
+        let uy = y >> self.log2_unit_size;
+        let units = (size >> self.log2_unit_size).max(1);
+        for d in 0..units {
+            if uy + d < self.height_in_units && ux < self.width_in_units {
+                self.blocks[(uy + d) * self.width_in_units + ux].edge_left = true;
+            }
+            if ux + d < self.width_in_units && uy < self.height_in_units {
+                self.blocks[uy * self.width_in_units + ux + d].edge_top = true;
+            }
+        }
+    }
+
     pub fn set_nonzero_coefficient(&mut self, x: usize, y: usize, log2_trafo_size: u8) {
         let unit_x = x >> self.log2_unit_size;
         let unit_y = y >> self.log2_unit_size;

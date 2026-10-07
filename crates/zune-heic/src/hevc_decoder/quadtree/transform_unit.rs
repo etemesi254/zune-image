@@ -331,6 +331,9 @@ pub fn read_transform_tree(
             true // Inferred: if everything else is 0, Luma MUST be 1 for a leaf
         };
 
+        // Transform block boundaries are deblocking edges
+        ctx.neighbor_tracker.mark_block_edges(x0, y0, 1 << log2_trafo_size);
+
         // 4. Transform Unit Processing
         // Passing the full set of parameters to handle 4:2:0 and 4:2:2 logic
         read_transform_unit(
