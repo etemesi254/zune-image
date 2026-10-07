@@ -1,11 +1,12 @@
 #![allow(dead_code)]
+use alloc::vec::Vec;
 use crate::debug_more;
 use crate::hevc_decoder::DEBUG_MORE;
 use crate::hevc_decoder::cabac_tables::CONTEXT_MODEL_SAO_MERGE_FLAG;
 use crate::hevc_decoder::ctx::DecodeSliceContext;
 use crate::hevc_decoder::nal_unit_headers::ChromaFormat;
 use crate::hevc_decoder::raw_frame::{RawFrame, SingleFrame, offset_plane};
-use std::cmp::min;
+use core::cmp::min;
 
 #[derive(Default, Debug, Clone, Copy)]
 pub struct SaoInfo {
@@ -322,7 +323,7 @@ fn sao_plane(
                 }
             }
             // the pre-SAO copy of this row becomes the "above" row for the next one
-            std::mem::swap(prev, cur);
+            core::mem::swap(prev, cur);
             prev_valid = true;
         }
     }

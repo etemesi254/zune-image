@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use crate::hevc_decoder::DEBUG_MORE;
 use crate::debug_more;
 use crate::hevc_decoder::bitstream::BitReader;

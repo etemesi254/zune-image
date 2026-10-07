@@ -1,3 +1,4 @@
+use alloc::string::ToString;
 use zune_core::log::warn;
 
 use crate::debug_more;

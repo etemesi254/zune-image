@@ -1,3 +1,4 @@
+use alloc::string::ToString;
 use crate::debug_more;
 use crate::hevc_decoder::DEBUG_MORE;
 use crate::hevc_decoder::cabac_tables::CONTEXT_MODEL_CU_QP_DELTA_ABS;

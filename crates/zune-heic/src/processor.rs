@@ -1,10 +1,11 @@
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use alloc::vec::Vec;
 
 use zune_core::bytestream::ZByteReaderTrait;
 use zune_core::log::trace;
 
-use crate::decoder::{HeifDecoder, TileMap};
+use crate::decoder::HeifDecoder;
+#[cfg(feature = "std")]
+use crate::decoder::TileMap;
 use crate::errors::HeicErrors;
 use crate::header_structs::ItemProperty;
 
@@ -195,6 +196,7 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
     }
 
     /// Iterates over HEVC items and processes them in parallel using a thread pool.
+    #[cfg(feature = "std")]
     #[allow(clippy::too_many_lines)]
     pub fn process_hevc_samples_parallel<F>(&self, callback: F) -> Result<(), HeicErrors>
     where
@@ -322,7 +324,7 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
                 match mdat.raw_data.get(buffer_index..(buffer_index + length)) {
                     None => {
                         return Err(HeicErrors::Generic {
-                            msg: "MDAT would overflow".to_string()
+                            msg: "MDAT would overflow".into()
                         });
                     }
                     Some(slice) => {
@@ -341,6 +343,8 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
         }
 
         // 3. Parallel Processing using std::thread::scope
+        use std::sync::Mutex;
+        use std::sync::atomic::{AtomicUsize, Ordering};
         let next_job_idx = AtomicUsize::new(0);
         let first_error = Mutex::new(None);
 
@@ -399,6 +403,7 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
 
     /// Stitches pre-converted RGB tiles (used by the VideoToolbox path, which
     /// produces whole RGB tiles) into `output`, then applies mirror/rotation.
+    #[cfg(feature = "std")]
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     #[allow(clippy::too_many_lines)]
     pub(crate) fn stitch(&self, tile_map: &TileMap, output: &mut [u8]) -> Result<(), HeicErrors> {

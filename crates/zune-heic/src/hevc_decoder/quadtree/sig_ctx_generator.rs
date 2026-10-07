@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 pub fn generate_all_sig_ctx_maps() -> Vec<Vec<Vec<Vec<Vec<u8>>>>> {
     // [log2w - 2][cIdx][scanIdx][prevCsbf]
     let mut size_vec = Vec::with_capacity(4);

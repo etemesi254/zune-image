@@ -94,7 +94,7 @@ pub fn parse_scaling_list_data(r: &mut BitReader) -> Result<ScalingLists, NalErr
 
             if scaling_list_pred_mode_flag {
                 // DPCM Mode: Decode deltas
-                let coef_num = std::cmp::min(64, 1 << (4 + (size_id << 1)));
+                let coef_num = core::cmp::min(64, 1 << (4 + (size_id << 1)));
                 let mut next_coef = 8; // Starting value for DPCM is 8
 
                 if size_id > 1 {
@@ -415,7 +415,7 @@ pub fn decode_slice_header(
             sh.dependent_slice_segment_flag = r.read_flag()?;
         }
         let pic_size_in_ctbs_y = sps.pic_width_in_ctbs_y * sps.pic_height_in_ctbs_y;
-        let address_length = (pic_size_in_ctbs_y as f64).log2().ceil() as u8;
+        let address_length = ceil_log2(pic_size_in_ctbs_y);
         sh.slice_segment_address = r.get_bits(address_length)?;
     }
 
@@ -442,7 +442,7 @@ pub fn decode_slice_header(
             if !short_term_ref_pic_set_sps_flag {
                 // Inline RPS parsing would go here
             } else if sps.num_short_term_ref_pic_sets > 1 {
-                let num_bits = (sps.num_short_term_ref_pic_sets as f64).log2().ceil() as u8;
+                let num_bits = ceil_log2(sps.num_short_term_ref_pic_sets);
                 r.get_bits(num_bits)?;
             }
 
@@ -540,4 +540,20 @@ pub fn decode_slice_header(
 
     debug_more!(false=>"{:#?}",sh);
     Ok(sh)
+}
+
+/// `Ceil(Log2(n))` (spec 5.7), exactly, without floating point.
+fn ceil_log2(n: u64) -> u8 {
+    if n <= 1 { 0 } else { (u64::BITS - (n - 1).leading_zeros()) as u8 }
+}
+
+#[cfg(test)]
+mod ceil_log2_tests {
+    #[test]
+    fn matches_float_definition() {
+        for n in 1u64..5000 {
+            assert_eq!(super::ceil_log2(n), (n as f64).log2().ceil() as u8, "n={n}");
+        }
+        assert_eq!(super::ceil_log2(0), 0);
+    }
 }

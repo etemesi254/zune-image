@@ -1,3 +1,4 @@
+use alloc::string::String;
 use crate::debug_more;
 use crate::hevc_decoder::DEBUG_MORE;
 use crate::hevc_decoder::cabac_tables::{
@@ -13,7 +14,7 @@ use crate::hevc_decoder::nal_unit_headers::ChromaFormat;
 use crate::hevc_decoder::neighbor_tracker::PredMode;
 use crate::hevc_decoder::quadtree::transform_unit::Component;
 use crate::hevc_decoder::quadtree::transform_unit::Component::Luma;
-use std::fmt::Write;
+use core::fmt::Write;
 
 pub struct ScanPosition {
     pub scan_pos: i32,
@@ -582,7 +583,7 @@ pub fn decode_residual_block(
     let mut last_sig_y = last_significant_coeff_y;
 
     if scan_idx == 2 {
-        std::mem::swap(&mut last_sig_x, &mut last_sig_y);
+        core::mem::swap(&mut last_sig_x, &mut last_sig_y);
     }
     debug_more!(
         "LastSignificantCoeff: x={};y={}",

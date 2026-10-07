@@ -16,3 +16,38 @@ pub(crate) fn read_sized_int<R: ZByteReaderTrait>(
         })
     }
 }
+
+/// A lock around data that may be written from several threads.
+///
+/// With `std` this is a [`std::sync::Mutex`], so it can be shared between
+/// decoding threads. Without `std` decoding is single-threaded, so a
+/// [`core::cell::RefCell`] is enough.
+pub(crate) struct Lock<T> {
+    #[cfg(feature = "std")]
+    inner: std::sync::Mutex<T>,
+    #[cfg(not(feature = "std"))]
+    inner: core::cell::RefCell<T>
+}
+
+impl<T> Lock<T> {
+    pub(crate) fn new(value: T) -> Self {
+        Self {
+            #[cfg(feature = "std")]
+            inner: std::sync::Mutex::new(value),
+            #[cfg(not(feature = "std"))]
+            inner: core::cell::RefCell::new(value)
+        }
+    }
+
+    /// Run `f` with exclusive access to the data.
+    pub(crate) fn with<R>(&self, f: impl FnOnce(&mut T) -> R) -> R {
+        #[cfg(feature = "std")]
+        let mut guard = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        #[cfg(not(feature = "std"))]
+        let mut guard = self.inner.borrow_mut();
+        f(&mut guard)
+    }
+}

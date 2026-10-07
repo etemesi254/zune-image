@@ -1,5 +1,5 @@
-use std::io::Write;
-use std::sync::Mutex;
+use alloc::{string::ToString, vec::Vec};
+use crate::utils::Lock;
 
 use crate::hevc_decoder::nal_parser::NalError;
 use crate::hevc_decoder::nal_unit_headers::{ChromaFormat, Sps};
@@ -113,6 +113,7 @@ impl PlaneGeometry {
 /// the first band and the bottom padding rows to the last one. Returns the
 /// bands and the physical row each starts at. An empty (inactive) plane gives
 /// empty bands.
+#[cfg(feature = "std")]
 pub fn split_plane_rows(
     plane: &mut SingleFrame, band_height: usize, n_bands: usize
 ) -> Vec<(&mut [u8], usize)> {
@@ -238,8 +239,8 @@ impl RawFrame {
                 out_rgb.len()
             )));
         }
-        let rows: Vec<Mutex<&mut [u8]>> =
-            out_rgb[..expected_len].chunks_mut(width * 3).map(Mutex::new).collect();
+        let rows: Vec<Lock<&mut [u8]>> =
+            out_rgb[..expected_len].chunks_mut(width * 3).map(Lock::new).collect();
         self.write_into_canvas(&rows, 0, 0, width, height, 3)
     }
 
@@ -253,8 +254,8 @@ impl RawFrame {
     /// converted; anything overhanging the right/bottom edge is skipped.
     ///
     /// `channels` may be 1 (luma only), 3 (RGB) or 4 (RGB + opaque alpha).
-    pub fn write_into_canvas(
-        &self, canvas_rows: &[Mutex<&mut [u8]>], x_off: usize, y_off: usize, canvas_w: usize,
+    pub(crate) fn write_into_canvas(
+        &self, canvas_rows: &[Lock<&mut [u8]>], x_off: usize, y_off: usize, canvas_w: usize,
         canvas_h: usize, channels: usize
     ) -> Result<(), NalError> {
         if !matches!(channels, 1 | 3 | 4) {
@@ -272,16 +273,16 @@ impl RawFrame {
         let vis_h = luma.height.min(canvas_h - y_off);
 
         for row in 0..vis_h {
-            let mut dst_row = canvas_rows
+            canvas_rows
                 .get(y_off + row)
                 .ok_or_else(|| NalError::Generic("Canvas row out of range".to_string()))?
-                .lock()
-                .unwrap();
-            let dst = dst_row
-                .get_mut(x_off * channels..(x_off + vis_w) * channels)
-                .ok_or_else(|| NalError::Generic("Canvas row too short".to_string()))?;
-
-            convert_row(self.format, luma, cb, cr, row, vis_w, dst, channels);
+                .with(|dst_row| {
+                    let dst = dst_row
+                        .get_mut(x_off * channels..(x_off + vis_w) * channels)
+                        .ok_or_else(|| NalError::Generic("Canvas row too short".to_string()))?;
+                    convert_row(self.format, luma, cb, cr, row, vis_w, dst, channels);
+                    Ok::<(), NalError>(())
+                })?;
         }
         Ok(())
     }
@@ -322,9 +323,9 @@ fn convert_row(
 
         let y_chunk: [i16; 16] = if is_full {
             let y_src = &luma.pixels[y_row_base + x_base..][..16];
-            std::array::from_fn(|i| i16::from(y_src[i]))
+            core::array::from_fn(|i| i16::from(y_src[i]))
         } else {
-            std::array::from_fn(|i| {
+            core::array::from_fn(|i| {
                 let clamped_x = (x_base + i).min(width - 1);
                 i16::from(luma.pixels[y_row_base + clamped_x])
             })
@@ -377,6 +378,7 @@ fn convert_row(
     }
 }
 
+#[cfg(feature = "std")]
 impl RawFrame {
     /// Dumps the reconstructed frame to a P6 PPM file.
     /// This automatically strips HEVC padding and converts YCbCr to RGB.
@@ -392,6 +394,7 @@ impl RawFrame {
 
         let file = std::fs::File::create(filename)?;
         let mut writer = std::io::BufWriter::new(file);
+        use std::io::Write;
 
         writeln!(writer, "P6\n{width} {height}\n255")?;
         writer.write_all(&rgb_buf)?;

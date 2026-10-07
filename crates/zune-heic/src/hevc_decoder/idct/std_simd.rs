@@ -74,7 +74,7 @@ fn shift_clip_x8(vals: &[i32; 8], shift: i32) -> [i16; 8] {
     // i32x8 -> two clamped i16x4 lanes, merged
     let offset = i32x8::splat((1i32 << shift) >> 1);
     let shifted = (i32x8::from_array(*vals) + offset) >> i32x8::splat(shift);
-    // No direct i32x8->i16x8 cast in std::simd without nightly truncate,
+    // No direct i32x8->i16x8 cast in core::simd without nightly truncate,
     // so split into two x4 lanes
     let lo: [i32; 4] = shifted.as_array()[0..4].try_into().unwrap();
     let hi: [i32; 4] = shifted.as_array()[4..8].try_into().unwrap();

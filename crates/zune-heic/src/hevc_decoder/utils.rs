@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use alloc::borrow::Cow;
 
 /// Quickly searches for the HEVC Emulation Prevention Byte sequence (`0x00 0x00 0x03`)
@@ -21,7 +22,7 @@ fn find_epb(src: &[u8], start: usize) -> Option<usize> {
         if (chunk.wrapping_sub(MAGIC_SUB) & !chunk & MAGIC_MASK) != 0 {
             // Find exactly where the `00 00 03` sequence is.
             // We clamp the check to `len - 2` to prevent out-of-bounds on `j+2`.
-            let check_end = std::cmp::min(i + 8, len.saturating_sub(2));
+            let check_end = core::cmp::min(i + 8, len.saturating_sub(2));
             for j in i..check_end {
                 if src[j] == 0 && src[j + 1] == 0 && src[j + 2] == 3 {
                     return Some(j);

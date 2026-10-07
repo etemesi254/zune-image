@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 #![allow(clippy::struct_excessive_bools, clippy::struct_field_names)]
+use alloc::{boxed::Box, vec::Vec};
 use crate::hevc_decoder::nal_parser::NalError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
