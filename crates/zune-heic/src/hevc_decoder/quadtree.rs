@@ -4,7 +4,7 @@ use crate::debug_more;
 use crate::hevc_decoder::cabac::CabacDecoder;
 use crate::hevc_decoder::cabac_tables::CONTEXT_MODEL_SPLIT_CU_FLAG;
 use crate::hevc_decoder::ctx::DecodeSliceContext;
-use crate::hevc_decoder::deblocker::deblock_frame;
+use crate::hevc_decoder::deblocker::{DeblockParams, deblock_frame};
 use crate::hevc_decoder::nal_parser::{NalError, NalUnit};
 use crate::hevc_decoder::nal_unit_headers::SliceType;
 use crate::hevc_decoder::nal_unit_parsers::decode_slice_header;
@@ -156,7 +156,7 @@ pub fn decode_slice(
     }
 
     // apply deblocking
-    if true {
+    if !slice_header.slice_deblocking_filter_disabled_flag {
         // perf wise
         // with deblocking     139.33 ms
         // without deblocking  129.64 ms
@@ -167,16 +167,22 @@ pub fn decode_slice(
         deblock_frame(
             &rf_clone,
             ctx.neighbor_tracker,
-            pps.cb_qp_offset as i8,
-            pps.cr_qp_offset as i8
+            DeblockParams {
+                beta_offset_div2: slice_header.slice_beta_offset_div2,
+                tc_offset_div2:   slice_header.slice_tc_offset_div2,
+                cb_qp_offset:     pps.cb_qp_offset as i8,
+                cr_qp_offset:     pps.cr_qp_offset as i8
+            }
         );
-        // apply_sao_frame(
-        //     &raw_frame,
-        //     hevc_decoder.width,
-        //     hevc_decoder.height,
-        //     1 << sps.log2_ctb_size_y,
-        //     &ctx.ctb_sao_buffer
-        // )
+    }
+    if slice_header.slice_sao_luma_flag || slice_header.slice_sao_chroma_flag {
+        sao::apply_sao_frame(
+            raw_frame,
+            hevc_decoder.width,
+            hevc_decoder.height,
+            1 << sps.log2_ctb_size_y,
+            &ctx.ctb_sao_buffer
+        );
     }
     Ok(())
 }
@@ -352,6 +358,9 @@ fn read_coding_quadtree(
             y0,
             ctx.last_qp_in_slice
         );
+
+        // Coding block boundaries are always deblocking edges
+        ctx.neighbor_tracker.mark_block_edges(x0, y0, cb_size);
 
         // 3. Commit ONLY the CU-level properties to the tracker!
         // The Prediction Unit modes were already set safely inside read_coding_unit.

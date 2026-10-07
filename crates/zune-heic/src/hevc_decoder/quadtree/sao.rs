@@ -208,6 +208,13 @@ pub fn apply_sao_frame(
     let mut cb = frame.cb.lock().unwrap();
     let mut cr = frame.cr.lock().unwrap();
 
+    // SAO must classify samples using the deblocked picture *before* any SAO
+    // is applied (spec 8.7.3), including samples in neighbouring CTBs, so keep
+    // an untouched copy of each plane to read from.
+    let luma_src = luma.pixels.clone();
+    let cb_src = cb.pixels.clone();
+    let cr_src = cr.pixels.clone();
+
     let width_in_ctus = pic_width.div_ceil(ctu_size);
     let height_in_ctus = pic_height.div_ceil(ctu_size);
 
@@ -231,7 +238,7 @@ pub fn apply_sao_frame(
             let type_luma = info.type_index & 0x3;
             if type_luma != 0 {
                 apply_sao_component(
-                    &mut luma, l_x, l_y, l_w, l_h, 0, info, type_luma, pic_width, pic_height,
+                    &mut luma, &luma_src, l_x, l_y, l_w, l_h, 0, info, type_luma, pic_width, pic_height,
                 );
             }
 
@@ -246,7 +253,7 @@ pub fn apply_sao_frame(
             let type_cb = (info.type_index >> 2) & 0x3;
             if type_cb != 0 {
                 apply_sao_component(
-                    &mut cb, c_x, c_y, c_w, c_h, 1, info, type_cb, c_pic_w, c_pic_h,
+                    &mut cb, &cb_src, c_x, c_y, c_w, c_h, 1, info, type_cb, c_pic_w, c_pic_h,
                 );
             }
 
@@ -254,7 +261,7 @@ pub fn apply_sao_frame(
             let type_cr = (info.type_index >> 4) & 0x3;
             if type_cr != 0 {
                 apply_sao_component(
-                    &mut cr, c_x, c_y, c_w, c_h, 2, info, type_cr, c_pic_w, c_pic_h,
+                    &mut cr, &cr_src, c_x, c_y, c_w, c_h, 2, info, type_cr, c_pic_w, c_pic_h,
                 );
             }
         }
@@ -262,7 +269,7 @@ pub fn apply_sao_frame(
 }
 #[allow(clippy::too_many_arguments)]
 fn apply_sao_component(
-    plane: &mut SingleFrame, x0: usize, y0: usize, w: usize, h: usize, c_idx: usize,
+    plane: &mut SingleFrame, src: &[u8], x0: usize, y0: usize, w: usize, h: usize, c_idx: usize,
     info: &SaoInfo, type_idx: u8, pic_width: usize, pic_height: usize,
 ) {
     let offsets = info.sao_offset_val[c_idx];
@@ -270,18 +277,18 @@ fn apply_sao_component(
     if type_idx == 1 {
         // Band Offset
         let band_pos = info.sao_band_position[c_idx];
-        apply_band_offset(plane, x0, y0, w, h, band_pos, offsets);
+        apply_band_offset(plane, src, x0, y0, w, h, band_pos, offsets);
     } else if type_idx == 2 {
         // Edge Offset
         let eo_class = (info.sao_eo_class >> (c_idx * 2)) & 0x3;
         apply_edge_offset(
-            plane, x0, y0, w, h, eo_class, offsets, pic_width, pic_height,
+            plane, src, x0, y0, w, h, eo_class, offsets, pic_width, pic_height,
         );
     }
 }
-#[allow(clippy::explicit_counter_loop)]
+#[allow(clippy::explicit_counter_loop, clippy::too_many_arguments)]
 fn apply_band_offset(
-    plane: &mut SingleFrame, x0: usize, y0: usize, w: usize, h: usize, band_pos: u8,
+    plane: &mut SingleFrame, src: &[u8], x0: usize, y0: usize, w: usize, h: usize, band_pos: u8,
     offsets: [i8; 4],
 ) {
     let mut offset_table = [0i16; 32];
@@ -295,7 +302,7 @@ fn apply_band_offset(
     for y in 0..h {
         let mut idx = offset_plane(plane, x0, y0 + y);
         for _ in 0..w {
-            let px = plane.pixels[idx];
+            let px = src[idx];
             let band_idx = (px >> 3) as usize; // >> 3 is for 8-bit. Use >> 5 for 10-bit.
             let offset = offset_table[band_idx];
 
@@ -308,7 +315,7 @@ fn apply_band_offset(
 }
 #[allow(clippy::too_many_arguments)]
 fn apply_edge_offset(
-    plane: &mut SingleFrame, x0: usize, y0: usize, w: usize, h: usize, eo_class: u8,
+    plane: &mut SingleFrame, src: &[u8], x0: usize, y0: usize, w: usize, h: usize, eo_class: u8,
     offsets: [i8; 4], pic_width: usize, pic_height: usize,
 ) {
     let (dx1, dy1, dx2, dy2): (isize, isize, isize, isize) = match eo_class {
@@ -342,12 +349,13 @@ fn apply_edge_offset(
         for x in 0..w {
             let abs_x = x0 + x;
 
-            // Spec 8.7.3.2.3: Do not apply if neighbors cross the picture boundaries.
-            if (abs_x as isize + dx1 < 0)
-                || (abs_x as isize + dx2 >= pic_width as isize)
-                || (abs_y as isize + dy1 < 0)
-                || (abs_y as isize + dy2 >= pic_height as isize)
-            {
+            // Spec 8.7.3.2: SaoOffsetVal is 0 when either neighbour lies outside
+            // the picture. Both neighbours must be checked against both bounds,
+            // since for the 45 degree class (3) the first neighbour is at x+1.
+            let (ax, ay) = (abs_x as isize, abs_y as isize);
+            let (pw, ph) = (pic_width as isize, pic_height as isize);
+            let outside = |nx: isize, ny: isize| nx < 0 || ny < 0 || nx >= pw || ny >= ph;
+            if outside(ax + dx1, ay + dy1) || outside(ax + dx2, ay + dy2) {
                 continue;
             }
 
@@ -355,9 +363,9 @@ fn apply_edge_offset(
             let n1_idx = (c_idx as isize + dy1 * stride + dx1) as usize;
             let n2_idx = (c_idx as isize + dy2 * stride + dx2) as usize;
 
-            let c_val = i32::from(plane.pixels[c_idx]);
-            let n1_val = i32::from(plane.pixels[n1_idx]);
-            let n2_val = i32::from(plane.pixels[n2_idx]);
+            let c_val = i32::from(src[c_idx]);
+            let n1_val = i32::from(src[n1_idx]);
+            let n2_val = i32::from(src[n2_idx]);
 
             let edge_idx = (2 + sign(c_val - n1_val) + sign(c_val - n2_val)) as usize;
             let offset = eo_offsets[edge_idx];
