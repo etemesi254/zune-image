@@ -129,6 +129,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         }
 
         let mut stream = B::new_progressive(self.succ_low, self.spec_start, self.spec_end);
+        stream.set_strict(self.options.strict_mode());
 
         let preserve_progressive_scans = self.mcu_checkpoints_enabled;
 
