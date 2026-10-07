@@ -397,6 +397,9 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
         Ok(())
     }
 
+    /// Stitches pre-converted RGB tiles (used by the VideoToolbox path, which
+    /// produces whole RGB tiles) into `output`, then applies mirror/rotation.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     #[allow(clippy::too_many_lines)]
     pub(crate) fn stitch(&self, tile_map: &TileMap, output: &mut [u8]) -> Result<(), HeicErrors> {
         let unrotated_w = self.width.unwrap() as usize;
@@ -404,9 +407,6 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
         let channels = self.colorspace().unwrap().num_components();
 
         let rotation_degrees = self.rotation.unwrap_or(0);
-        let is_swapped = rotation_degrees == 90 || rotation_degrees == 270;
-
-        let final_w = if is_swapped { unrotated_h } else { unrotated_w };
 
         let tiles = tile_map.lock().unwrap();
 
@@ -464,37 +464,37 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
             }
         }
 
-        // --- STEP 2: Mirroring (Applied BEFORE rotation per HEIF spec) ---
+        drop(tiles);
+        self.apply_orientation(&mut unrotated_canvas, output)
+    }
+
+    /// Applies `imir` mirroring and then `irot` rotation (HEIF order).
+    ///
+    /// * No rotation: `unrotated_canvas` is empty and `output` already holds the
+    ///   stitched image; mirroring is done in place on `output`.
+    /// * Rotation: `unrotated_canvas` holds the stitched image; it is mirrored in
+    ///   place and then rotated into `output`.
+    pub(crate) fn apply_orientation(
+        &self, unrotated_canvas: &mut [u8], output: &mut [u8]
+    ) -> Result<(), HeicErrors> {
+        let unrotated_w = self.width.unwrap() as usize;
+        let unrotated_h = self.height.unwrap() as usize;
+        let channels = self.colorspace().unwrap().num_components();
+
+        let rotation_degrees = self.rotation.unwrap_or(0);
+        let is_swapped = rotation_degrees == 90 || rotation_degrees == 270;
+        let final_w = if is_swapped { unrotated_h } else { unrotated_w };
+
+        // --- STEP 1: Mirroring (Applied BEFORE rotation per HEIF spec) ---
         if let Some(axis) = self.mirror {
             trace!("Mirroring image");
-            // We do this in-place on the unrotated canvas
-            let bytes_per_row = unrotated_w * channels;
-
-            if axis == 0 {
-                // Axis 0: Mirror horizontally (Left/Right flip over Vertical axis)
-                for y in 0..unrotated_h {
-                    for x in 0..(unrotated_w / 2) {
-                        let left_idx = (y * unrotated_w + x) * channels;
-                        let right_idx = (y * unrotated_w + (unrotated_w - 1 - x)) * channels;
-
-                        for c in 0..channels {
-                            unrotated_canvas.swap(left_idx + c, right_idx + c);
-                        }
-                    }
-                }
-            } else if axis == 1 {
-                // Axis 1: Mirror vertically (Top/Bottom flip over Horizontal axis)
-                for y in 0..(unrotated_h / 2) {
-                    let top_row_idx = y * bytes_per_row;
-                    let bottom_row_idx = (unrotated_h - 1 - y) * bytes_per_row;
-
-                    let (top_half, bottom_half) = unrotated_canvas.split_at_mut(bottom_row_idx);
-                    top_half[top_row_idx..top_row_idx + bytes_per_row]
-                        .swap_with_slice(&mut bottom_half[..bytes_per_row]);
-                }
+            let canvas: &mut [u8] = if rotation_degrees != 0 { unrotated_canvas } else { output };
+            mirror_in_place(canvas, unrotated_w, unrotated_h, channels, axis);
+            if rotation_degrees == 0 {
+                return Ok(());
             }
         }
-        // --- STEP 3: Rotation ---
+        // --- STEP 2: Rotation ---
         if rotation_degrees != 0 {
             trace!("Rotation degrees: {rotation_degrees}");
             match rotation_degrees {
@@ -546,6 +546,32 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
         }
 
         Ok(())
+    }
+}
+
+/// Mirror an interleaved image in place.
+/// Axis 0: left/right flip (over the vertical axis); axis 1: top/bottom flip.
+fn mirror_in_place(buf: &mut [u8], w: usize, h: usize, channels: usize, axis: u8) {
+    let bytes_per_row = w * channels;
+    if axis == 0 {
+        for row in buf.chunks_exact_mut(bytes_per_row).take(h) {
+            for x in 0..(w / 2) {
+                let left_idx = x * channels;
+                let right_idx = (w - 1 - x) * channels;
+                for c in 0..channels {
+                    row.swap(left_idx + c, right_idx + c);
+                }
+            }
+        }
+    } else if axis == 1 {
+        for y in 0..(h / 2) {
+            let top_row_idx = y * bytes_per_row;
+            let bottom_row_idx = (h - 1 - y) * bytes_per_row;
+
+            let (top_half, bottom_half) = buf.split_at_mut(bottom_row_idx);
+            top_half[top_row_idx..top_row_idx + bytes_per_row]
+                .swap_with_slice(&mut bottom_half[..bytes_per_row]);
+        }
     }
 }
 

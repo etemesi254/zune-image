@@ -16,11 +16,13 @@ use crate::hevc_decoder::HevcDecoder;
 use crate::hevc_decoder::nal_parser::NalFraming;
 use crate::processor::HevcSample;
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) struct SingleDecodedTile {
     pub pixels: Vec<u8>,
     pub width: usize,
     pub height: usize,
 }
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) type TileMap = Arc<Mutex<HashMap<u32, Result<SingleDecodedTile, HeicErrors>>>>;
 
 /// A HEIF/Heic Decoder Instance
@@ -417,74 +419,88 @@ where
                 return Ok(output);
             }
         }
-        let tile_map: TileMap = Arc::new(Mutex::new(HashMap::new()));
+        // Tiles are converted straight into their place on the canvas as soon as
+        // they are decoded, so no per-tile RGB copies are kept around. When the
+        // image is rotated we need an intermediate (unrotated) canvas; otherwise
+        // the output buffer itself is the canvas.
+        let rotation = self.rotation.unwrap_or(0);
+        let mut unrotated_canvas = if rotation != 0 { vec![0u8; w * h * colors] } else { Vec::new() };
 
-        let processor = |sample: HevcSample| -> Result<(), HeicErrors> {
-            let mut software_decoder: HevcDecoder = HevcDecoder::new();
+        {
+            let canvas: &mut [u8] =
+                if rotation != 0 { &mut unrotated_canvas } else { &mut output };
 
-            let vps = sample.vps.as_deref().ok_or(HeicErrors::Generic {
-                msg: "vps not found".to_owned(),
-            })?;
-            let sps = sample.sps.as_deref().ok_or(HeicErrors::Generic {
-                msg: "sps not found".to_owned(),
-            })?;
-            let pps = sample.pps.as_deref().ok_or(HeicErrors::Generic {
-                msg: "pps not found".to_owned(),
-            })?;
+            // One lock per canvas row: tiles in the same grid row share canvas
+            // rows, so they may be written concurrently from different threads.
+            let canvas_rows: Vec<Mutex<&mut [u8]>> =
+                canvas.chunks_mut(w * colors).map(Mutex::new).collect();
 
-            software_decoder.parse_extradata(vps, NalFraming::RawBytes)?;
-            software_decoder.parse_extradata(sps, NalFraming::RawBytes)?;
-            software_decoder.parse_extradata(pps, NalFraming::RawBytes)?;
-
-            let sample_id = sample.item_id;
-
-            // Dynamically grab the REAL tile dimensions
-            let tile_w = software_decoder.width();
-            let tile_h = software_decoder.height();
-
-            // then decode
-            let result = software_decoder.decode(&sample)?;
-
-            // allocate the necessary width and height
-            let mut out = vec![0; software_decoder.height() * software_decoder.width() * colors];
-            match result {
-                Some(frame) => {
-                    frame.write_rgb_420(&mut out)?;
-                    let tile = SingleDecodedTile {
-                        pixels: out,
-                        width: tile_w,
-                        height: tile_h,
-                    };
-
-                    tile_map.lock().unwrap().insert(sample_id, Ok(tile));
-                    Ok(())
-                }
-                None => {
-                    return Err(HeicErrors::Generic {
-                        msg: "decode failure, no frame found".to_string(),
-                    });
-                }
+            // item_id -> grid positions (an item may in theory be referenced more than once)
+            let mut placements: HashMap<u32, Vec<usize>> = HashMap::new();
+            for (index, &item_id) in self.ordered_tile_ids.iter().enumerate() {
+                placements.entry(item_id).or_default().push(index);
             }
-        };
-        // wasm threads not a thing
-        #[cfg(target_arch = "wasm32")]
-        {
-            trace!("Using single threaded sample processor");
+            let cols = (self.cols as usize).max(1);
 
-            self.process_hevc_samples(processor)?;
-        }
+            let processor = |sample: HevcSample| -> Result<(), HeicErrors> {
+                let mut software_decoder: HevcDecoder = HevcDecoder::new();
 
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            if self.is_grid {
-                trace!("Using parallel sample decoder");
-                self.process_hevc_samples_parallel(processor)?;
-            } else {
-                trace!("Using standard sample decoder, image is not grid so no need for parallel");
+                let vps = sample.vps.as_deref().ok_or(HeicErrors::Generic {
+                    msg: "vps not found".to_owned(),
+                })?;
+                let sps = sample.sps.as_deref().ok_or(HeicErrors::Generic {
+                    msg: "sps not found".to_owned(),
+                })?;
+                let pps = sample.pps.as_deref().ok_or(HeicErrors::Generic {
+                    msg: "pps not found".to_owned(),
+                })?;
+
+                software_decoder.parse_extradata(vps, NalFraming::RawBytes)?;
+                software_decoder.parse_extradata(sps, NalFraming::RawBytes)?;
+                software_decoder.parse_extradata(pps, NalFraming::RawBytes)?;
+
+                // then decode
+                let frame = software_decoder.decode(&sample)?.ok_or(HeicErrors::Generic {
+                    msg: "decode failure, no frame found".to_string(),
+                })?;
+
+                // Dynamically grab the REAL tile dimensions
+                let tile_w = software_decoder.width();
+                let tile_h = software_decoder.height();
+
+                let positions = placements.get(&sample.item_id).ok_or(HeicErrors::Generic {
+                    msg: format!("Decoded tile {} has no grid position", sample.item_id),
+                })?;
+
+                for &index in positions {
+                    let base_x = (index % cols) * tile_w;
+                    let base_y = (index / cols) * tile_h;
+                    frame.write_into_canvas(&canvas_rows, base_x, base_y, w, h, colors)?;
+                }
+                Ok(())
+            };
+            // wasm threads not a thing
+            #[cfg(target_arch = "wasm32")]
+            {
+                trace!("Using single threaded sample processor");
+
                 self.process_hevc_samples(processor)?;
             }
+
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                if self.is_grid {
+                    trace!("Using parallel sample decoder");
+                    self.process_hevc_samples_parallel(processor)?;
+                } else {
+                    trace!("Using standard sample decoder, image is not grid so no need for parallel");
+                    self.process_hevc_samples(processor)?;
+                }
+            }
         }
-        self.stitch(&tile_map, &mut output)?;
+
+        // Mirroring then rotation (HEIF order), in place / into `output`.
+        self.apply_orientation(&mut unrotated_canvas, &mut output)?;
         return Ok(output);
     }
 

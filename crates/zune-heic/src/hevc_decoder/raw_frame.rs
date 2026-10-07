@@ -75,12 +75,10 @@ impl RawFrame {
     /// Converts planar YUV 4:2:0 to RGB and writes it into the provided slice.
     /// Expects `out_rgb` to have a length of at least `width * height * 3`.
     pub fn write_rgb_420(&self, out_rgb: &mut [u8]) -> Result<(), NalError> {
-        let luma = self.luma.lock().unwrap();
-        let cb = self.cb.lock().unwrap();
-        let cr = self.cr.lock().unwrap();
-
-        let width = luma.width;
-        let height = luma.height;
+        let (width, height) = {
+            let luma = self.luma.lock().unwrap();
+            (luma.width, luma.height)
+        };
         let expected_len = width * height * 3;
 
         if out_rgb.len() < expected_len {
@@ -90,108 +88,144 @@ impl RawFrame {
                 out_rgb.len()
             )));
         }
+        let rows: Vec<Mutex<&mut [u8]>> =
+            out_rgb[..expected_len].chunks_mut(width * 3).map(Mutex::new).collect();
+        self.write_into_canvas(&rows, 0, 0, width, height, 3)
+    }
 
-        let (sub_x, sub_y) = self.format.get_subsampling();
-        let is_monochrome = cb.pixels.is_empty() || cr.pixels.is_empty();
+    /// Converts this frame to interleaved pixels and writes it straight into
+    /// a larger canvas at `(x_off, y_off)`.
+    ///
+    /// `canvas_rows` holds one entry per canvas row (`canvas_w * channels`
+    /// bytes each), each behind its own lock so several tiles can be
+    /// converted into the same canvas concurrently. Only the part of the
+    /// frame that is visible inside the `canvas_w x canvas_h` canvas is
+    /// converted; anything overhanging the right/bottom edge is skipped.
+    ///
+    /// `channels` may be 1 (luma only), 3 (RGB) or 4 (RGB + opaque alpha).
+    pub fn write_into_canvas(
+        &self, canvas_rows: &[Mutex<&mut [u8]>], x_off: usize, y_off: usize, canvas_w: usize,
+        canvas_h: usize, channels: usize
+    ) -> Result<(), NalError> {
+        if !matches!(channels, 1 | 3 | 4) {
+            return Err(NalError::Generic(format!(
+                "Unsupported number of output channels: {channels}"
+            )));
+        }
+        let luma = self.luma.lock().unwrap();
+        let cb = self.cb.lock().unwrap();
+        let cr = self.cr.lock().unwrap();
 
-        let chunks_of_16 = width / 16;
-        let remainder = width % 16;
+        if x_off >= canvas_w || y_off >= canvas_h {
+            // tile lies completely outside the visible canvas
+            return Ok(());
+        }
+        let vis_w = luma.width.min(canvas_w - x_off);
+        let vis_h = luma.height.min(canvas_h - y_off);
 
-        let mut out_pos = 0usize;
-        let mut cb_chunk = [0i16; 16];
-        let mut cr_chunk = [0i16; 16];
+        for row in 0..vis_h {
+            let mut dst_row = canvas_rows
+                .get(y_off + row)
+                .ok_or_else(|| NalError::Generic("Canvas row out of range".to_string()))?
+                .lock()
+                .unwrap();
+            let dst = dst_row
+                .get_mut(x_off * channels..(x_off + vis_w) * channels)
+                .ok_or_else(|| NalError::Generic("Canvas row too short".to_string()))?;
 
-        for row in 0..height {
-            // Account for top and left padding in the stride
-            let y_row_base = (row + luma.padding) * luma.stride + luma.padding;
+            convert_row(self.format, &luma, &cb, &cr, row, vis_w, dst, channels);
+        }
+        Ok(())
+    }
+}
 
-            let c_row_base = if is_monochrome {
-                0
-            } else {
-                (row / sub_y + cb.padding) * cb.stride + cb.padding
-            };
+/// Convert the first `vis_w` pixels of row `row` into `dst`
+/// (`vis_w * channels` bytes).
+#[allow(clippy::too_many_arguments)]
+fn convert_row(
+    format: ChromaFormat, luma: &SingleFrame, cb: &SingleFrame, cr: &SingleFrame, row: usize,
+    vis_w: usize, dst: &mut [u8], channels: usize
+) {
+    let y_row_base = (row + luma.padding) * luma.stride + luma.padding;
 
-            for chunk in 0..chunks_of_16 {
-                let x_base = chunk * 16;
+    if channels == 1 {
+        dst[..vis_w].copy_from_slice(&luma.pixels[y_row_base..y_row_base + vis_w]);
+        return;
+    }
 
-                // 1. Y: One contiguous slice read
-                let y_src = &luma.pixels[y_row_base + x_base..][..16];
-                let y_chunk: [i16; 16] = std::array::from_fn(|i| i16::from(y_src[i]));
+    let width = luma.width;
+    let (sub_x, sub_y) = format.get_subsampling();
+    let is_monochrome = cb.pixels.is_empty() || cr.pixels.is_empty();
+    let c_row_base =
+        if is_monochrome { 0 } else { (row / sub_y + cb.padding) * cb.stride + cb.padding };
 
-                // 2. UV: Planar read, duplicate values for 4:2:0
-                if is_monochrome {
-                    cb_chunk.fill(128);
-                    cr_chunk.fill(128);
-                } else {
-                    let cx_base = x_base / sub_x;
-                    let cb_src = &cb.pixels[c_row_base + cx_base..][..8];
-                    let cr_src = &cr.pixels[c_row_base + cx_base..][..8];
+    let mut cb_chunk = [128i16; 16];
+    let mut cr_chunk = [128i16; 16];
+    let mut temp = [0u8; 48];
 
-                    for i in 0..8 {
-                        let cb_val = i16::from(cb_src[i]);
-                        let cr_val = i16::from(cr_src[i]);
-                        // Duplicate horizontally to match 16 Y pixels
-                        cb_chunk[i * 2] = cb_val;
-                        cb_chunk[i * 2 + 1] = cb_val;
-                        cr_chunk[i * 2] = cr_val;
-                        cr_chunk[i * 2 + 1] = cr_val;
-                    }
-                }
+    let full_chunks = vis_w / 16;
+    let mut out_pos = 0usize;
 
-                // 3. Process chunk
-                ycbcr_to_rgb_inner_16_scalar::<false>(
-                    &y_chunk,
-                    &cb_chunk,
-                    &cr_chunk,
-                    out_rgb,
-                    &mut out_pos
-                );
+    // full 16-pixel chunks plus one (clamped) partial chunk for the remainder
+    let total_chunks = vis_w.div_ceil(16);
+    for chunk in 0..total_chunks {
+        let x_base = chunk * 16;
+        let is_full = chunk < full_chunks;
+
+        let y_chunk: [i16; 16] = if is_full {
+            let y_src = &luma.pixels[y_row_base + x_base..][..16];
+            std::array::from_fn(|i| i16::from(y_src[i]))
+        } else {
+            std::array::from_fn(|i| {
+                let clamped_x = (x_base + i).min(width - 1);
+                i16::from(luma.pixels[y_row_base + clamped_x])
+            })
+        };
+
+        if !is_monochrome && is_full && sub_x == 2 {
+            // 4:2:0 / 4:2:2: 8 chroma samples, each duplicated horizontally
+            let cx_base = c_row_base + x_base / 2;
+            let cb_src = &cb.pixels[cx_base..][..8];
+            let cr_src = &cr.pixels[cx_base..][..8];
+            for i in 0..8 {
+                cb_chunk[2 * i] = i16::from(cb_src[i]);
+                cb_chunk[2 * i + 1] = i16::from(cb_src[i]);
+                cr_chunk[2 * i] = i16::from(cr_src[i]);
+                cr_chunk[2 * i + 1] = i16::from(cr_src[i]);
             }
-
-            // Remainder: clamp to avoid reading padding bytes as valid pixel data
-            if remainder > 0 {
-                let x_base = chunks_of_16 * 16;
-
-                let y_chunk: [i16; 16] = std::array::from_fn(|i| {
-                    let clamped_x = (x_base + i).min(width - 1);
-                    i16::from(luma.pixels[y_row_base + clamped_x])
-                });
-
-                if is_monochrome {
-                    cb_chunk.fill(128);
-                    cr_chunk.fill(128);
-                } else {
-                    for i in 0..8 {
-                        // Carefully calculate and clamp the chroma index
-                        let x_c = ((x_base + i * 2) / sub_x).min(cb.width - 1);
-                        let cb_val = i16::from(cb.pixels[c_row_base + x_c]);
-                        let cr_val = i16::from(cr.pixels[c_row_base + x_c]);
-
-                        cb_chunk[i * 2] = cb_val;
-                        cb_chunk[i * 2 + 1] = cb_val;
-                        cr_chunk[i * 2] = cr_val;
-                        cr_chunk[i * 2 + 1] = cr_val;
-                    }
-                }
-
-                let mut temp = [0u8; 48]; // 16 pixels * 3 channels
-                let mut temp_pos = 0usize;
-
-                ycbcr_to_rgb_inner_16_scalar::<false>(
-                    &y_chunk,
-                    &cb_chunk,
-                    &cr_chunk,
-                    &mut temp,
-                    &mut temp_pos
-                );
-
-                let valid_bytes = remainder * 3;
-                out_rgb[out_pos..out_pos + valid_bytes].copy_from_slice(&temp[..valid_bytes]);
-                out_pos += valid_bytes;
+        } else if !is_monochrome {
+            for i in 0..16 {
+                let x_c = ((x_base + i) / sub_x).min(cb.width - 1);
+                cb_chunk[i] = i16::from(cb.pixels[c_row_base + x_c]);
+                cr_chunk[i] = i16::from(cr.pixels[c_row_base + x_c]);
             }
         }
 
-        Ok(())
+        let n_px = if is_full { 16 } else { vis_w - x_base };
+
+        if channels == 3 && is_full {
+            // write straight into the destination
+            ycbcr_to_rgb_inner_16_scalar::<false>(&y_chunk, &cb_chunk, &cr_chunk, dst, &mut out_pos);
+            continue;
+        }
+
+        let mut temp_pos = 0usize;
+        ycbcr_to_rgb_inner_16_scalar::<false>(&y_chunk, &cb_chunk, &cr_chunk, &mut temp, &mut temp_pos);
+
+        if channels == 3 {
+            dst[out_pos..out_pos + n_px * 3].copy_from_slice(&temp[..n_px * 3]);
+            out_pos += n_px * 3;
+        } else {
+            // RGBA: alpha is not decoded yet, emit opaque pixels
+            for (px, rgb) in dst[out_pos..out_pos + n_px * 4]
+                .chunks_exact_mut(4)
+                .zip(temp.chunks_exact(3))
+            {
+                px[..3].copy_from_slice(rgb);
+                px[3] = 255;
+            }
+            out_pos += n_px * 4;
+        }
     }
 }
 
