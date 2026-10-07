@@ -10,9 +10,7 @@
 /// Key spec tables reproduced inline:
 ///   • Table 8-19  QP → β index
 ///   • Table 8-20  QP → tC index  (indexed as QP + 2*(bs-1))
-use std::sync::MutexGuard;
-
-use crate::hevc_decoder::neighbor_tracker::{BlockState, NeighborTracker};
+use crate::hevc_decoder::neighbor_tracker::{BlockMap, BlockState};
 use crate::hevc_decoder::raw_frame::{RawFrame, SingleFrame, offset_plane};
 /// β table — indexed by Clip3(0,51, qP).  spec Table 8-19.
 #[rustfmt::skip]
@@ -125,7 +123,7 @@ fn boundary_strength(p: &BlockState, q: &BlockState) -> u8 {
     0
 }
 
-fn compute_bs_grid(nt: &NeighborTracker) -> BsGrid {
+fn compute_bs_grid(nt: &BlockMap) -> BsGrid {
     let w4 = nt.width_in_units;
     let h4 = nt.height_in_units;
     let mut grid = BsGrid::new(w4, h4);
@@ -315,7 +313,7 @@ fn edge_qp(p: &BlockState, q: &BlockState) -> i32 {
 }
 
 /// Deblock one complete frame.
-pub fn deblock_frame(raw: &RawFrame, nt: &NeighborTracker, params: DeblockParams) {
+pub fn deblock_frame(raw: &mut RawFrame, nt: &BlockMap, params: DeblockParams) {
     let grid = compute_bs_grid(nt);
     let w4 = nt.width_in_units;
     let h4 = nt.height_in_units;
@@ -327,7 +325,7 @@ pub fn deblock_frame(raw: &RawFrame, nt: &NeighborTracker, params: DeblockParams
     // visited.
     // -----------------------------------------------------------------------
     {
-        let mut luma = raw.luma.lock().unwrap();
+        let luma = &mut raw.luma;
         let ls = luma.stride as isize;
 
         for x4 in (2..w4).step_by(2) {
@@ -338,7 +336,7 @@ pub fn deblock_frame(raw: &RawFrame, nt: &NeighborTracker, params: DeblockParams
                     continue;
                 }
                 let qp = edge_qp(&nt.blocks[y4 * w4 + (x4 - 1)], &nt.blocks[y4 * w4 + x4]);
-                let base = offset_plane(&luma, x_px, y4 * 4);
+                let base = offset_plane(luma, x_px, y4 * 4);
                 filter_luma_block(&mut luma.pixels, base, 1, ls, bs, params.beta(qp), params.tc(qp, bs));
             }
         }
@@ -351,7 +349,7 @@ pub fn deblock_frame(raw: &RawFrame, nt: &NeighborTracker, params: DeblockParams
                     continue;
                 }
                 let qp = edge_qp(&nt.blocks[(y4 - 1) * w4 + x4], &nt.blocks[y4 * w4 + x4]);
-                let base = offset_plane(&luma, x4 * 4, y_px);
+                let base = offset_plane(luma, x4 * 4, y_px);
                 filter_luma_block(&mut luma.pixels, base, ls, 1, bs, params.beta(qp), params.tc(qp, bs));
             }
         }
@@ -377,8 +375,7 @@ pub fn deblock_frame(raw: &RawFrame, nt: &NeighborTracker, params: DeblockParams
     let seg_y = (4 * sub_y) / 4;
 
     for plane_idx in 0..2usize {
-        let mut cp: MutexGuard<SingleFrame> =
-            if plane_idx == 0 { raw.cb.lock().unwrap() } else { raw.cr.lock().unwrap() };
+        let cp: &mut SingleFrame = if plane_idx == 0 { &mut raw.cb } else { &mut raw.cr };
         let qp_off = if plane_idx == 0 { params.cb_qp_offset } else { params.cr_qp_offset };
         let cs = cp.stride as isize;
         let (cw, ch) = (cp.width, cp.height);
@@ -397,7 +394,7 @@ pub fn deblock_frame(raw: &RawFrame, nt: &NeighborTracker, params: DeblockParams
                     if cy + dy >= ch {
                         break;
                     }
-                    let base = offset_plane(&cp, cx, cy + dy);
+                    let base = offset_plane(cp, cx, cy + dy);
                     filter_chroma_samples(&mut cp.pixels, base, 1, tc_val);
                 }
             }
@@ -417,7 +414,7 @@ pub fn deblock_frame(raw: &RawFrame, nt: &NeighborTracker, params: DeblockParams
                     if cx + dx >= cw {
                         break;
                     }
-                    let base = offset_plane(&cp, cx + dx, cy);
+                    let base = offset_plane(cp, cx + dx, cy);
                     filter_chroma_samples(&mut cp.pixels, base, cs, tc_val);
                 }
             }
@@ -433,7 +430,7 @@ pub fn deblock_frame(raw: &RawFrame, nt: &NeighborTracker, params: DeblockParams
 mod tests {
     use super::*;
     use crate::hevc_decoder::constants::PartMode;
-    use crate::hevc_decoder::neighbor_tracker::{BlockState, NeighborTracker, PredMode};
+    use crate::hevc_decoder::neighbor_tracker::{BlockMap, BlockState, PredMode};
 
     // -----------------------------------------------------------------------
     #[test]
@@ -604,7 +601,7 @@ mod tests {
     // BS grid
     // -----------------------------------------------------------------------
 
-    fn make_nt_uniform(w4: usize, h4: usize, is_intra: bool, slice_id: u16) -> NeighborTracker {
+    fn make_nt_uniform(w4: usize, h4: usize, is_intra: bool, slice_id: u16) -> BlockMap {
         let blocks: Vec<BlockState> = (0..w4 * h4)
             .map(|_| BlockState {
                 pred_mode: PredMode::ModeIntra,
@@ -623,8 +620,8 @@ mod tests {
                 edge_top: true,
             })
             .collect();
-        NeighborTracker {
-            blocks: crate::hevc_decoder::shared::SharedBuf::from_vec(blocks),
+        BlockMap {
+            blocks,
             width_in_units: w4,
             height_in_units: h4,
             log2_unit_size: 2,

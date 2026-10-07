@@ -1,4 +1,3 @@
-use std::sync::Arc;
 
 use zune_core::log::trace;
 
@@ -6,7 +5,7 @@ use crate::hevc_decoder::cabac::NUM_CABAC_CONTEXTS;
 use crate::hevc_decoder::nal_parser::{NalError, NalFraming, NalParser, NalUnitType};
 use crate::hevc_decoder::nal_unit_headers::{Pps, Sps, Vps};
 use crate::hevc_decoder::nal_unit_parsers::{decode_pps, decode_sps, decode_vps};
-use crate::hevc_decoder::neighbor_tracker::NeighborTracker;
+use crate::hevc_decoder::neighbor_tracker::BlockMap;
 use crate::hevc_decoder::quadtree::decode_slice;
 use crate::hevc_decoder::raw_frame::RawFrame;
 use crate::processor::HevcSample;
@@ -27,7 +26,7 @@ mod nal_unit_parsers;
 mod neighbor_tracker;
 mod quadtree;
 mod raw_frame;
-mod shared;
+mod band;
 mod utils;
 
 pub struct HevcDecoder {
@@ -38,7 +37,7 @@ pub struct HevcDecoder {
     height: usize,
     pps_id: usize,
     sps_id: usize,
-    pub(crate) neighbor_tracker: Option<NeighborTracker>,
+    pub(crate) neighbor_tracker: Option<BlockMap>,
     pub(crate) dependent_slice_contexts: Option<[u8; NUM_CABAC_CONTEXTS]>,
     /// Maximum number of threads used to decode CTU rows in parallel (WPP)
     pub(crate) max_threads: usize
@@ -84,7 +83,7 @@ impl HevcDecoder {
         self.height
     }
 
-    pub fn decode(&mut self, sample: &HevcSample) -> Result<Option<Arc<RawFrame>>, NalError> {
+    pub fn decode(&mut self, sample: &HevcSample) -> Result<Option<RawFrame>, NalError> {
         let nal_parser = NalParser::new_detect(&sample.extents);
 
         let mut raw_frame = None;
@@ -128,11 +127,11 @@ impl HevcDecoder {
                         // Spin up the fresh pixel buffer and tracker for this frame!
                         raw_frame = Some(RawFrame::from_sps(active_sps));
 
-                        self.neighbor_tracker = Some(NeighborTracker::new(units_w, units_h, 2));
+                        self.neighbor_tracker = Some(BlockMap::new(units_w, units_h, 2));
                     }
 
-                    if let Some(f) = raw_frame.clone() {
-                        decode_slice(&nal, self, &f)?;
+                    if let Some(f) = raw_frame.as_mut() {
+                        decode_slice(&nal, self, f)?;
                     } else {
                         return Err(NalError::Generic("No raw frame allocated".to_string()));
                     }

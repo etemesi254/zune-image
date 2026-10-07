@@ -1,4 +1,7 @@
 #![allow(unexpected_cfgs)]
+// The decoder itself is safe Rust; `unsafe` is only allowed in the opt-in
+// platform modules below (SIMD transforms, Apple VideoToolbox FFI).
+#![deny(unsafe_code)]
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 #![warn(
     clippy::correctness,
@@ -27,6 +30,7 @@
 )]
 extern crate alloc;
 extern crate core;
+#[allow(unsafe_code)] // FFI to Apple VideoToolbox
 mod apple_videotoolbox;
 mod decoder;
 mod errors;

@@ -6,7 +6,6 @@ use crate::hevc_decoder::ctx::DecodeSliceContext;
 use crate::hevc_decoder::nal_unit_headers::ChromaFormat;
 use crate::hevc_decoder::raw_frame::{RawFrame, SingleFrame, offset_plane};
 use std::cmp::min;
-use std::sync::Arc;
 
 #[derive(Default, Debug, Clone, Copy)]
 pub struct SaoInfo {
@@ -212,7 +211,7 @@ pub fn read_sao(ctx: &mut DecodeSliceContext, x_ctb: usize, y_ctb: usize) {
 /// plane. CTB rows where no CTB uses SAO for a component are skipped entirely
 /// (no copy at all), so pictures/components without SAO cost nothing.
 pub fn apply_sao_frame(
-    frame: &Arc<RawFrame>,
+    frame: &mut RawFrame,
     pic_width: usize,
     pic_height: usize,
     ctu_size: usize,
@@ -227,9 +226,8 @@ pub fn apply_sao_frame(
     let mut cur = Vec::new();
 
     {
-        let mut luma = frame.luma.lock().unwrap();
         sao_plane(
-            &mut luma, 0, ctu_size, ctu_size, pic_width, pic_height, &geom, sao_buffer, &mut prev,
+            &mut frame.luma, 0, ctu_size, ctu_size, pic_width, pic_height, &geom, sao_buffer, &mut prev,
             &mut cur,
         );
     }
@@ -241,10 +239,9 @@ pub fn apply_sao_frame(
     let (ctb_w, ctb_h) = (ctu_size / sub_x, ctu_size / sub_y);
     let (c_pic_w, c_pic_h) = (pic_width / sub_x, pic_height / sub_y);
 
-    for (c_idx, plane) in [(1, &frame.cb), (2, &frame.cr)] {
-        let mut plane = plane.lock().unwrap();
+    for (c_idx, plane) in [(1, &mut frame.cb), (2, &mut frame.cr)] {
         sao_plane(
-            &mut plane, c_idx, ctb_w, ctb_h, c_pic_w, c_pic_h, &geom, sao_buffer, &mut prev,
+            plane, c_idx, ctb_w, ctb_h, c_pic_w, c_pic_h, &geom, sao_buffer, &mut prev,
             &mut cur,
         );
     }

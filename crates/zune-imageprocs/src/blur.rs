@@ -99,7 +99,7 @@ impl OperationsTrait for Blur {
             BlurType::FastGaussian { sigma } => {
                 impl_fast_gaussian_blur(sigma, image)?;
             }
-            _ => todo!(),
+            BlurType::BoxApprox(_) => todo!(),
         }
 
         Ok(())

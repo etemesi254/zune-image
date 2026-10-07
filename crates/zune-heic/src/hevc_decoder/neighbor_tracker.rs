@@ -1,7 +1,7 @@
 use crate::debug_more;
 use crate::hevc_decoder::DEBUG_MORE;
+use crate::hevc_decoder::band::Band;
 use crate::hevc_decoder::constants::PartMode;
-use crate::hevc_decoder::shared::SharedBuf;
 
 #[derive(Clone, Copy, Debug)]
 pub struct BlockState {
@@ -50,44 +50,55 @@ pub enum PredMode {
     ModeInter,
     ModeSkip // Skip is often treated as a subset of Inter
 }
-pub struct NeighborTracker {
-    /// Full frame map stored in 8x8 units.
-    pub blocks:          SharedBuf<BlockState>,
+/// Per-4x4-unit state of the whole picture (owned storage).
+///
+/// While a slice is being decoded, each CTU row works on a
+/// [`NeighborTracker`] that borrows just its own rows of this map.
+pub struct BlockMap {
+    pub blocks:          Vec<BlockState>,
     pub height_in_units: usize,
     pub width_in_units:  usize,
-    pub log2_unit_size:  u8 // Usually 2 for 4x4 units, or 3 for 8x8 units
+    pub log2_unit_size:  u8
 }
 
-impl NeighborTracker {
-    /// Initializes a tracker based on the image dimensions in pixels.
+impl BlockMap {
+    /// Initializes a map based on the image dimensions in pixels.
     pub fn new(pic_width: usize, pic_height: usize, log2_unit_size: u8) -> Self {
-        // Since we are using 8x8 units:
-        //let log2_unit_size = 3;
         let width_in_units = pic_width.div_ceil(1 << log2_unit_size);
         let height_in_units = pic_height.div_ceil(1 << log2_unit_size);
 
         Self {
-            blocks: SharedBuf::new(width_in_units * height_in_units, BlockState::default()),
+            blocks: vec![BlockState::default(); width_in_units * height_in_units],
             width_in_units,
             height_in_units,
             log2_unit_size
         }
     }
-    /// Another handle to the same block map, for a WPP row decoder.
-    ///
-    /// # Safety
-    /// Same contract as [`SharedBuf::shared_view`]: each row decoder may only
-    /// write blocks of its own CTU row, and may only read blocks of other rows
-    /// after the WPP progress counters guarantee they are complete.
-    pub unsafe fn shared_view(&self) -> Self {
-        Self {
-            blocks:          unsafe { self.blocks.shared_view() },
+
+    /// Tracker covering the whole picture (no rows above it).
+    pub fn whole(&mut self) -> NeighborTracker<'_> {
+        NeighborTracker {
+            blocks:          Band::new(&mut self.blocks, 0, 0),
             height_in_units: self.height_in_units,
             width_in_units:  self.width_in_units,
             log2_unit_size:  self.log2_unit_size
         }
     }
+}
 
+/// Unit states of one CTU row (or of the whole picture), see [`Band`].
+pub type BandBlocks<'a> = Band<'a, BlockState>;
+
+/// Neighbour state used while decoding: a [`BandBlocks`] view of the
+/// [`BlockMap`] plus its geometry. Methods take picture coordinates.
+pub struct NeighborTracker<'a> {
+    pub blocks:          BandBlocks<'a>,
+    pub height_in_units: usize,
+    pub width_in_units:  usize,
+    pub log2_unit_size:  u8 // Usually 2 for 4x4 units, or 3 for 8x8 units
+}
+
+impl NeighborTracker<'_> {
     pub fn update_block_depth(&mut self, x: usize, y: usize, size: usize, ct_depth: u8) {
         let gx_start = x >> self.log2_unit_size;
         let gy_start = y >> self.log2_unit_size;
@@ -249,7 +260,7 @@ impl NeighborTracker {
         if s.available { Some(s.qp) } else { None }
     }
 }
-impl NeighborTracker {
+impl NeighborTracker<'_> {
     /// Returns the intra luma mode for the 8x8 block covering pixel (x, y).
     /// This is used by derive_mpms to see what the neighbors chose.
     pub fn get_intra_mode(&self, x: usize, y: usize) -> u8 {
@@ -284,7 +295,7 @@ impl NeighborTracker {
         self.blocks[idx]
     }
 }
-impl NeighborTracker {
+impl NeighborTracker<'_> {
     /// Sets the intra prediction mode for a specific area.
     /// x0, y0: Top-left pixel coordinates of the Prediction Block (PB).
     /// pb_size: Size of the PB in pixels (e.g., 32, 16, 8, or 4).
@@ -321,7 +332,7 @@ impl NeighborTracker {
         }
     }
 }
-impl NeighborTracker {
+impl NeighborTracker<'_> {
     pub fn set_pred_mode(&mut self, x: usize, y: usize, log2_blk_size: u8, mode: PredMode) {
         let unit_x = x >> self.log2_unit_size;
         let unit_y = y >> self.log2_unit_size;
@@ -354,7 +365,7 @@ impl NeighborTracker {
     }
 }
 
-impl NeighborTracker {
+impl NeighborTracker<'_> {
     /// Sets the PartMode for all units covered by the block
     pub fn set_part_mode(&mut self, x: usize, y: usize, log2_blk_size: u8, mode: PartMode) {
         let unit_x = x >> self.log2_unit_size;
@@ -385,7 +396,7 @@ impl NeighborTracker {
     }
 }
 
-impl NeighborTracker {
+impl NeighborTracker<'_> {
     pub fn is_available(
         &self, curr_x: usize, curr_y: usize, neighbor_x: isize, neighbor_y: isize, ctu_size: usize
     ) -> bool {
@@ -446,7 +457,7 @@ impl NeighborTracker {
         spread_bits(ux) | (spread_bits(uy) << 1)
     }
 }
-impl NeighborTracker {
+impl NeighborTracker<'_> {
     /// Record the left and top boundaries of a (luma) block of size `size`
     /// at `(x, y)` as deblocking edges (spec 8.7.2.2 / 8.7.2.3).
     pub fn mark_block_edges(&mut self, x: usize, y: usize, size: usize) {
@@ -481,7 +492,7 @@ impl NeighborTracker {
     }
 }
 
-impl NeighborTracker {
+impl NeighborTracker<'_> {
     /// Sets the chroma mode using Luma-scale coordinates (Matching libde265)
     /// x0, y0: Top-left LUMA pixel coordinates
     /// log2_blk_size: Luma block size (e.g., 4 for 16x16)
@@ -525,7 +536,7 @@ impl NeighborTracker {
     }
 }
 
-impl NeighborTracker {
+impl NeighborTracker<'_> {
     #[allow(clippy::too_many_arguments)]
     pub fn update_cu_info(
         &mut self, x0: usize, y0: usize, cb_size: usize, depth: u8, qp: i8, is_skip: bool,

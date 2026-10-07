@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 use crate::debug_more;
 use crate::hevc_decoder::DEBUG_MORE;
@@ -8,15 +8,15 @@ use crate::hevc_decoder::nal_unit_headers::{ChromaFormat, Pps, SliceHeader, Sps}
 use crate::hevc_decoder::neighbor_tracker::NeighborTracker;
 use crate::hevc_decoder::quadtree::sao::SaoInfo;
 use crate::hevc_decoder::quadtree::sig_ctx_generator::generate_all_sig_ctx_maps;
-use crate::hevc_decoder::raw_frame::{RawFrame, SingleFrame};
-use crate::hevc_decoder::shared::SharedBuf;
+use crate::hevc_decoder::raw_frame::PlaneBand;
+use crate::hevc_decoder::band::Band;
 #[allow(clippy::struct_excessive_bools)]
 pub struct DecodeSliceContext<'a> {
     pub sps: &'a Sps,
     pub pps: &'a Pps,
     pub slice_header: &'a SliceHeader,
     pub cabac: CabacDecoder<'a>,
-    pub neighbor_tracker: &'a mut NeighborTracker,
+    pub neighbor_tracker: NeighborTracker<'a>,
     pub is_cu_qp_delta_coded: bool,
     pub cu_qp_delta: i32,
     // quantization group
@@ -44,8 +44,8 @@ pub struct DecodeSliceContext<'a> {
     pub coeff_list: [[i16; 32 * 32]; 3],
     pub coeff_pos: [[i16; 32 * 32]; 3],
     pub n_coeff: [i16; 3],
-    // raw image frame reference
-    pub raw_frame: Arc<RawFrame>,
+    /// luma, cb and cr pixels of this CTU row (or picture) being reconstructed
+    pub planes: [PlaneBand<'a>; 3],
     // --- scratch buffers
     // --- High-Speed Fixed Buffers ---
     pub pixel_scratchpad: Vec<u8>,
@@ -60,18 +60,18 @@ pub struct DecodeSliceContext<'a> {
     /// so Chroma can use them for CCP.
     pub luma_residual_temp: Vec<i16>,
 
-    /// Per-CTB SAO parameters (shared between WPP row decoders)
-    pub ctb_sao_buffer: SharedBuf<SaoInfo>,
+    /// Per-CTB SAO parameters of this CTU row (or picture)
+    pub ctb_sao_buffer: Band<'a, SaoInfo>,
     /// CABAC contexts saved after CTU 1 of each row, used to start the next
-    /// row (WPP, spec 9.3.1). Shared between WPP row decoders.
+    /// row (WPP, spec 9.3.1).
     pub ctb_context: &'a [Mutex<Option<[u8; NUM_CABAC_CONTEXTS]>>],
 }
 impl<'a> DecodeSliceContext<'a> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         sps: &'a Sps, pps: &'a Pps, slice_header: &'a SliceHeader, cabac_engine: CabacDecoder<'a>,
-        neighbor_tracker: &'a mut NeighborTracker, last_qp_in_slice: i8, raw_frame: &Arc<RawFrame>,
-        ctb_sao_buffer: SharedBuf<SaoInfo>, ctb_context: &'a [Mutex<Option<[u8; NUM_CABAC_CONTEXTS]>>],
+        neighbor_tracker: NeighborTracker<'a>, last_qp_in_slice: i8, planes: [PlaneBand<'a>; 3],
+        ctb_sao_buffer: Band<'a, SaoInfo>, ctb_context: &'a [Mutex<Option<[u8; NUM_CABAC_CONTEXTS]>>],
     ) -> Self {
         Self {
             sps,
@@ -101,7 +101,7 @@ impl<'a> DecodeSliceContext<'a> {
             coeff_list: [[0; 32 * 32]; 3],
             coeff_pos: [[0; 32 * 32]; 3],
             n_coeff: [0; 3],
-            raw_frame: raw_frame.clone(),
+            planes,
             pixel_scratchpad: vec![0; 1024],
             ref_main_buf: vec![0; 97],
             ref_samples_p: vec![0; 129],
@@ -135,17 +135,10 @@ impl DecodeSliceContext<'_> {
     ///
     /// Data is expected to be in scratchpad
     pub fn write_block_scratchpad(
-        &self, c_idx: usize, x0: usize, y0: usize, n_t: usize, bit_depth: u8,
+        &mut self, c_idx: usize, x0: usize, y0: usize, n_t: usize, bit_depth: u8,
     ) {
-        let mut plane = match c_idx {
-            0 => self.raw_frame.luma.lock().unwrap(),
-            1 => self.raw_frame.cb.lock().unwrap(),
-            2 => self.raw_frame.cr.lock().unwrap(),
-            _ => unreachable!("Impossible write_block_scratchpad"),
-        };
-
         write_block_and_pad(
-            &mut plane,
+            &mut self.planes[c_idx],
             x0,
             y0,
             n_t,
@@ -446,15 +439,8 @@ impl DecodeSliceContext<'_> {
     ) {
         let residual = residual.unwrap_or(&self.math_scratchpad);
 
-        let mut plane = match c_idx {
-            0 => self.raw_frame.luma.lock().unwrap(),
-            1 => self.raw_frame.cb.lock().unwrap(),
-            2 => self.raw_frame.cr.lock().unwrap(),
-            _ => unreachable!("Invalid component index"),
-        };
-
         write_block_and_pad(
-            &mut plane,
+            &mut self.planes[c_idx],
             x0,
             y0,
             n_t,
@@ -526,7 +512,7 @@ impl DecodeSliceContext<'_> {
 
         // 2. Check Availability (Using PIXEL coordinates x0, y0)
         check_availability(
-            self.neighbor_tracker,
+            &self.neighbor_tracker,
             x0,
             y0,
             n_t,
@@ -544,13 +530,12 @@ impl DecodeSliceContext<'_> {
 
         // 3. Fetch pixels from frame and perform HEVC propagation padding
         perform_padding(
-            &self.raw_frame,
+            &self.planes[c_idx],
             &mut self.ref_samples_p[..p_len],
             &self.ref_samples_available[..p_len],
             x0,
             y0,
             n_t,
-            c_idx,
         );
         if DEBUG_MORE {
             println!("--- Reference Border (N={n_t}) ---");
@@ -573,11 +558,10 @@ impl DecodeSliceContext<'_> {
 }
 
 fn write_block_and_pad(
-    plane: &mut SingleFrame, x0: usize, y0: usize, n_t: usize, pred: &[u8],
+    plane: &mut PlaneBand, x0: usize, y0: usize, n_t: usize, pred: &[u8],
     residual: Option<&[i16]>, bit_depth: u8,
 ) {
     let max_val = (1_i32 << bit_depth) - 1;
-    let buf = &mut plane.pixels;
     let (w, h, s, p) = (plane.width, plane.height, plane.stride, plane.padding);
 
     let x_end = x0 + n_t;
@@ -594,7 +578,7 @@ fn write_block_and_pad(
             .enumerate()
         {
             let dst_row = (frame_oy + y0 + dy) * s + (frame_ox + x0);
-            let dst_slice = &mut buf[dst_row..dst_row + n_t];
+            let dst_slice = plane.slice_mut(dst_row, n_t);
 
             for (dst, (&bv, &residual_value)) in
                 dst_slice.iter_mut().zip(residual_row.iter().zip(pred_row))
@@ -610,7 +594,9 @@ fn write_block_and_pad(
         // just copy-paste residual into the buffer
         for dy in 0..n_t {
             let dst_row = (frame_oy + y0 + dy) * s + (frame_ox + x0);
-            buf[dst_row..dst_row + n_t].copy_from_slice(&pred[dy * n_t..(dy + 1) * n_t]);
+            plane
+                .slice_mut(dst_row, n_t)
+                .copy_from_slice(&pred[dy * n_t..(dy + 1) * n_t]);
         }
     }
 
@@ -619,7 +605,7 @@ fn write_block_and_pad(
         for dy in 0..n_t {
             let dst_row = (frame_oy + y0 + dy) * s + (frame_ox + x0);
             for dx in 0..n_t {
-                print!("{} ", buf[dst_row + dx]);
+                print!("{} ", plane.get(dst_row + dx));
             }
             println!();
         }
@@ -628,8 +614,8 @@ fn write_block_and_pad(
     if x0 == 0 {
         for dy in 0..n_t {
             let row = (frame_oy + y0 + dy) * s + frame_ox;
-            let val = buf[row];
-            buf[row - p..row].fill(val);
+            let val = plane.get(row);
+            plane.slice_mut(row - p, p).fill(val);
         }
     }
 
@@ -637,8 +623,8 @@ fn write_block_and_pad(
     if x_end == w {
         for dy in 0..n_t {
             let row_last = (frame_oy + y0 + dy) * s + frame_ox + w - 1;
-            let val = buf[row_last];
-            buf[row_last + 1..row_last + 1 + p].fill(val);
+            let val = plane.get(row_last);
+            plane.slice_mut(row_last + 1, p).fill(val);
         }
     }
 
@@ -648,9 +634,10 @@ fn write_block_and_pad(
         let x_start = if x0 == 0 { 0 } else { frame_ox + x0 };
         let x_stop = if x_end == w { s } else { frame_ox + x_end };
         for py in 1..=p {
-            buf.copy_within(
-                src_row_base + x_start..src_row_base + x_stop,
+            plane.copy_within(
+                src_row_base + x_start,
                 src_row_base - py * s + x_start,
+                x_stop - x_start,
             );
         }
     }
@@ -661,9 +648,10 @@ fn write_block_and_pad(
         let x_start = if x0 == 0 { 0 } else { frame_ox + x0 };
         let x_stop = if x_end == w { s } else { frame_ox + x_end };
         for py in 1..=p {
-            buf.copy_within(
-                src_row_base + x_start..src_row_base + x_stop,
+            plane.copy_within(
+                src_row_base + x_start,
                 src_row_base + py * s + x_start,
+                x_stop - x_start,
             );
         }
     }
@@ -775,8 +763,7 @@ fn check_availability(
 }
 
 fn perform_padding(
-    frame: &Arc<RawFrame>, p: &mut [u8], available: &[bool], x0: usize, y0: usize, n_t: usize,
-    c_idx: usize,
+    plane: &PlaneBand, p: &mut [u8], available: &[bool], x0: usize, y0: usize, n_t: usize,
 ) {
     let total = 4 * n_t + 1;
 
@@ -784,19 +771,13 @@ fn perform_padding(
     // and
     // 2. HEVC Reference Sample Substitution (Spec 8.4.4.2.2)
 
-    let plane = match c_idx {
-        0 => frame.luma.lock().unwrap(),
-        1 => frame.cb.lock().unwrap(),
-        2 => frame.cr.lock().unwrap(),
-        _ => unreachable!(),
-    };
-    let (pixels, stride, pad) = (plane.pixels.as_slice(), plane.stride, plane.padding);
+    let (stride, pad) = (plane.stride, plane.padding);
 
     let mut first_availability = -1;
     // SAFE GET_P: Add pad as isize FIRST to prevent usize::MAX overflow
     let pad_i = pad as isize;
     let get_p =
-        |px: isize, py: isize| pixels[((py + pad_i) as usize) * stride + ((px + pad_i) as usize)];
+        |px: isize, py: isize| plane.get(((py + pad_i) as usize) * stride + ((px + pad_i) as usize));
 
     for i in 0..total {
         if available[i] {

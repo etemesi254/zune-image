@@ -1,5 +1,5 @@
 use std::io::Write;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 use crate::hevc_decoder::nal_parser::NalError;
 use crate::hevc_decoder::nal_unit_headers::{ChromaFormat, Sps};
@@ -22,14 +22,13 @@ pub fn offset_plane(frame: &SingleFrame, x: usize, y: usize) -> usize {
 
 pub struct RawFrame {
     pub format: ChromaFormat,
-    // Each plane is protected by a Mutex for internal mutability across threads
-    pub luma:   Mutex<SingleFrame>,
-    pub cb:     Mutex<SingleFrame>,
-    pub cr:     Mutex<SingleFrame>
+    pub luma:   SingleFrame,
+    pub cb:     SingleFrame,
+    pub cr:     SingleFrame
 }
 
 impl RawFrame {
-    pub fn new(width: usize, height: usize, format: ChromaFormat) -> Arc<Self> {
+    pub fn new(width: usize, height: usize, format: ChromaFormat) -> Self {
         let (sub_x, sub_y) = format.get_subsampling();
 
         let padding = 32; // Standard padding for motion compensation filters
@@ -40,16 +39,16 @@ impl RawFrame {
             let buf_size = stride * (h + (padding * 2));
             let pixels = if is_active { vec![0u8; buf_size] } else { Vec::new() };
 
-            Mutex::new(SingleFrame {
+            SingleFrame {
                 pixels,
                 width: w,
                 height: h,
                 stride,
                 padding
-            })
+            }
         };
 
-        Arc::new(Self {
+        Self {
             format,
             luma: make_plane(width, height, true),
             cb: make_plane(
@@ -62,23 +61,174 @@ impl RawFrame {
                 height / sub_y,
                 format != ChromaFormat::Monochrome
             )
-        })
+        }
     }
-    pub fn from_sps(sps: &Sps) -> Arc<Self> {
+    pub fn from_sps(sps: &Sps) -> Self {
         let width = sps.pic_width_in_luma_samples as usize;
         let height = sps.pic_height_in_luma_samples as usize;
 
         Self::new(width, height, sps.chroma_format)
     }
+
+    /// Bands covering the whole luma, cb and cr planes (one band each).
+    pub fn whole(&mut self) -> [PlaneBand<'_>; 3] {
+        [
+            PlaneBand::whole(&mut self.luma),
+            PlaneBand::whole(&mut self.cb),
+            PlaneBand::whole(&mut self.cr)
+        ]
+    }
 }
+
+/// Plane geometry shared by the bands of one plane.
+#[derive(Clone, Copy)]
+pub struct PlaneGeometry {
+    pub width:   usize,
+    pub height:  usize,
+    pub stride:  usize,
+    pub padding: usize
+}
+
+impl PlaneGeometry {
+    pub fn of(plane: &SingleFrame) -> Self {
+        Self {
+            width:   plane.width,
+            height:  plane.height,
+            stride:  plane.stride,
+            padding: plane.padding
+        }
+    }
+
+    /// Physical (padded) buffer row where logical row `y` lives
+    #[inline(always)]
+    pub fn physical_row(&self, y: usize) -> usize {
+        y + self.padding
+    }
+}
+
+/// Split a plane's pixel buffer into one band per CTU row.
+///
+/// Band `k` holds the physical rows of logical rows
+/// `k * band_height .. (k + 1) * band_height`; the top padding rows belong to
+/// the first band and the bottom padding rows to the last one. Returns the
+/// bands and the physical row each starts at. An empty (inactive) plane gives
+/// empty bands.
+pub fn split_plane_rows(
+    plane: &mut SingleFrame, band_height: usize, n_bands: usize
+) -> Vec<(&mut [u8], usize)> {
+    let geom = PlaneGeometry::of(plane);
+    let mut rest: &mut [u8] = &mut plane.pixels;
+    let mut bands = Vec::with_capacity(n_bands);
+    if rest.is_empty() {
+        for _ in 0..n_bands {
+            bands.push((&mut [][..], 0));
+        }
+        return bands;
+    }
+    let mut row = 0;
+    for k in 0..n_bands {
+        let end_row = if k + 1 == n_bands {
+            rest.len() / geom.stride + row
+        } else {
+            geom.physical_row(((k + 1) * band_height).min(geom.height))
+        };
+        let (band, tail) = rest.split_at_mut((end_row - row) * geom.stride);
+        bands.push((band, row));
+        rest = tail;
+        row = end_row;
+    }
+    bands
+}
+
+/// The pixels of one band of rows of a plane (a CTU row, or the whole
+/// plane), used while slices are being decoded.
+///
+/// All indices are *picture* (padded buffer) indices, as computed by
+/// `offset_plane`-style arithmetic. Writes must fall inside the band; reads
+/// may also hit the physical row directly above the band, which is served
+/// from `above`, a copy kept up to date by the WPP row hand-off.
+pub struct PlaneBand<'a> {
+    band:        &'a mut [u8],
+    /// picture index of `band[0]`
+    start:       usize,
+    /// copy of the physical row directly above the band (empty for the top band)
+    pub above:   Vec<u8>,
+    above_start: usize,
+    pub width:   usize,
+    pub height:  usize,
+    pub stride:  usize,
+    pub padding: usize
+}
+
+impl<'a> PlaneBand<'a> {
+    pub fn whole(plane: &'a mut SingleFrame) -> Self {
+        let geom = PlaneGeometry::of(plane);
+        Self::new(&mut plane.pixels, 0, geom)
+    }
+
+    /// Band starting at physical row `first_row`; the row above it is
+    /// unknown until `above` is filled.
+    pub fn new(band: &'a mut [u8], first_row: usize, geom: PlaneGeometry) -> Self {
+        let start = first_row * geom.stride;
+        let above_len = if first_row > 0 { geom.stride } else { 0 };
+        Self {
+            band,
+            start,
+            above: vec![0; above_len],
+            above_start: start - above_len,
+            width: geom.width,
+            height: geom.height,
+            stride: geom.stride,
+            padding: geom.padding
+        }
+    }
+
+    #[inline(always)]
+    fn local(&self, index: usize) -> usize {
+        index
+            .checked_sub(self.start)
+            .expect("pixel outside this CTU row")
+    }
+
+    #[inline(always)]
+    pub fn get(&self, index: usize) -> u8 {
+        if index >= self.start {
+            self.band[index - self.start]
+        } else {
+            index
+                .checked_sub(self.above_start)
+                .and_then(|i| self.above.get(i))
+                .copied()
+                .expect("pixel outside this CTU row and the row above it")
+        }
+    }
+
+    /// Pixels `index..index + len` of the band itself
+    #[inline(always)]
+    pub fn slice(&self, index: usize, len: usize) -> &[u8] {
+        let i = self.local(index);
+        &self.band[i..i + len]
+    }
+
+    #[inline(always)]
+    pub fn slice_mut(&mut self, index: usize, len: usize) -> &mut [u8] {
+        let i = self.local(index);
+        &mut self.band[i..i + len]
+    }
+
+    /// Copy `len` pixels from `src` to `dst` (ranges may overlap)
+    #[inline(always)]
+    pub fn copy_within(&mut self, src: usize, dst: usize, len: usize) {
+        let (s, d) = (self.local(src), self.local(dst));
+        self.band.copy_within(s..s + len, d);
+    }
+}
+
 impl RawFrame {
     /// Converts planar YUV 4:2:0 to RGB and writes it into the provided slice.
     /// Expects `out_rgb` to have a length of at least `width * height * 3`.
     pub fn write_rgb_420(&self, out_rgb: &mut [u8]) -> Result<(), NalError> {
-        let (width, height) = {
-            let luma = self.luma.lock().unwrap();
-            (luma.width, luma.height)
-        };
+        let (width, height) = (self.luma.width, self.luma.height);
         let expected_len = width * height * 3;
 
         if out_rgb.len() < expected_len {
@@ -112,9 +262,7 @@ impl RawFrame {
                 "Unsupported number of output channels: {channels}"
             )));
         }
-        let luma = self.luma.lock().unwrap();
-        let cb = self.cb.lock().unwrap();
-        let cr = self.cr.lock().unwrap();
+        let (luma, cb, cr) = (&self.luma, &self.cb, &self.cr);
 
         if x_off >= canvas_w || y_off >= canvas_h {
             // tile lies completely outside the visible canvas
@@ -133,7 +281,7 @@ impl RawFrame {
                 .get_mut(x_off * channels..(x_off + vis_w) * channels)
                 .ok_or_else(|| NalError::Generic("Canvas row too short".to_string()))?;
 
-            convert_row(self.format, &luma, &cb, &cr, row, vis_w, dst, channels);
+            convert_row(self.format, luma, cb, cr, row, vis_w, dst, channels);
         }
         Ok(())
     }
@@ -233,8 +381,8 @@ impl RawFrame {
     /// Dumps the reconstructed frame to a P6 PPM file.
     /// This automatically strips HEVC padding and converts YCbCr to RGB.
     pub fn dump_ppm(&self, filename: &str) -> std::io::Result<()> {
-        let width = self.luma.lock().unwrap().width;
-        let height = self.luma.lock().unwrap().height;
+        let width = self.luma.width;
+        let height = self.luma.height;
 
         let mut rgb_buf = vec![0u8; width * height * 3];
 

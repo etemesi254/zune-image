@@ -1,8 +1,10 @@
 #![allow(unreachable_code)]
 
 
+#[allow(unsafe_code)] // NEON intrinsics
 mod aarch64;
 mod std_simd;
+#[allow(unsafe_code)] // SSE intrinsics
 mod x86_64;
 
 // ---------------------------------------------------------------------------
