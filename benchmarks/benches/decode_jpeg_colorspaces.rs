@@ -83,7 +83,7 @@ fn main() {
     let core = core_affinity::get_core_ids()
         .and_then(|cores| cores.into_iter().next())
         .expect("no CPU core available for benchmark affinity");
-    assert!(core_affinity::set_for_current(core));
+    core_affinity::set_for_current(core);
 
     let baseline =
         read(sample_path().join("test-images/jpeg/benchmarks/speed_bench_hv_subsampling.jpg"))
