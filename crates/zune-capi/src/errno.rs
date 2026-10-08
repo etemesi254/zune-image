@@ -161,7 +161,6 @@ pub extern "C" fn zil_status_message(status: *const ZStatus) -> *const c_char {
 #[no_mangle]
 pub extern "C" fn zil_status_free(status: *mut ZStatus) {
     if !status.is_null() {
-        unsafe { zil_free((*status).message.cast()) }
         // free object
         unsafe { status.drop_in_place() }
 

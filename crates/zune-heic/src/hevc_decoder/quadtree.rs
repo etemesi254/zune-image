@@ -211,7 +211,8 @@ pub fn decode_slice(
                 tc_offset_div2:   slice_header.slice_tc_offset_div2,
                 cb_qp_offset:     pps.cb_qp_offset as i8,
                 cr_qp_offset:     pps.cr_qp_offset as i8
-            }
+            },
+            hevc_decoder.max_threads
         );
     }
     if slice_header.slice_sao_luma_flag || slice_header.slice_sao_chroma_flag {
@@ -220,7 +221,8 @@ pub fn decode_slice(
             hevc_decoder.width,
             hevc_decoder.height,
             1 << sps.log2_ctb_size_y,
-            &sao_buffer
+            &sao_buffer,
+            hevc_decoder.max_threads
         );
     }
     Ok(())

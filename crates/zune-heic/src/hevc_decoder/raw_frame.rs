@@ -1,4 +1,5 @@
 use alloc::{string::ToString, vec::Vec};
+use core::ops::Range;
 use crate::utils::Lock;
 
 use crate::hevc_decoder::nal_parser::NalError;
@@ -105,6 +106,95 @@ impl PlaneGeometry {
     #[inline(always)]
     pub fn physical_row(&self, y: usize) -> usize {
         y + self.padding
+    }
+}
+
+/// A horizontal band of a finished plane, handed to one thread by
+/// [`for_each_band`] (deblocking and SAO).
+pub struct RowBand<'a> {
+    pub pixels: &'a mut [u8],
+    /// plane index of `pixels[0]`
+    start:      usize,
+    /// which band this is (position in the `cuts` list)
+    pub index:  usize,
+    /// logical rows owned by this band
+    pub rows:   Range<usize>,
+    pub stride: usize,
+    padding:    usize
+}
+
+impl RowBand<'_> {
+    /// Index into `pixels` of logical sample (x, y); `y` must be in `rows`.
+    #[inline(always)]
+    pub fn index(&self, x: usize, y: usize) -> usize {
+        (y + self.padding) * self.stride + x + self.padding - self.start
+    }
+}
+
+/// Row boundaries splitting `height` rows into about `n` bands:
+/// `[0, c1, .., height]`, every inner cut `≡ offset (mod align)`.
+pub fn band_cuts(height: usize, n: usize, align: usize, offset: usize) -> Vec<usize> {
+    let mut cuts = vec![0];
+    let per = height / n.max(1);
+    for k in 1..n {
+        let cut = (k * per) / align * align + offset;
+        if cut > *cuts.last().unwrap() && cut < height {
+            cuts.push(cut);
+        }
+    }
+    cuts.push(height);
+    cuts
+}
+
+/// Run `f` on the bands of `plane` given by `cuts` (from [`band_cuts`]),
+/// in parallel when there is more than one band. Each band owns its rows
+/// exclusively; the top/bottom padding rows go to the first/last band.
+pub fn for_each_band<F>(plane: &mut SingleFrame, cuts: &[usize], f: F)
+where
+    F: Fn(&mut RowBand) + Sync
+{
+    if plane.pixels.is_empty() {
+        return;
+    }
+    let geom = PlaneGeometry::of(plane);
+    let total = plane.pixels.len();
+    let mut rest: &mut [u8] = &mut plane.pixels;
+    let mut start = 0;
+    let mut bands = Vec::with_capacity(cuts.len() - 1);
+    for (index, rows) in cuts.windows(2).enumerate() {
+        let end = if index + 2 == cuts.len() {
+            total
+        } else {
+            geom.physical_row(rows[1]) * geom.stride
+        };
+        let (band, tail) = rest.split_at_mut(end - start);
+        bands.push(RowBand {
+            pixels: band,
+            start,
+            index,
+            rows: rows[0]..rows[1],
+            stride: geom.stride,
+            padding: geom.padding
+        });
+        rest = tail;
+        start = end;
+    }
+
+    #[cfg(feature = "std")]
+    if bands.len() > 1 {
+        let f = &f;
+        std::thread::scope(|s| {
+            let mut bands = bands.into_iter();
+            let mut first = bands.next().unwrap();
+            for mut band in bands {
+                s.spawn(move || f(&mut band));
+            }
+            f(&mut first);
+        });
+        return;
+    }
+    for mut band in bands {
+        f(&mut band);
     }
 }
 
