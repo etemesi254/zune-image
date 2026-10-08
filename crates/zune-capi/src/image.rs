@@ -157,7 +157,7 @@ pub extern "C" fn zil_zimg_write_to_output(
 #[no_mangle]
 pub extern "C" fn zil_zimg_new() -> *mut ZImage {
     let ptr = unsafe { libc::malloc(std::mem::size_of::<ZImage>()) }.cast();
-    unsafe { *ptr = ZImage::new(vec![], BitDepth::Unknown, 1, 1, ColorSpace::Unknown) };
+    unsafe { *ptr = ZImage::new(vec![], BitDepth::Unknown, 0, 0, ColorSpace::Unknown) };
     ptr
 }
 /// Free an image
