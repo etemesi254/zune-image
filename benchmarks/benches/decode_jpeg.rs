@@ -12,7 +12,7 @@ use std::fs::read;
 use std::hint::black_box;
 use std::time::Duration;
 
-use criterion::{criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use zune_benches::sample_path;
 use zune_jpeg::zune_core::colorspace::ColorSpace;
 use zune_jpeg::zune_core::options::DecoderOptions;
@@ -421,7 +421,7 @@ fn decode_jpeg_raw_pull(buf: &[u8]) -> u64 {
         .enumerate()
         .map(|(index, plane)| vec![0; strides[index] * plane.vertical_sampling_factor * 8])
         .collect();
-    let mut checksum = 0_u64;
+    let mut rows_decoded = 0_u64;
 
     loop {
         let mut planes: Vec<&mut [u8]> = storage.iter_mut().map(Vec::as_mut_slice).collect();
@@ -429,11 +429,12 @@ fn decode_jpeg_raw_pull(buf: &[u8]) -> u64 {
             RawImcuRowStatus::RowReady { rows_written } => {
                 for index in 0..count {
                     for row in 0..rows_written[index] {
-                        checksum = storage[index]
-                            [row * strides[index]..row * strides[index] + layout[index].width]
-                            .iter()
-                            .fold(checksum, |sum, byte| sum.wrapping_add(u64::from(*byte)));
+                        black_box(
+                            &storage[index]
+                                [row * strides[index]..row * strides[index] + layout[index].width]
+                        );
                     }
+                    rows_decoded += rows_written[index] as u64;
                 }
             }
             RawImcuRowStatus::Complete => break,
@@ -441,23 +442,58 @@ fn decode_jpeg_raw_pull(buf: &[u8]) -> u64 {
             _ => unreachable!(),
         }
     }
-    checksum
+    rows_decoded
 }
 
-fn decode_raw_pull_output(c: &mut Criterion) {
+fn decode_jpeg_raw_whole(buf: &[u8]) -> Vec<Vec<u8>> {
+    let mut decoder = JpegDecoder::new(ZCursor::new(buf));
+    decoder.decode_headers().unwrap();
+    let mut raw = decoder.raw_output();
+    let layout = raw.layout().unwrap();
+    let count = raw.num_components().unwrap();
+    let strides: Vec<usize> = layout[..count]
+        .iter()
+        .map(|plane| plane.width + 13)
+        .collect();
+    let mut storage: Vec<Vec<u8>> = layout[..count]
+        .iter()
+        .enumerate()
+        .map(|(index, plane)| vec![0; strides[index] * plane.height])
+        .collect();
+    let mut planes: Vec<&mut [u8]> = storage.iter_mut().map(Vec::as_mut_slice).collect();
+    raw.decode_into_planes_strided(&mut planes, &strides)
+        .unwrap();
+    storage
+}
+
+fn decode_raw_output(c: &mut Criterion) {
     let baseline =
         read(sample_path().join("test-images/jpeg/benchmarks/speed_bench_hv_subsampling.jpg"))
             .unwrap();
-    let progressive =
-        read(sample_path().join("test-images/jpeg/benchmarks/speed_bench_prog.jpg")).unwrap();
-    let mut group = c.benchmark_group("jpeg: raw iMCU-row output");
+    let mut group = c.benchmark_group("jpeg: raw component output");
 
     group.bench_function("baseline", |b| {
         b.iter(|| black_box(decode_jpeg_raw_pull(baseline.as_slice())));
     });
-    group.bench_function("progressive", |b| {
-        b.iter(|| black_box(decode_jpeg_raw_pull(progressive.as_slice())));
-    });
+    for (sampling, fixture) in [
+        ("4:4:4", "speed_bench_prog.jpg"),
+        ("4:2:2", "speed_bench_prog_h_sampling.jpg"),
+        ("4:2:0", "speed_bench_prog_420.jpg")
+    ] {
+        let progressive =
+            read(sample_path().join("test-images/jpeg/benchmarks").join(fixture)).unwrap();
+        group.throughput(Throughput::Bytes(progressive.len() as u64));
+        group.bench_with_input(
+            BenchmarkId::new("progressive packed RGB", sampling),
+            &progressive,
+            |b, data| b.iter(|| black_box(decode_jpeg(data.as_slice())))
+        );
+        group.bench_with_input(
+            BenchmarkId::new("progressive raw planes", sampling),
+            &progressive,
+            |b, data| b.iter(|| black_box(decode_jpeg_raw_whole(data.as_slice())))
+        );
+    }
 }
 
 fn decode_jpeg_scanlines(buf: &[u8], rows_per_read: usize) -> u64 {
@@ -513,6 +549,6 @@ criterion_group!(name=benches;
     decode_hv_samp_prog,decode_h_samp_prog,decode_no_samp_prog,decode_v_samp_prog,
     decode_no_samp_opts,
     decode_restart_full,decode_restart_resume,decode_streaming_mode,
-    decode_raw_pull_output,decode_scanline_output);
+    decode_raw_output,decode_scanline_output);
 
 criterion_main!(benches);

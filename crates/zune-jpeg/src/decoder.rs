@@ -667,6 +667,14 @@ impl Default for RawPullState {
 /// Unlike [`JpegDecoder::decode`] and [`JpegDecoder::decode_into`], raw output
 /// skips upsampling and color conversion and returns one post-IDCT plane per
 /// JPEG component. The configured output colorspace is therefore ignored.
+///
+/// Interleaved sequential images can produce raw iMCU rows while entropy data
+/// is decoded. Progressive and multi-SOS images first accumulate all coefficient
+/// scans, then reconstruct final component samples directly from those
+/// coefficients. Their first row request may therefore consume the complete
+/// compressed image before returning output, but it does not allocate or
+/// convert through a packed RGB frame. Recoverable suspension during that
+/// buffered phase leaves caller planes untouched.
 pub struct RawDecodeSession<'decoder, T> {
     decoder: &'decoder mut JpegDecoder<T>,
     previous_incremental_mode: bool,
@@ -1464,6 +1472,11 @@ where
     /// ignored. Samples within each plane's logical `width * height` area are
     /// meaningful; trailing DCT padding is implementation-defined.
     ///
+    /// For progressive JPEGs, all scans are decoded before the first component
+    /// samples are reconstructed. The final planes preserve the sampling factors
+    /// and logical dimensions reported by [`Self::layout`]; no packed RGB
+    /// intermediate is created.
+    ///
     /// On a recoverable EOF, call this method again on the same session after
     /// exposing more input. Successful calls can also be replayed and produce
     /// bit-identical planes.
@@ -1536,6 +1549,11 @@ where
     /// order. Each stride must be at least the corresponding logical
     /// [`PlaneInfo::width`], and each plane must contain at least
     /// `stride * PlaneInfo::height` bytes.
+    ///
+    /// Progressive input availability follows [`Self::decode_into_planes`]:
+    /// coefficient scans are buffered to completion before final component
+    /// samples are written, and recoverable suspension leaves the destination
+    /// planes unchanged.
     ///
     /// On a recoverable EOF, call this method again on the same session after
     /// exposing more input. Successful calls can also be replayed and produce

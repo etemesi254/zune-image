@@ -116,6 +116,27 @@ fn decode_scanlines(data: &[u8], rows_per_read: usize) -> u64 {
     checksum
 }
 
+fn decode_raw_whole(data: &[u8]) -> Vec<Vec<u8>> {
+    let mut decoder = JpegDecoder::new(ZCursor::new(data));
+    decoder.decode_headers().unwrap();
+    let mut raw = decoder.raw_output();
+    let layout = raw.layout().unwrap();
+    let count = raw.num_components().unwrap();
+    let strides: Vec<usize> = layout[..count]
+        .iter()
+        .map(|plane| plane.width + 13)
+        .collect();
+    let mut storage: Vec<Vec<u8>> = layout[..count]
+        .iter()
+        .enumerate()
+        .map(|(index, plane)| vec![0; strides[index] * plane.height])
+        .collect();
+    let mut planes: Vec<&mut [u8]> = storage.iter_mut().map(Vec::as_mut_slice).collect();
+    raw.decode_into_planes_strided(&mut planes, &strides)
+        .unwrap();
+    storage
+}
+
 fn main() {
     let baseline =
         read(sample_path().join("test-images/jpeg/benchmarks/speed_bench_hv_subsampling.jpg"))
@@ -144,8 +165,7 @@ fn main() {
     assert!(direct.allocations <= full.allocations + 4);
 
     let progressive =
-        read(sample_path().join("test-images/jpeg/benchmarks/speed_bench_prog_hv_sampling.jpg"))
-            .unwrap();
+        read(sample_path().join("test-images/jpeg/benchmarks/speed_bench_prog_420.jpg")).unwrap();
     let full = profile(|| {
         JpegDecoder::new(ZCursor::new(&progressive))
             .decode()
@@ -153,6 +173,7 @@ fn main() {
     });
     let one_row = profile(|| decode_scanlines(&progressive, 1));
     let direct = profile(|| decode_scanlines(&progressive, 64));
+    let raw = profile(|| decode_raw_whole(&progressive));
 
     println!(
         "progressive full output: peak={} bytes, allocations={}",
@@ -165,6 +186,10 @@ fn main() {
     println!(
         "progressive 64-row scanlines: peak={} bytes, allocations={}",
         direct.peak_live_bytes, direct.allocations
+    );
+    println!(
+        "progressive raw planes: peak={} bytes, allocations={}",
+        raw.peak_live_bytes, raw.allocations
     );
 
     // Buffered progressive output must retain full coefficient storage, but
