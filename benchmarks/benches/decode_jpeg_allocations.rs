@@ -197,4 +197,6 @@ fn main() {
     // per iMCU stripe.
     assert!(one_row.allocations <= full.allocations + 64);
     assert!(direct.allocations <= full.allocations + 64);
+    assert!(raw.peak_live_bytes < full.peak_live_bytes);
+    assert!(raw.allocations <= full.allocations + 16);
 }
