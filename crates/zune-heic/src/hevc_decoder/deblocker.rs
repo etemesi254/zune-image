@@ -1,4 +1,3 @@
-use alloc::vec::Vec;
 /// HEVC Deblocking Filter — ITU-T H.265 Section 8.7
 ///
 /// Pipeline:
@@ -12,7 +11,7 @@ use alloc::vec::Vec;
 ///   • Table 8-19  QP → β index
 ///   • Table 8-20  QP → tC index  (indexed as QP + 2*(bs-1))
 use crate::hevc_decoder::neighbor_tracker::{BlockMap, BlockState};
-use crate::hevc_decoder::raw_frame::{RawFrame, SingleFrame, offset_plane};
+use crate::hevc_decoder::raw_frame::{RawFrame, RowBand, band_cuts, for_each_band};
 /// β table — indexed by Clip3(0,51, qP).  spec Table 8-19.
 #[rustfmt::skip]
 const BETA_TABLE: [u8; 52] = [
@@ -91,20 +90,6 @@ fn chroma_qp(luma_qp: i32, offset: i8) -> i32 {
 // Boundary-strength grid
 // ---------------------------------------------------------------------------
 
-struct BsGrid {
-    bs_v: Vec<Vec<u8>>, // [y4][x4] — left edge of 4×4 block
-    bs_h: Vec<Vec<u8>>, // [y4][x4] — top  edge of 4×4 block
-}
-
-impl BsGrid {
-    fn new(w4: usize, h4: usize) -> Self {
-        Self {
-            bs_v: vec![vec![0u8; w4]; h4],
-            bs_h: vec![vec![0u8; w4]; h4],
-        }
-    }
-}
-
 /// Boundary strength for a single edge (spec 8.7.2.3).
 ///   bs=2  either side is intra
 ///   bs=1  either side has non-zero coefficients
@@ -124,25 +109,29 @@ fn boundary_strength(p: &BlockState, q: &BlockState) -> u8 {
     0
 }
 
-fn compute_bs_grid(nt: &BlockMap) -> BsGrid {
+/// Strength of the left edge of 4x4 unit (x4, y4), 0 when it is not a
+/// transform/prediction block edge.
+#[inline]
+fn bs_vertical(nt: &BlockMap, x4: usize, y4: usize) -> u8 {
     let w4 = nt.width_in_units;
-    let h4 = nt.height_in_units;
-    let mut grid = BsGrid::new(w4, h4);
-
-    for y4 in 0..h4 {
-        for x4 in 0..w4 {
-            let cur = &nt.blocks[y4 * w4 + x4];
-            if x4 > 0 && cur.edge_left {
-                let left = &nt.blocks[y4 * w4 + (x4 - 1)];
-                grid.bs_v[y4][x4] = boundary_strength(left, cur);
-            }
-            if y4 > 0 && cur.edge_top {
-                let above = &nt.blocks[(y4 - 1) * w4 + x4];
-                grid.bs_h[y4][x4] = boundary_strength(above, cur);
-            }
-        }
+    let cur = &nt.blocks[y4 * w4 + x4];
+    if x4 > 0 && cur.edge_left {
+        boundary_strength(&nt.blocks[y4 * w4 + x4 - 1], cur)
+    } else {
+        0
     }
-    grid
+}
+
+/// Strength of the top edge of 4x4 unit (x4, y4).
+#[inline]
+fn bs_horizontal(nt: &BlockMap, x4: usize, y4: usize) -> u8 {
+    let w4 = nt.width_in_units;
+    let cur = &nt.blocks[y4 * w4 + x4];
+    if y4 > 0 && cur.edge_top {
+        boundary_strength(&nt.blocks[(y4 - 1) * w4 + x4], cur)
+    } else {
+        0
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -313,54 +302,22 @@ fn edge_qp(p: &BlockState, q: &BlockState) -> i32 {
     (i32::from(p.qp) + i32::from(q.qp) + 1) >> 1
 }
 
-/// Deblock one complete frame.
-pub fn deblock_frame(raw: &mut RawFrame, nt: &BlockMap, params: DeblockParams) {
-    let grid = compute_bs_grid(nt);
-    let w4 = nt.width_in_units;
-    let h4 = nt.height_in_units;
+/// Deblock one complete frame, spreading each plane over `threads` bands.
+///
+/// The spec filters all vertical edges of the picture, then all horizontal
+/// ones. Edges lie on an 8-sample grid and a filter reads at most 4 samples
+/// (and writes at most 3) on each side of its edge, so with band cuts at rows
+/// `≡ 4 (mod 8)`:
+/// * vertical edges only touch their own row, and
+/// * every horizontal edge, with everything it reads or writes, lies inside
+///   one band,
+///
+/// so each band can run both passes on its own, with no synchronisation and
+/// the same result as the whole-picture order.
+pub fn deblock_frame(raw: &mut RawFrame, nt: &BlockMap, params: DeblockParams, threads: usize) {
+    let cuts = band_cuts(raw.luma.height, threads, 8, 4);
+    for_each_band(&mut raw.luma, &cuts, |band| deblock_luma_band(band, nt, params));
 
-    // -----------------------------------------------------------------------
-    // Luma — all vertical edges of the picture first, then horizontal edges
-    // (spec 8.7.2). Edges lie on the 8x8 luma grid; each edge is decided and
-    // filtered in 4-sample segments, so every 4x4 unit along the edge is
-    // visited.
-    // -----------------------------------------------------------------------
-    {
-        let luma = &mut raw.luma;
-        let ls = luma.stride as isize;
-
-        for x4 in (2..w4).step_by(2) {
-            let x_px = x4 * 4;
-            for y4 in 0..h4 {
-                let bs = grid.bs_v[y4][x4];
-                if bs == 0 {
-                    continue;
-                }
-                let qp = edge_qp(&nt.blocks[y4 * w4 + (x4 - 1)], &nt.blocks[y4 * w4 + x4]);
-                let base = offset_plane(luma, x_px, y4 * 4);
-                filter_luma_block(&mut luma.pixels, base, 1, ls, bs, params.beta(qp), params.tc(qp, bs));
-            }
-        }
-
-        for y4 in (2..h4).step_by(2) {
-            let y_px = y4 * 4;
-            for x4 in 0..w4 {
-                let bs = grid.bs_h[y4][x4];
-                if bs == 0 {
-                    continue;
-                }
-                let qp = edge_qp(&nt.blocks[(y4 - 1) * w4 + x4], &nt.blocks[y4 * w4 + x4]);
-                let base = offset_plane(luma, x4 * 4, y_px);
-                filter_luma_block(&mut luma.pixels, base, ls, 1, bs, params.beta(qp), params.tc(qp, bs));
-            }
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // Chroma (4:2:0) — edges on the 8x8 *chroma* grid (16 luma samples),
-    // only where bs == 2. Each 4-sample chroma segment takes bs/QP from the
-    // luma 4x4 unit at the start of its corresponding 8-luma-sample span.
-    // -----------------------------------------------------------------------
     let (sub_x, sub_y) = raw.format.get_subsampling();
     if raw.format == crate::hevc_decoder::nal_unit_headers::ChromaFormat::Monochrome
         || sub_x == 0
@@ -368,56 +325,112 @@ pub fn deblock_frame(raw: &mut RawFrame, nt: &BlockMap, params: DeblockParams) {
     {
         return;
     }
+    for (plane, qp_off) in [
+        (&mut raw.cb, params.cb_qp_offset),
+        (&mut raw.cr, params.cr_qp_offset)
+    ] {
+        let cuts = band_cuts(plane.height, threads, 8, 4);
+        let (cw, ch) = (plane.width, plane.height);
+        for_each_band(plane, &cuts, |band| {
+            deblock_chroma_band(band, nt, params, qp_off, (sub_x, sub_y), (cw, ch));
+        });
+    }
+}
+
+/// Luma: vertical edges of the band's rows, then its horizontal edges.
+/// Edges lie on the 8x8 luma grid; each edge is decided and filtered in
+/// 4-sample segments, so every 4x4 unit along the edge is visited.
+fn deblock_luma_band(band: &mut RowBand, nt: &BlockMap, params: DeblockParams) {
+    let w4 = nt.width_in_units;
+    let h4 = nt.height_in_units;
+    let ls = band.stride as isize;
+    let y4s = band.rows.start / 4..(band.rows.end / 4).min(h4);
+
+    for y4 in y4s.clone() {
+        for x4 in (2..w4).step_by(2) {
+            let bs = bs_vertical(nt, x4, y4);
+            if bs == 0 {
+                continue;
+            }
+            let qp = edge_qp(&nt.blocks[y4 * w4 + (x4 - 1)], &nt.blocks[y4 * w4 + x4]);
+            let base = band.index(x4 * 4, y4 * 4);
+            filter_luma_block(band.pixels, base, 1, ls, bs, params.beta(qp), params.tc(qp, bs));
+        }
+    }
+
+    for y4 in y4s.filter(|&y4| y4 >= 2 && y4.is_multiple_of(2)) {
+        for x4 in 0..w4 {
+            let bs = bs_horizontal(nt, x4, y4);
+            if bs == 0 {
+                continue;
+            }
+            let qp = edge_qp(&nt.blocks[(y4 - 1) * w4 + x4], &nt.blocks[y4 * w4 + x4]);
+            let base = band.index(x4 * 4, y4 * 4);
+            filter_luma_block(band.pixels, base, ls, 1, bs, params.beta(qp), params.tc(qp, bs));
+        }
+    }
+}
+
+/// Chroma: edges on the 8x8 *chroma* grid, only where bs == 2. Each 4-sample
+/// chroma segment takes bs/QP from the luma 4x4 unit at its start.
+fn deblock_chroma_band(
+    band: &mut RowBand, nt: &BlockMap, params: DeblockParams, qp_off: i8,
+    (sub_x, sub_y): (usize, usize), (cw, ch): (usize, usize)
+) {
+    let w4 = nt.width_in_units;
+    let h4 = nt.height_in_units;
+    let cs = band.stride as isize;
     // chroma grid spacing expressed in 4x4 luma units
     let step_x = (8 * sub_x) / 4;
-    let step_y = (8 * sub_y) / 4;
     // number of luma 4x4 units covered by one 4-sample chroma segment
     let seg_x = (4 * sub_x) / 4;
-    let seg_y = (4 * sub_y) / 4;
+    let luma_unit = |c: usize| (c * sub_y) / 4;
 
-    for plane_idx in 0..2usize {
-        let cp: &mut SingleFrame = if plane_idx == 0 { &mut raw.cb } else { &mut raw.cr };
-        let qp_off = if plane_idx == 0 { params.cb_qp_offset } else { params.cr_qp_offset };
-        let cs = cp.stride as isize;
-        let (cw, ch) = (cp.width, cp.height);
-
+    // vertical edges: 4-row segments starting on multiples of 4
+    for cy in band.rows.clone().step_by(4) {
+        let y4 = luma_unit(cy);
+        if y4 >= h4 {
+            break;
+        }
         for x4 in (step_x..w4).step_by(step_x) {
+            let bs = bs_vertical(nt, x4, y4);
+            if bs < 2 {
+                continue;
+            }
             let cx = (x4 * 4) / sub_x;
-            for y4 in (0..h4).step_by(seg_y) {
-                let bs = grid.bs_v[y4][x4];
-                if bs < 2 {
-                    continue;
+            let qp = edge_qp(&nt.blocks[y4 * w4 + (x4 - 1)], &nt.blocks[y4 * w4 + x4]);
+            let tc_val = params.tc(chroma_qp(qp, qp_off), 2);
+            for dy in 0..4 {
+                if cy + dy >= ch {
+                    break;
                 }
-                let cy = (y4 * 4) / sub_y;
-                let qp = edge_qp(&nt.blocks[y4 * w4 + (x4 - 1)], &nt.blocks[y4 * w4 + x4]);
-                let tc_val = params.tc(chroma_qp(qp, qp_off), 2);
-                for dy in 0..4 {
-                    if cy + dy >= ch {
-                        break;
-                    }
-                    let base = offset_plane(cp, cx, cy + dy);
-                    filter_chroma_samples(&mut cp.pixels, base, 1, tc_val);
-                }
+                let base = band.index(cx, cy + dy);
+                filter_chroma_samples(band.pixels, base, 1, tc_val);
             }
         }
+    }
 
-        for y4 in (step_y..h4).step_by(step_y) {
-            let cy = (y4 * 4) / sub_y;
-            for x4 in (0..w4).step_by(seg_x) {
-                let bs = grid.bs_h[y4][x4];
-                if bs < 2 {
-                    continue;
+    // horizontal edges: rows that are multiples of 8
+    let first = band.rows.start.next_multiple_of(8).max(8);
+    for cy in (first..band.rows.end).step_by(8) {
+        let y4 = luma_unit(cy);
+        if y4 >= h4 {
+            break;
+        }
+        for x4 in (0..w4).step_by(seg_x) {
+            let bs = bs_horizontal(nt, x4, y4);
+            if bs < 2 {
+                continue;
+            }
+            let cx = (x4 * 4) / sub_x;
+            let qp = edge_qp(&nt.blocks[(y4 - 1) * w4 + x4], &nt.blocks[y4 * w4 + x4]);
+            let tc_val = params.tc(chroma_qp(qp, qp_off), 2);
+            for dx in 0..4 {
+                if cx + dx >= cw {
+                    break;
                 }
-                let cx = (x4 * 4) / sub_x;
-                let qp = edge_qp(&nt.blocks[(y4 - 1) * w4 + x4], &nt.blocks[y4 * w4 + x4]);
-                let tc_val = params.tc(chroma_qp(qp, qp_off), 2);
-                for dx in 0..4 {
-                    if cx + dx >= cw {
-                        break;
-                    }
-                    let base = offset_plane(cp, cx + dx, cy);
-                    filter_chroma_samples(&mut cp.pixels, base, cs, tc_val);
-                }
+                let base = band.index(cx + dx, cy);
+                filter_chroma_samples(band.pixels, base, cs, tc_val);
             }
         }
     }
@@ -428,7 +441,7 @@ pub fn deblock_frame(raw: &mut RawFrame, nt: &BlockMap, params: DeblockParams) {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::hevc_decoder::constants::PartMode;
     use crate::hevc_decoder::neighbor_tracker::{BlockMap, BlockState, PredMode};
@@ -632,15 +645,14 @@ mod tests {
     #[test]
     fn bs_grid_all_intra_gives_bs2_interior() {
         let nt = make_nt_uniform(4, 4, true, 0);
-        let grid = compute_bs_grid(&nt);
         for y4 in 0..4 {
             for x4 in 1..4 {
-                assert_eq!(grid.bs_v[y4][x4], 2, "v[{y4}][{x4}]");
+                assert_eq!(bs_vertical(&nt, x4, y4), 2, "v[{y4}][{x4}]");
             }
         }
         for y4 in 1..4 {
             for x4 in 0..4 {
-                assert_eq!(grid.bs_h[y4][x4], 2, "h[{y4}][{x4}]");
+                assert_eq!(bs_horizontal(&nt, x4, y4), 2, "h[{y4}][{x4}]");
             }
         }
     }
@@ -648,12 +660,11 @@ mod tests {
     #[test]
     fn bs_grid_left_and_top_boundaries_zero() {
         let nt = make_nt_uniform(4, 4, true, 0);
-        let grid = compute_bs_grid(&nt);
         for y4 in 0..4 {
-            assert_eq!(grid.bs_v[y4][0], 0, "left column should be 0");
+            assert_eq!(bs_vertical(&nt, 0, y4), 0, "left column should be 0");
         }
         for x4 in 0..4 {
-            assert_eq!(grid.bs_h[0][x4], 0, "top row should be 0");
+            assert_eq!(bs_horizontal(&nt, x4, 0), 0, "top row should be 0");
         }
     }
 
@@ -667,9 +678,62 @@ mod tests {
                 nt.blocks[y4 * w4 + x4].slice_id = 1;
             }
         }
-        let grid = compute_bs_grid(&nt);
         for y4 in 0..h4 {
-            assert_eq!(grid.bs_v[y4][w4 / 2], 0, "cross-slice edge must be bs=0");
+            assert_eq!(bs_vertical(&nt, w4 / 2, y4), 0, "cross-slice edge must be bs=0");
+        }
+    }
+
+    /// Blocky test picture: a per-8x8 level plus a little noise, so most
+    /// edges pass the filter decisions.
+    pub(crate) fn blocky_frame(w: usize, h: usize, seed: u32) -> RawFrame {
+        use crate::hevc_decoder::nal_unit_headers::ChromaFormat;
+        let mut state = seed;
+        let mut rand = move || {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            state >> 24
+        };
+        let mut raw = RawFrame::new(w, h, ChromaFormat::Yuv420);
+        for plane in [&mut raw.luma, &mut raw.cb, &mut raw.cr] {
+            let levels: Vec<u32> = (0..plane.width.div_ceil(8) * plane.height.div_ceil(8))
+                .map(|_| 60 + rand() % 120)
+                .collect();
+            let w8 = plane.width.div_ceil(8);
+            for y in 0..plane.height {
+                for x in 0..plane.width {
+                    let at = crate::hevc_decoder::raw_frame::offset_plane(plane, x, y);
+                    plane.pixels[at] = (levels[(y / 8) * w8 + x / 8] + rand() % 6) as u8;
+                }
+            }
+        }
+        raw
+    }
+
+    #[test]
+    fn bands_match_whole_picture() {
+        let (w, h) = (136, 200);
+        let mut map = BlockMap::new(w, h, 2);
+        let mut state = 7u32;
+        for (i, b) in map.blocks.iter_mut().enumerate() {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            b.edge_left = (i % map.width_in_units).is_multiple_of(2);
+            b.edge_top = (i / map.width_in_units).is_multiple_of(2);
+            b.is_intra = state >> 31 == 1;
+            b.has_nonzero_coeff = state >> 30 & 1 == 1;
+            b.qp = 30 + (state >> 20 & 15) as i8;
+        }
+        let params = DeblockParams { beta_offset_div2: 2, tc_offset_div2: 2, ..Default::default() };
+
+        let mut whole = blocky_frame(w, h, 1);
+        let before = whole.luma.pixels.clone();
+        deblock_frame(&mut whole, &map, params, 1);
+        assert_ne!(before, whole.luma.pixels, "test picture should get filtered");
+
+        for threads in 2..=9 {
+            let mut banded = blocky_frame(w, h, 1);
+            deblock_frame(&mut banded, &map, params, threads);
+            assert!(whole.luma.pixels == banded.luma.pixels, "luma, {threads} threads");
+            assert!(whole.cb.pixels == banded.cb.pixels, "cb, {threads} threads");
+            assert!(whole.cr.pixels == banded.cr.pixels, "cr, {threads} threads");
         }
     }
 }
