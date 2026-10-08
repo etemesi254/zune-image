@@ -241,6 +241,54 @@ fn baseline_420_one_row_reads_match_decode_with_custom_stride() {
 }
 
 #[test]
+fn read_scanlines_starts_the_session_lazily() {
+    let bytes = include_bytes!("../../../test-images/jpeg/tiny_non_interleaved_444.jpg");
+    let expected = JpegDecoder::new(ZCursor::new(bytes)).decode().unwrap();
+    let row_bytes = expected.len() / 16;
+
+    let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
+    let mut scanlines = decoder.scanline_output();
+    assert_eq!(scanlines.output_row_bytes(), None);
+
+    let mut row = vec![0; row_bytes];
+    assert_eq!(
+        scanlines.read_scanlines(&mut row, row_bytes).unwrap(),
+        ScanlineReadStatus::RowsProcessed { rows: 1 }
+    );
+    assert_eq!(&row, &expected[..row_bytes]);
+    assert_eq!(scanlines.output_row_bytes(), Some(row_bytes));
+    assert_eq!(scanlines.output_height(), Some(16));
+    assert_eq!(scanlines.start().unwrap(), ScanlineStatus::Ready);
+}
+
+#[test]
+fn lazy_scanline_start_suspension_does_not_touch_output() {
+    let bytes = include_bytes!("../../../test-images/jpeg/tiny_non_interleaved_444.jpg");
+    let expected = JpegDecoder::new(ZCursor::new(bytes)).decode().unwrap();
+    let row_bytes = expected.len() / 16;
+    let limit = Rc::new(Cell::new(0));
+    let cursor = GrowableCursor::new(bytes, Rc::clone(&limit));
+    let mut decoder = JpegDecoder::new(cursor);
+    let mut scanlines = decoder.scanline_output();
+    let mut row = vec![0xCD; row_bytes];
+
+    assert_eq!(
+        scanlines.read_scanlines(&mut row, row_bytes).unwrap(),
+        ScanlineReadStatus::NeedMoreInput
+    );
+    assert!(row.iter().all(|byte| *byte == 0xCD));
+    assert_eq!(scanlines.output_scanline(), 0);
+    assert_eq!(scanlines.output_row_bytes(), None);
+
+    limit.set(bytes.len());
+    assert_eq!(
+        scanlines.read_scanlines(&mut row, row_bytes).unwrap(),
+        ScanlineReadStatus::RowsProcessed { rows: 1 }
+    );
+    assert_eq!(&row, &expected[..row_bytes]);
+}
+
+#[test]
 fn baseline_scanlines_match_supported_output_colorspaces() {
     let bytes = include_bytes!("../../../test-images/jpeg/2029.jpg");
     for colorspace in [
