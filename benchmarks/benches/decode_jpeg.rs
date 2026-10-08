@@ -466,6 +466,18 @@ fn decode_jpeg_raw_whole(buf: &[u8]) -> Vec<Vec<u8>> {
     storage
 }
 
+fn decode_jpeg_raw_mozjpeg(buf: &[u8]) -> Vec<Vec<u8>> {
+    let decoder = mozjpeg::Decompress::with_markers(mozjpeg::ALL_MARKERS)
+        .from_mem(buf)
+        .unwrap();
+    let mut image = decoder.raw().unwrap();
+    let mut planes = vec![Vec::new(); image.components().len()];
+    let mut refs: Vec<&mut Vec<u8>> = planes.iter_mut().collect();
+    image.read_raw_data(&mut refs);
+    image.finish().unwrap();
+    planes
+}
+
 fn decode_raw_output(c: &mut Criterion) {
     let baseline =
         read(sample_path().join("test-images/jpeg/benchmarks/speed_bench_hv_subsampling.jpg"))
@@ -492,6 +504,11 @@ fn decode_raw_output(c: &mut Criterion) {
             BenchmarkId::new("progressive raw planes", sampling),
             &progressive,
             |b, data| b.iter(|| black_box(decode_jpeg_raw_whole(data.as_slice())))
+        );
+        group.bench_with_input(
+            BenchmarkId::new("libjpeg-turbo raw planes", sampling),
+            &progressive,
+            |b, data| b.iter(|| black_box(decode_jpeg_raw_mozjpeg(data.as_slice())))
         );
     }
 }
