@@ -674,10 +674,12 @@ pub struct RawDecodeSession<'decoder, T> {
 
 /// Stateful converted scanline output session.
 ///
-/// Obtain a session with [`JpegDecoder::scanline_output`], call [`Self::start`],
-/// then read or skip rows sequentially before finishing. The session uses the
-/// decoder's configured output colorspace and the same upsampling and color
-/// conversion pipeline as [`JpegDecoder::decode_into`].
+/// Obtain a session with [`JpegDecoder::scanline_output`], then read or skip
+/// rows sequentially before finishing. [`Self::read_scanlines`] starts the
+/// session lazily; [`Self::start`] remains available as an optional preflight
+/// when output geometry is needed before allocating row storage. The session
+/// uses the decoder's configured output colorspace and the same upsampling and
+/// color conversion pipeline as [`JpegDecoder::decode_into`].
 ///
 /// Progressive and multi-SOS images do not expose provisional preview rows
 /// through this API. They return [`ScanlineReadStatus::NeedMoreInput`] until
@@ -711,6 +713,8 @@ where
     ///
     /// A suspended start does not advance output and can be retried on the
     /// same session after exposing more input through the underlying reader.
+    /// Calling this explicitly is optional because [`Self::read_scanlines`]
+    /// starts the session lazily.
     pub fn start(&mut self) -> Result<ScanlineStatus, DecodeErrors> {
         if self.decoder.scanline_state.phase == ScanlinePhase::Complete {
             return Ok(ScanlineStatus::Complete);
@@ -768,14 +772,20 @@ where
     /// zero-row operation. If input suspends after some staged rows were copied,
     /// those stable rows are returned first and suspension is reported on a
     /// later call. `Complete` means no logical rows remain; call [`Self::finish`]
-    /// to complete the compressed stream.
+    /// to complete the compressed stream. If [`Self::start`] has not been called,
+    /// this method starts the session first. Header suspension returns
+    /// [`ScanlineReadStatus::NeedMoreInput`] without touching `output`.
     pub fn read_scanlines(
         &mut self, output: &mut [u8], stride: usize
     ) -> Result<ScanlineReadStatus, DecodeErrors> {
         if !self.decoder.scanline_state.started {
-            return Err(DecodeErrors::FormatStatic(
-                "scanline output must be started before reading rows"
-            ));
+            match self.start()? {
+                ScanlineStatus::Ready => {}
+                ScanlineStatus::NeedMoreInput => {
+                    return Ok(ScanlineReadStatus::NeedMoreInput)
+                }
+                ScanlineStatus::Complete => return Ok(ScanlineReadStatus::Complete)
+            }
         }
         let row_bytes = self.output_row_bytes().ok_or(DecodeErrors::FormatStatic(
             "converted output row size overflow"
@@ -2207,8 +2217,11 @@ where
 
     /// Begin an exclusive converted scanline output session.
     ///
-    /// Call [`ScanlineDecodeSession::start`] before reading rows. Recreating a
-    /// session after input suspension preserves decoder-owned scanline state.
+    /// [`ScanlineDecodeSession::read_scanlines`] starts the session lazily.
+    /// Call [`ScanlineDecodeSession::start`] explicitly only when output
+    /// geometry or header errors are needed before the first row request.
+    /// Recreating a session after input suspension preserves decoder-owned
+    /// scanline state.
     pub fn scanline_output(&mut self) -> ScanlineDecodeSession<'_, T> {
         self.abort_raw_pull_sequence();
         if self.scanline_state.phase == ScanlinePhase::Complete {
