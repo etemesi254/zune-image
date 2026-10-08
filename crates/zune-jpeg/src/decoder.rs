@@ -674,7 +674,10 @@ impl Default for RawPullState {
 /// coefficients. Their first row request may therefore consume the complete
 /// compressed image before returning output, but it does not allocate or
 /// convert through a packed RGB frame. Recoverable suspension during that
-/// buffered phase leaves caller planes untouched.
+/// buffered phase leaves caller planes untouched. Because raw output exposes
+/// only final samples, a suspended or cancelled progressive decode discards
+/// partial coefficient state and replays its scans on retry instead of cloning
+/// full coefficient planes for preview preservation.
 pub struct RawDecodeSession<'decoder, T> {
     decoder: &'decoder mut JpegDecoder<T>,
     previous_incremental_mode: bool,
@@ -1421,7 +1424,11 @@ where
 
     fn prepare_pull_scan(&mut self) -> Result<(), DecodeErrors> {
         self.decoder.prepare_for_scan_decode()?;
-        self.decoder.mcu_checkpoints_enabled = true;
+        // Raw progressive output exposes only final component samples. Decode directly into the
+        // coefficient buffers and replay all scans after suspension/cancellation instead of
+        // cloning each active scan's full coefficient planes. Caller output remains untouched
+        // until coefficient decoding completes.
+        self.decoder.mcu_checkpoints_enabled = !self.decoder.is_progressive;
         Ok(())
     }
 
@@ -1630,6 +1637,10 @@ where
         &mut self, planes: &mut [&mut [u8]], strides: &[usize],
         layout: &[PlaneInfo; MAX_COMPONENTS]
     ) -> Result<(), DecodeErrors> {
+        if self.decoder.is_progressive {
+            return self.decode_progressive_whole_with_strides(planes, strides, layout);
+        }
+
         let count = planes.len();
         loop {
             let stripe = self.decoder.raw_pull_state.next_stripe;
@@ -1668,6 +1679,57 @@ where
                 RawImcuRowStatus::Complete => return Ok(())
             }
         }
+    }
+
+    fn decode_progressive_whole_with_strides(
+        &mut self, planes: &mut [&mut [u8]], strides: &[usize],
+        layout: &[PlaneInfo; MAX_COMPONENTS]
+    ) -> Result<(), DecodeErrors> {
+        let count = planes.len();
+        match self.decoder.raw_pull_state.owner {
+            RawPullOwner::None => self.decoder.raw_pull_state.owner = RawPullOwner::WholeImage,
+            RawPullOwner::WholeImage => {}
+            RawPullOwner::Pull => {
+                return Err(DecodeErrors::FormatStatic(
+                    "cannot switch raw output API during an active decode sequence"
+                ))
+            }
+        }
+
+        if !self.decoder.raw_pull_state.buffered_source_complete {
+            self.prepare_pull_scan()?;
+            self.decoder.raw_pull_state.phase = RawPullPhase::BufferedRows;
+            self.decoder.decode_buffered_raw_source(0, layout, count)?;
+            self.decoder.raw_pull_state.buffered_source_complete = true;
+        }
+
+        let mut lengths = [0; MAX_COMPONENTS];
+        let mut target_strides = [0; MAX_COMPONENTS];
+        let mut target_widths = [0; MAX_COMPONENTS];
+        let mut target_heights = [0; MAX_COMPONENTS];
+        for index in 0..count {
+            lengths[index] = planes[index].len();
+            target_strides[index] = strides[index];
+            target_widths[index] = layout[index].width;
+            target_heights[index] = layout[index].height;
+        }
+        let sink = RawPlanesSink {
+            planes,
+            lengths,
+            target_strides,
+            target_widths,
+            target_heights,
+            n_components: count,
+            requested_stripe: None,
+            rows_written: [0; MAX_COMPONENTS],
+            stripe_ready: false,
+            source_complete: false
+        };
+        let mut output = McuDecodeOutput::RawPlanes(sink);
+        self.decoder.render_buffered_output_stripe(&mut output)?;
+        self.decoder.finish_output_source();
+        self.decoder.raw_pull_state.phase = RawPullPhase::Complete;
+        Ok(())
     }
 }
 

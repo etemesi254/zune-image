@@ -11,6 +11,8 @@
 use std::cell::Cell;
 use std::io::{BufRead, Read, Seek, SeekFrom};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use zune_core::bytestream::ZCursor;
 use zune_core::options::DecoderOptions;
@@ -287,6 +289,93 @@ fn progressive_raw_retry_is_atomic_and_exact() {
     limit.set(PROGRESSIVE_420_WEBCODECS.len());
     let mut refs: Vec<&mut [u8]> = actual.iter_mut().map(Vec::as_mut_slice).collect();
     raw.decode_into_planes_strided(&mut refs, &strides).unwrap();
+    assert_logical_planes_equal(&actual, &strides, &expected, &layout, count);
+}
+
+#[test]
+fn progressive_raw_retries_exactly_at_every_scan_cutoff() {
+    let (expected, layout, count) = decode_whole(PROGRESSIVE_420_WEBCODECS);
+    let first_sos = PROGRESSIVE_420_WEBCODECS
+        .windows(2)
+        .position(|marker| marker == [0xFF, 0xDA])
+        .unwrap();
+    let sos_length = usize::from(u16::from_be_bytes([
+        PROGRESSIVE_420_WEBCODECS[first_sos + 2],
+        PROGRESSIVE_420_WEBCODECS[first_sos + 3]
+    ]));
+    let scan_start = first_sos + 2 + sos_length;
+
+    for cutoff in scan_start..PROGRESSIVE_420_WEBCODECS.len() {
+        let limit = Rc::new(Cell::new(cutoff));
+        let cursor = GrowableCursor::new(PROGRESSIVE_420_WEBCODECS, Rc::clone(&limit));
+        let mut decoder = JpegDecoder::new(cursor);
+        decoder.decode_headers().unwrap();
+        let mut raw = decoder.raw_output();
+        let strides: Vec<usize> = layout[..count].iter().map(|plane| plane.width + 3).collect();
+        let mut actual: Vec<Vec<u8>> = layout[..count]
+            .iter()
+            .enumerate()
+            .map(|(index, plane)| vec![0xCD; strides[index] * plane.height])
+            .collect();
+        let mut refs: Vec<&mut [u8]> = actual.iter_mut().map(Vec::as_mut_slice).collect();
+        match raw.decode_into_planes_strided(&mut refs, &strides) {
+            Ok(()) => {}
+            Err(error) if error.is_recoverable_eof() => {
+                assert!(
+                    actual
+                        .iter()
+                        .all(|plane| plane.iter().all(|byte| *byte == 0xCD)),
+                    "cutoff {cutoff} modified caller planes"
+                );
+                limit.set(PROGRESSIVE_420_WEBCODECS.len());
+                let mut refs: Vec<&mut [u8]> =
+                    actual.iter_mut().map(Vec::as_mut_slice).collect();
+                raw.decode_into_planes_strided(&mut refs, &strides)
+                    .unwrap();
+            }
+            Err(error) => panic!("cutoff {cutoff}: {error:?}")
+        }
+        assert_logical_planes_equal(&actual, &strides, &expected, &layout, count);
+    }
+}
+
+#[test]
+fn progressive_raw_cancellation_discards_partial_scans_and_retries() {
+    let (expected, layout, count) = decode_whole(PROGRESSIVE_420_WEBCODECS);
+    let polls = Arc::new(AtomicUsize::new(0));
+    let cancel_at = Arc::new(AtomicUsize::new(10));
+    let callback_polls = Arc::clone(&polls);
+    let callback_cancel_at = Arc::clone(&cancel_at);
+    let mut decoder = JpegDecoder::new(ZCursor::new(PROGRESSIVE_420_WEBCODECS));
+    decoder.decode_headers().unwrap();
+    decoder.set_cancel(move || {
+        callback_polls.fetch_add(1, Ordering::SeqCst)
+            >= callback_cancel_at.load(Ordering::SeqCst)
+    });
+    decoder.set_cancel_interval(1);
+    let mut raw = decoder.raw_output();
+    let strides: Vec<usize> = layout[..count].iter().map(|plane| plane.width + 5).collect();
+    let mut actual: Vec<Vec<u8>> = layout[..count]
+        .iter()
+        .enumerate()
+        .map(|(index, plane)| vec![0xCD; strides[index] * plane.height])
+        .collect();
+    let mut refs: Vec<&mut [u8]> = actual.iter_mut().map(Vec::as_mut_slice).collect();
+    assert!(matches!(
+        raw.decode_into_planes_strided(&mut refs, &strides),
+        Err(zune_jpeg::errors::DecodeErrors::Cancelled)
+    ));
+    assert!(polls.load(Ordering::SeqCst) > 10);
+    assert!(
+        actual
+            .iter()
+            .all(|plane| plane.iter().all(|byte| *byte == 0xCD))
+    );
+
+    cancel_at.store(usize::MAX, Ordering::SeqCst);
+    let mut refs: Vec<&mut [u8]> = actual.iter_mut().map(Vec::as_mut_slice).collect();
+    raw.decode_into_planes_strided(&mut refs, &strides)
+        .unwrap();
     assert_logical_planes_equal(&actual, &strides, &expected, &layout, count);
 }
 
