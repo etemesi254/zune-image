@@ -41,7 +41,9 @@
 //!
 //! `scanline_output()` provides sequential converted rows without allocating a
 //! full internal pixel image. It uses the decoder's configured output
-//! colorspace and supports caller-selected row stride.
+//! colorspace and supports caller-selected row stride. `read_scanlines()` starts
+//! the session lazily; call `start()` explicitly only when output geometry or
+//! header errors are needed before allocating row storage.
 //!
 //! ```no_run
 //! use zune_core::bytestream::ZCursor;
