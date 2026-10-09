@@ -506,7 +506,7 @@ fn decode_raw_output(c: &mut Criterion) {
             |b, data| b.iter(|| black_box(decode_jpeg_raw_whole(data.as_slice())))
         );
         group.bench_with_input(
-            BenchmarkId::new("libjpeg-turbo raw planes", sampling),
+            BenchmarkId::new("MozJPEG raw planes", sampling),
             &progressive,
             |b, data| b.iter(|| black_box(decode_jpeg_raw_mozjpeg(data.as_slice())))
         );

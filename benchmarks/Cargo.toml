@@ -24,6 +24,7 @@ zune-png = { path = "../crates/zune-png" }
 # JPEG benchmarks
 core_affinity = "0.8.3"
 mozjpeg = "0.10.5"
+turbojpeg = "1.5.1"
 zune-jpeg = { path = "../crates/zune-jpeg", features = [] }
 
 #other format
@@ -60,6 +61,10 @@ harness = false
 
 [[bench]]
 name = "decode_jpeg"
+harness = false
+
+[[bench]]
+name = "decode_jpeg_turbo"
 harness = false
 
 [[bench]]
