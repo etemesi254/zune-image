@@ -300,7 +300,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 if cancel.is_cancelled() {
                     return Err(DecodeErrors::Cancelled);
                 }
-                if stream.overread_by() > 0 {
+                if stream.consumed_past_end() {
                     if self.scan_eof_is_error() {
                         return Err(DecodeErrors::ExhaustedData);
                     }
@@ -329,6 +329,14 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 if self.mcu_checkpoints_enabled
                     && !self.is_progressive
                     && B::supports_mcu_checkpoint()
+                    // A checkpoint saved past the end of the visible input cannot be
+                    // resumed: restoring its bitstream state would go on claiming the
+                    // data ended at the saved cursor, which stops being true the
+                    // moment the caller grows the input. Rows decoded from bits that
+                    // were buffered when the input ended are not stable either
+                    // (`pixels_decoded` is not advanced for them below), so resuming
+                    // from the last clean row loses nothing.
+                    && stream.overread_by() == 0
                 {
                     let dc_predictions = core::array::from_fn(|idx| {
                         self.components
