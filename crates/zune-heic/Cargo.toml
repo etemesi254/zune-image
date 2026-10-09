@@ -14,13 +14,22 @@ simd = []
 # VideoToolbox decoder. Without it the crate is `#![no_std]` (+ `alloc`).
 std = ["zune-core/std"]
 default = ["std"]
+# `HeifDecoder::decode_tiles_yuv`: each coded image's HEVC bitstream and its
+# decoded planes, for checking the HEVC decoder against a reference decoder
+dump-tiles = []
 
 
 [dev-dependencies]
+# reads libheif's PNG output in examples/compare_libheif.rs
+zune-png = { path = "../zune-png" }
 criterion = "0.8.2"
 heic = { version = "0.1.4",features = ["parallel"] }
 
 
+
+[[example]]
+name = "dump_tiles"
+required-features = ["dump-tiles"]
 
 [[bench]]
 name = "heif_bench"

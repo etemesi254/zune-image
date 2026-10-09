@@ -22,7 +22,7 @@ mod deblocker;
 mod idct;
 mod macros;
 pub(crate) mod nal_parser;
-mod nal_unit_headers;
+pub(crate) mod nal_unit_headers;
 mod nal_unit_parsers;
 mod neighbor_tracker;
 mod quadtree;
@@ -82,6 +82,28 @@ impl HevcDecoder {
     #[must_use]
     pub fn height(&self) -> usize {
         self.height
+    }
+
+    /// Conformance window of the most recently parsed sequence parameter set,
+    /// in luma samples: `(left, right, top, bottom)`.
+    #[cfg(feature = "dump-tiles")]
+    pub(crate) fn conformance_window(&self) -> (usize, usize, usize, usize) {
+        let Some(sps) = self.sps_storage.get(self.sps_id).and_then(Option::as_ref) else {
+            return (0, 0, 0, 0);
+        };
+        let (sx, sy) = sps.chroma_format.get_subsampling();
+        let luma = |offset: u64, sub: usize| offset as usize * sub;
+        (
+            luma(sps.conf_win_left_offset, sx),
+            luma(sps.conf_win_right_offset, sx),
+            luma(sps.conf_win_top_offset, sy),
+            luma(sps.conf_win_bottom_offset, sy)
+        )
+    }
+
+    /// VUI of the most recently parsed sequence parameter set, if it has one
+    pub(crate) fn vui(&self) -> Option<&nal_unit_headers::Vui> {
+        self.sps_storage.get(self.sps_id)?.as_ref()?.vui.as_ref()
     }
 
     pub fn decode(&mut self, sample: &HevcSample) -> Result<Option<RawFrame>, NalError> {

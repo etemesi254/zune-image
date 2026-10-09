@@ -35,6 +35,7 @@ extern crate core;
 #[cfg(feature = "std")]
 #[allow(unsafe_code)] // FFI to Apple VideoToolbox
 mod apple_videotoolbox;
+mod colour;
 mod decoder;
 mod errors;
 mod header_structs;
@@ -46,4 +47,6 @@ mod utils;
 pub extern crate zune_core;
 
 pub use decoder::HeifDecoder;
+#[cfg(feature = "dump-tiles")]
+pub use decoder::DecodedTile;
 pub use errors::HeicErrors;

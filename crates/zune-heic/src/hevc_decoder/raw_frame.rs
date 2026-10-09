@@ -4,7 +4,7 @@ use crate::utils::Lock;
 
 use crate::hevc_decoder::nal_parser::NalError;
 use crate::hevc_decoder::nal_unit_headers::{ChromaFormat, Sps};
-use crate::hevc_decoder::utils::ycbcr_to_rgb_inner_16_scalar;
+use crate::colour::{ColourInfo, Conversion};
 
 pub struct SingleFrame {
     pub pixels:  Vec<u8>,
@@ -334,6 +334,28 @@ impl<'a> PlaneBand<'a> {
 }
 
 impl RawFrame {
+    /// The decoded planes (Y, then Cb and Cr if present), each cropped to the
+    /// conformance `window` (`(left, right, top, bottom)` in luma samples),
+    /// concatenated: the layout reference decoders such as `dec265 -o` write.
+    #[cfg(feature = "dump-tiles")]
+    pub(crate) fn planar_yuv(&self, window: (usize, usize, usize, usize)) -> Vec<u8> {
+        let (left, right, top, bottom) = window;
+        let (sx, sy) = self.format.get_subsampling();
+        let mut out = Vec::new();
+        for (plane, (sub_x, sub_y)) in [(&self.luma, (1, 1)), (&self.cb, (sx, sy)), (&self.cr, (sx, sy))] {
+            if plane.pixels.is_empty() {
+                continue;
+            }
+            let (x0, x1) = (left / sub_x, plane.width.saturating_sub(right / sub_x));
+            let (y0, y1) = (top / sub_y, plane.height.saturating_sub(bottom / sub_y));
+            for y in y0..y1 {
+                let row = offset_plane(plane, 0, y);
+                out.extend_from_slice(&plane.pixels[row + x0..row + x1]);
+            }
+        }
+        out
+    }
+
     /// Converts planar YUV 4:2:0 to RGB and writes it into the provided slice.
     /// Expects `out_rgb` to have a length of at least `width * height * 3`.
     pub fn write_rgb_420(&self, out_rgb: &mut [u8]) -> Result<(), NalError> {
@@ -349,7 +371,13 @@ impl RawFrame {
         }
         let rows: Vec<Lock<&mut [u8]>> =
             out_rgb[..expected_len].chunks_mut(width * 3).map(Lock::new).collect();
-        self.write_into_canvas(&rows, 0, 0, width, height, 3)
+        // full-range Rec. 601, for debugging output
+        let conv = Conversion::new(ColourInfo {
+            matrix_coefficients: 2,
+            colour_primaries:    2,
+            full_range:          true
+        });
+        self.write_into_canvas(&rows, 0, 0, width, height, 3, &conv)
     }
 
     /// Converts this frame to interleaved pixels and writes it straight into
@@ -361,10 +389,12 @@ impl RawFrame {
     /// frame that is visible inside the `canvas_w x canvas_h` canvas is
     /// converted; anything overhanging the right/bottom edge is skipped.
     ///
-    /// `channels` may be 1 (luma only), 3 (RGB) or 4 (RGB + opaque alpha).
+    /// `channels` may be 1 (luma only), 3 (RGB) or 4 (RGB + opaque alpha);
+    /// `conv` is the YCbCr → RGB conversion for this frame.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn write_into_canvas(
         &self, canvas_rows: &[Lock<&mut [u8]>], x_off: usize, y_off: usize, canvas_w: usize,
-        canvas_h: usize, channels: usize
+        canvas_h: usize, channels: usize, conv: &Conversion
     ) -> Result<(), NalError> {
         if !matches!(channels, 1 | 3 | 4) {
             return Err(NalError::Generic(format!(
@@ -388,7 +418,7 @@ impl RawFrame {
                     let dst = dst_row
                         .get_mut(x_off * channels..(x_off + vis_w) * channels)
                         .ok_or_else(|| NalError::Generic("Canvas row too short".to_string()))?;
-                    convert_row(self.format, luma, cb, cr, row, vis_w, dst, channels);
+                    convert_row(self.format, luma, cb, cr, row, vis_w, dst, channels, conv);
                     Ok::<(), NalError>(())
                 })?;
         }
@@ -397,93 +427,38 @@ impl RawFrame {
 }
 
 /// Convert the first `vis_w` pixels of row `row` into `dst`
-/// (`vis_w * channels` bytes).
+/// (`vis_w * channels` bytes). Chroma is upsampled nearest-neighbour.
 #[allow(clippy::too_many_arguments)]
 fn convert_row(
     format: ChromaFormat, luma: &SingleFrame, cb: &SingleFrame, cr: &SingleFrame, row: usize,
-    vis_w: usize, dst: &mut [u8], channels: usize
+    vis_w: usize, dst: &mut [u8], channels: usize, conv: &Conversion
 ) {
     let y_row_base = (row + luma.padding) * luma.stride + luma.padding;
+    let y_row = &luma.pixels[y_row_base..y_row_base + vis_w];
+    let dst = &mut dst[..vis_w * channels];
 
     if channels == 1 {
-        dst[..vis_w].copy_from_slice(&luma.pixels[y_row_base..y_row_base + vis_w]);
+        dst.copy_from_slice(y_row);
         return;
     }
 
-    let width = luma.width;
-    let (sub_x, sub_y) = format.get_subsampling();
-    let is_monochrome = cb.pixels.is_empty() || cr.pixels.is_empty();
-    let c_row_base =
-        if is_monochrome { 0 } else { (row / sub_y + cb.padding) * cb.stride + cb.padding };
-
-    let mut cb_chunk = [128i16; 16];
-    let mut cr_chunk = [128i16; 16];
-    let mut temp = [0u8; 48];
-
-    let full_chunks = vis_w / 16;
-    let mut out_pos = 0usize;
-
-    // full 16-pixel chunks plus one (clamped) partial chunk for the remainder
-    let total_chunks = vis_w.div_ceil(16);
-    for chunk in 0..total_chunks {
-        let x_base = chunk * 16;
-        let is_full = chunk < full_chunks;
-
-        let y_chunk: [i16; 16] = if is_full {
-            let y_src = &luma.pixels[y_row_base + x_base..][..16];
-            core::array::from_fn(|i| i16::from(y_src[i]))
-        } else {
-            core::array::from_fn(|i| {
-                let clamped_x = (x_base + i).min(width - 1);
-                i16::from(luma.pixels[y_row_base + clamped_x])
-            })
-        };
-
-        if !is_monochrome && is_full && sub_x == 2 {
-            // 4:2:0 / 4:2:2: 8 chroma samples, each duplicated horizontally
-            let cx_base = c_row_base + x_base / 2;
-            let cb_src = &cb.pixels[cx_base..][..8];
-            let cr_src = &cr.pixels[cx_base..][..8];
-            for i in 0..8 {
-                cb_chunk[2 * i] = i16::from(cb_src[i]);
-                cb_chunk[2 * i + 1] = i16::from(cb_src[i]);
-                cr_chunk[2 * i] = i16::from(cr_src[i]);
-                cr_chunk[2 * i + 1] = i16::from(cr_src[i]);
-            }
-        } else if !is_monochrome {
-            for i in 0..16 {
-                let x_c = ((x_base + i) / sub_x).min(cb.width - 1);
-                cb_chunk[i] = i16::from(cb.pixels[c_row_base + x_c]);
-                cr_chunk[i] = i16::from(cr.pixels[c_row_base + x_c]);
-            }
-        }
-
-        let n_px = if is_full { 16 } else { vis_w - x_base };
-
-        if channels == 3 && is_full {
-            // write straight into the destination
-            ycbcr_to_rgb_inner_16_scalar::<false>(&y_chunk, &cb_chunk, &cr_chunk, dst, &mut out_pos);
-            continue;
-        }
-
-        let mut temp_pos = 0usize;
-        ycbcr_to_rgb_inner_16_scalar::<false>(&y_chunk, &cb_chunk, &cr_chunk, &mut temp, &mut temp_pos);
-
-        if channels == 3 {
-            dst[out_pos..out_pos + n_px * 3].copy_from_slice(&temp[..n_px * 3]);
-            out_pos += n_px * 3;
-        } else {
-            // RGBA: alpha is not decoded yet, emit opaque pixels
-            for (px, rgb) in dst[out_pos..out_pos + n_px * 4]
-                .chunks_exact_mut(4)
-                .zip(temp.chunks_exact(3))
-            {
-                px[..3].copy_from_slice(rgb);
+    if cb.pixels.is_empty() || cr.pixels.is_empty() {
+        // monochrome: R = G = B = Y
+        for (px, &y) in dst.chunks_exact_mut(channels).zip(y_row) {
+            px[..3].fill(y);
+            if channels == 4 {
                 px[3] = 255;
             }
-            out_pos += n_px * 4;
         }
+        return;
     }
+
+    let (sub_x, sub_y) = format.get_subsampling();
+    let c_row_base = (row / sub_y + cb.padding) * cb.stride + cb.padding;
+    let cb_row = &cb.pixels[c_row_base..c_row_base + cb.width];
+    let cr_row = &cr.pixels[c_row_base..c_row_base + cr.width];
+    // alpha is not decoded yet: RGBA output gets opaque pixels
+    conv.convert_row(y_row, cb_row, cr_row, sub_x, dst, channels);
 }
 
 #[cfg(feature = "std")]

@@ -7,6 +7,7 @@ use zune_core::log::trace;
 use zune_core::options::DecoderOptions;
 
 use zune_isobmff::{BoxHeader, BoxSize};
+use crate::colour::{ColourInfo, Conversion};
 use crate::errors::HeicErrors;
 use crate::header_structs::{
     ColourInformation, FtypHeader, ItemProperty, MDatSection, MetaSection,
@@ -17,6 +18,20 @@ use crate::hevc_decoder::nal_parser::NalFraming;
 use crate::processor::HevcSample;
 use crate::utils::Lock;
 
+
+/// One coded image (the primary image, or one grid tile) and what zune-heic
+/// decoded from it; see [`HeifDecoder::decode_tiles_yuv`].
+#[cfg(feature = "dump-tiles")]
+pub struct DecodedTile {
+    /// The HEIF item id of the coded image
+    pub item_id: u32,
+    /// Its HEVC bitstream in Annex B form (VPS, SPS, PPS, then the slices),
+    /// ready for a stand-alone HEVC decoder
+    pub hevc:    Vec<u8>,
+    /// The decoded planes, Y then Cb and Cr, each cropped to the conformance
+    /// window: what `dec265 -o` writes for the same bitstream
+    pub yuv:     Vec<u8>
+}
 
 /// A HEIF/Heic Decoder Instance
 pub struct HeifDecoder<T> {
@@ -423,6 +438,10 @@ where
                 placements.entry(item_id).or_default().push(index);
             }
             let cols = (self.cols as usize).max(1);
+            // colour description from each item's own `colr` (nclx) box
+            let item_nclx = self.item_nclx_profiles();
+            // conversions built so far, shared by all tiles (usually just one)
+            let conversions: Lock<Vec<(ColourInfo, Conversion)>> = Lock::new(Vec::new());
 
             // Apple VideoToolbox: hardware decode, tiles written straight into
             // the same canvas from the decode callback.
@@ -480,10 +499,24 @@ where
                         msg: format!("Decoded tile {} has no grid position", sample.item_id),
                     })?;
 
+                    // Like libheif: the item's nclx box, else the HEVC VUI
+                    let colour = item_nclx
+                        .get(&sample.item_id)
+                        .copied()
+                        .unwrap_or_else(|| ColourInfo::from_vui(software_decoder.vui()));
+                    let conv = conversions.with(|built| {
+                        if let Some((_, conv)) = built.iter().find(|(info, _)| *info == colour) {
+                            return conv.clone();
+                        }
+                        let conv = Conversion::new(colour);
+                        built.push((colour, conv.clone()));
+                        conv
+                    });
+
                     for &index in positions {
                         let base_x = (index % cols) * tile_w;
                         let base_y = (index / cols) * tile_h;
-                        frame.write_into_canvas(&canvas_rows, base_x, base_y, w, h, colors)?;
+                        frame.write_into_canvas(&canvas_rows, base_x, base_y, w, h, colors, &conv)?;
                     }
                     Ok(())
                 };
@@ -688,6 +721,93 @@ where
         self.colorspace
     }
     /// Return the image exif data if present
+    /// Decode every coded image of the primary item on its own and return
+    /// its HEVC bitstream together with the decoded (pre colour conversion)
+    /// planes, for checking the HEVC decoder against a reference decoder.
+    /// Each image is decoded with as many threads as there are CPUs.
+    ///
+    /// Only available with the `dump-tiles` feature.
+    #[cfg(feature = "dump-tiles")]
+    pub fn decode_tiles_yuv(&mut self) -> Result<Vec<DecodedTile>, HeicErrors> {
+        use crate::hevc_decoder::nal_parser::NalParser;
+
+        self.decode_headers()?;
+        let mut tiles = Vec::new();
+        self.process_hevc_samples(|sample| {
+            let missing = |what: &str| HeicErrors::Generic {
+                msg: format!("{what} not found")
+            };
+            let parameter_sets = [
+                sample.vps.as_deref().ok_or_else(|| missing("vps"))?,
+                sample.sps.as_deref().ok_or_else(|| missing("sps"))?,
+                sample.pps.as_deref().ok_or_else(|| missing("pps"))?
+            ];
+
+            let mut decoder = HevcDecoder::new();
+            // all CPUs, so the multi-threaded paths are covered as well
+            #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+            decoder.set_max_threads(
+                std::thread::available_parallelism().map_or(1, core::num::NonZero::get)
+            );
+            let mut hevc = Vec::new();
+            for ps in parameter_sets {
+                decoder.parse_extradata(ps, NalFraming::RawBytes)?;
+                hevc.extend_from_slice(&[0, 0, 0, 1]);
+                hevc.extend_from_slice(ps);
+            }
+            NalParser::new_detect(&sample.extents).for_each_nal(|nal| {
+                // rebuild the 2-byte NAL header in front of the payload
+                hevc.extend_from_slice(&[
+                    0,
+                    0,
+                    0,
+                    1,
+                    ((nal.nal_type as u8) << 1) | (nal.layer_id >> 5),
+                    ((nal.layer_id & 0x1f) << 3) | (nal.temporal_id + 1)
+                ]);
+                hevc.extend_from_slice(nal.payload);
+                Ok(true)
+            })?;
+
+            let frame = decoder.decode(&sample)?.ok_or(HeicErrors::Generic {
+                msg: "decode failure, no frame found".to_string()
+            })?;
+            tiles.push(DecodedTile {
+                item_id: sample.item_id,
+                hevc,
+                yuv: frame.planar_yuv(decoder.conformance_window())
+            });
+            Ok(())
+        })?;
+        Ok(tiles)
+    }
+
+    /// The `colr` box of type `nclx` of every item that has one.
+    fn item_nclx_profiles(&self) -> BTreeMap<u32, ColourInfo> {
+        let mut profiles = BTreeMap::new();
+        let Some(iprp) = self.meta_section.as_ref().and_then(|m| m.iprp.as_ref()) else {
+            return profiles;
+        };
+        let (Some(ipma), Some(ipco)) = (&iprp.ipma, &iprp.ipco) else {
+            return profiles;
+        };
+        for entry in &ipma.entries {
+            // property_index is 1-based, 0 means "none"
+            let nclx = entry
+                .associations
+                .iter()
+                .filter_map(|a| ipco.properties.get(usize::from(a.property_index).checked_sub(1)?))
+                .find_map(|p| match p {
+                    ItemProperty::Colr(c) => ColourInfo::from_colr(c),
+                    _ => None,
+                });
+            if let Some(nclx) = nclx {
+                profiles.insert(entry.item_id, nclx);
+            }
+        }
+        profiles
+    }
+
     pub fn exif_data(&self) -> Option<&Vec<u8>> {
         self.exif_data.as_ref()
     }

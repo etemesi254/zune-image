@@ -1,0 +1,100 @@
+name: HEIC conformance
+
+# zune-heic must decode bit-identically to libheif:
+#
+#  * RGB:  zune-heic's output vs `heif-convert` (libheif) PNGs, byte for byte.
+#  * YUV:  every coded image (grid tile) decoded by zune-heic vs libde265's
+#          `dec265` on the same HEVC bitstream, before any colour conversion.
+#
+# The runner is pinned to Ubuntu 24.04 on purpose: it ships libheif 1.17.6 and
+# libde265 1.0.15, and zune-heic's YCbCr -> RGB follows libheif 1.17 exactly.
+# Moving to a newer image (and so a newer libheif) needs a re-check.
+
+on:
+  push:
+    branches: [ "main", "dev" ]
+    paths:
+      - "crates/zune-heic/**"
+      - "crates/zune-isobmff/**"
+      - "crates/zune-core/**"
+      - ".github/workflows/heic_conformance.yml"
+  pull_request:
+    branches: [ "main", "dev" ]
+    paths:
+      - "crates/zune-heic/**"
+      - "crates/zune-isobmff/**"
+      - "crates/zune-core/**"
+      - ".github/workflows/heic_conformance.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  SAMPLES: crates/zune-heic/fuzz-samples
+
+jobs:
+  libheif:
+    name: Bit-identical to libheif
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install libheif and libde265
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libheif-examples libheif-plugin-libde265 libde265-examples
+          heif-convert --version
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build
+        run: >-
+          cargo build --release -p zune-heic --features dump-tiles
+          --example compare_libheif --example dump_tiles
+
+      - name: RGB identical to libheif
+        run: |
+          out=$(mktemp -d)
+          status=0
+          for f in "$SAMPLES"/*; do
+            n=$(basename "$f")
+            heif-convert --quiet "$f" "$out/$n.png"
+            target/release/examples/compare_libheif "$f" "$out/$n.png" || status=1
+          done
+          exit $status
+
+      - name: YUV identical to libde265
+        run: |
+          out=$(mktemp -d)
+          status=0
+          for f in "$SAMPLES"/*; do
+            n=$(basename "$f")
+            target/release/examples/dump_tiles "$f" "$out/$n" > /dev/null
+            total=0
+            bad=0
+            for h in "$out/$n"/*.hevc; do
+              total=$((total + 1))
+              tile=${h%.hevc}
+              libde265-dec265 -q -o "$tile.ref.yuv" "$h" > /dev/null 2>&1 || true
+              if ! cmp -s "$tile.ref.yuv" "$tile.yuv"; then
+                bad=$((bad + 1))
+                echo "     tile $(basename "$tile") differs"
+              fi
+            done
+            if [ "$bad" -eq 0 ]; then
+              echo "OK   $n: $total coded image(s) identical to libde265"
+            else
+              echo "FAIL $n: $bad of $total coded image(s) differ"
+              status=1
+            fi
+          done
+          exit $status
