@@ -621,6 +621,21 @@ where
         self.decoder.raw_component_ids()
     }
 
+    /// Quantization table of each component, in SOF declaration order.
+    ///
+    /// Each table holds the 64 values of the DQT marker the component's SOF
+    /// entry selects, in natural (row-major) coefficient order rather than
+    /// the zig-zag order they are stored in. Together with the raw planes,
+    /// this lets a caller reason about the precision the encoder kept for
+    /// each component.
+    ///
+    /// Returns `None` when headers have not been decoded yet, contain no
+    /// components, or a component selects a table that was never defined.
+    #[must_use]
+    pub fn quantization_tables(&self) -> Option<Vec<[u16; 64]>> {
+        self.decoder.raw_quantization_tables()
+    }
+
     /// Per-component raw plane geometry and sampling metadata.
     ///
     /// Indices `0..num_components()` are populated in SOF declaration order;
@@ -2950,6 +2965,21 @@ where
             return None;
         }
         Some(self.components.iter().map(|component| component.id).collect())
+    }
+
+    fn raw_quantization_tables(&self) -> Option<Vec<[u16; 64]>> {
+        if !self.headers_decoded || self.components.is_empty() {
+            return None;
+        }
+        self.components
+            .iter()
+            .map(|component| {
+                let table =
+                    self.qt_tables[usize::from(component.quantization_table_number)].as_ref()?;
+                // DQT values are 8 or 16 bit, so they always fit.
+                Some(table.map(|value| value as u16))
+            })
+            .collect()
     }
 
     /// Copy one MCU stripe (`mcu_stripe_index`) of post-IDCT samples from
