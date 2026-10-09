@@ -104,6 +104,28 @@ fn bgra_matches_rgba_with_red_and_blue_reversed_and_opaque_alpha() {
 }
 
 #[test]
+fn bgr_decode_into_replay_is_stable() {
+    fn assert_replay_stable(name: &str, data: &[u8]) {
+        let options = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::BGR);
+        let mut decoder = JpegDecoder::new_with_options(ZCursor::new(data), options);
+        decoder.decode_headers().unwrap();
+        let mut first = vec![0; decoder.output_buffer_size().unwrap()];
+        decoder.decode_into(&mut first).unwrap();
+        let mut replay = vec![0; decoder.output_buffer_size().unwrap()];
+        decoder.decode_into(&mut replay).unwrap();
+        assert_eq!(replay, first, "{name}");
+    }
+
+    for (name, data, _) in FIXTURES {
+        assert_replay_stable(name, data);
+    }
+    assert_replay_stable(
+        "malformed progressive checkpoint replay",
+        include_bytes!("../../../test-images/jpeg/progressive_replay_checkpoint.jpg")
+    );
+}
+
+#[test]
 fn luma_matches_y_of_ycbcr_for_vertically_sampled_images() {
     // Grayscale output of a vertically sampled image must be its Y channel, not other rows.
     let fixtures: [(&str, &[u8], (usize, usize)); 3] = [

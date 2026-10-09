@@ -54,6 +54,12 @@ bodies, including baseline multi-SOS / non-interleaved images. Those images may
 still report no stable output rows until the later component scans have been
 decoded and final assembly has run.
 
+Progressive Huffman scans checkpoint after each completed MCU. DC-first,
+DC-refinement, AC-first, and AC-refinement scans therefore resume without
+reapplying an incomplete MCU. Arithmetic entropy decoding does not support an
+equivalent state snapshot, so progressive arithmetic retries replay from the
+current scan start.
+
 Scan checkpoints store only scalar resume state: stream position, next MCU
 row/column, restart countdown, SOS parameters, DC predictors, and bitstream
 state. Coefficients for already-decoded component scans stay on the decoder

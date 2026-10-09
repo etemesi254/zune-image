@@ -107,3 +107,19 @@ Caches (sum of all):
 ```
 
 Benchmark results found in [Benchmark Results](./benchmark-results.md)
+
+### Incremental JPEG retry cost
+
+`decode_jpeg` measures zune-jpeg work across three recoverable EOF results and
+a final successful retry. Run the focused group with:
+
+```shell
+cargo bench -p zune-benches --bench decode_jpeg -- "jpeg: Repeated incremental retry cost"
+```
+
+The baseline case resumes from its latest completed MCU row. The progressive
+cases measure first-DC and AC-refinement scans resuming from their latest
+completed MCU transaction. Correctness tests separately assert each checkpoint
+boundary. This group does not compare suspension against mozjpeg because its
+Rust API does not expose a suspending source manager; the other progressive
+decode groups retain the one-shot zune-jpeg/mozjpeg comparison.
