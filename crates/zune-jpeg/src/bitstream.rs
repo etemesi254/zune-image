@@ -606,8 +606,16 @@ impl BitStream for BitStreamHuffman {
                         while next_byte == 0xFF {
                             next_byte = u64::from(reader.read_u8());
                         }
-
-                        if next_byte != 0x00 {
+                    }
+                    // read_u8 gives 0 once the input runs out. That 0 is not a stuffed
+                    // byte: the 0xFF bytes may be fill bytes before a marker that has
+                    // not arrived yet. Count it as an over-read so the scan stops (or,
+                    // in incremental mode, retries) instead of decoding a 0xFF data byte.
+                    if next_byte == 0x00 {
+                        self.overread_by += usize::from(reader.eof()?);
+                    }
+                    if next_byte != 0x00 {
+                        {
                             // Undo the byte append and return
                             $buffer >>= 8;
                             $bits_left -= 8;
