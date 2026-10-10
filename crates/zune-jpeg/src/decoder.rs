@@ -2971,11 +2971,11 @@ where
         if !self.headers_decoded || self.components.is_empty() {
             return None;
         }
+        let qt_tables = &self.scan_state.as_deref()?.header_snapshot.qt_tables;
         self.components
             .iter()
             .map(|component| {
-                let table =
-                    self.qt_tables[usize::from(component.quantization_table_number)].as_ref()?;
+                let table = qt_tables[usize::from(component.quantization_table_number)].as_ref()?;
                 // DQT values are 8 or 16 bit, so they always fit.
                 Some(table.map(|value| value as u16))
             })
