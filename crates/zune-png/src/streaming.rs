@@ -285,11 +285,14 @@ where
                 // this elides 2 bounds check 1. That x_spc_bytes is not zero,
                 // 2. that the copy on out chunk will succeed correctly
                 if { $b_size } <= x_spc_bytes {
-                    for (src_pixel, out_chunk) in src_pixels
-                        .chunks_exact($b_size)
-                        .zip(out_space.chunks_exact_mut(x_spc_bytes))
-                    {
+                    let mut src_iter = src_pixels.chunks_exact($b_size);
+                    let mut out_chunks = out_space.chunks_exact_mut(x_spc_bytes);
+                    for (out_chunk, src_pixel) in out_chunks.by_ref().zip(src_iter.by_ref()) {
                         out_chunk[..$b_size].copy_from_slice(src_pixel);
+                    }
+                    // the last pixel of a pass can end less than a stride before the row end
+                    if let Some(src_pixel) = src_iter.next() {
+                        out_chunks.into_remainder()[..$b_size].copy_from_slice(src_pixel);
                     }
                 }
             };
