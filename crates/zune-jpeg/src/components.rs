@@ -32,6 +32,22 @@ pub type UpSampler = fn(
     output: &mut [i16]
 );
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScanBlock {
+    pub(crate) component: usize,
+    pub(crate) vertical: u8,
+    pub(crate) horizontal: u8,
+}
+
+impl ScanBlock {
+    /// A default initialization for the decoder.
+    pub(crate) const INVALID: ScanBlock = ScanBlock {
+        component: 0,
+        vertical: 0,
+        horizontal: 0,
+    };
+}
+
 /// Component Data from start of frame
 #[derive(Clone)]
 pub(crate) struct Components {
