@@ -149,7 +149,6 @@ impl OperationsTrait for HsvAdjust {
 }
 
 #[allow(clippy::many_single_char_names)]
-#[allow(clippy::many_single_char_names)]
 fn modulate_hsl<T>(r: &mut [T], g: &mut [T], b: &mut [T], h: f32, s: f32, v: f32)
 where
     f32: From<T>,
