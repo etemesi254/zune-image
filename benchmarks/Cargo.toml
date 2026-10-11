@@ -6,6 +6,16 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+# Also benchmark libheif in `decode_heic`. Needs the system libheif (>= 1.17)
+# and pkg-config, e.g. `apt install libheif-dev` or `brew install libheif`.
+libheif = ["dep:libheif-rs"]
+
+[dependencies]
+# optional, so the workspace builds without libheif installed (dev-dependencies
+# cannot be optional)
+libheif-rs = { version = "2.6", default-features = false, features = ["v1_17"], optional = true }
+
 [dev-dependencies]
 # QOI benchmarks
 zune-qoi = { path = "../crates/zune-qoi" }
@@ -25,6 +35,10 @@ zune-png = { path = "../crates/zune-png" }
 core_affinity = "0.8.3"
 mozjpeg = "0.10.5"
 zune-jpeg = { path = "../crates/zune-jpeg", features = [] }
+
+# HEIF benchmarks
+zune-heic = { path = "../crates/zune-heic" }
+heic = { version = "0.1.6", features = ["parallel"] }
 
 #other format
 zune-image = { path = "../crates/zune-image", features = ["all"] }
@@ -68,6 +82,10 @@ harness = false
 
 [[bench]]
 name = "decode_hdr"
+harness = false
+
+[[bench]]
+name = "decode_heic"
 harness = false
 
 [[bench]]

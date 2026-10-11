@@ -162,7 +162,9 @@
 //!
 //! Decoding an iPhone photo (`fuzz-samples/IMG_4862.HEIC`, a 4284×5712 grid
 //! of 49 tiles) to RGB on an Apple M3 Pro (18 GB RAM), measured with
-//! `cargo bench -p zune-heic` (`benches/heif_bench.rs`):
+//! `cargo bench -p zune-benches --bench decode_heic --features libheif`
+//! (`benchmarks/benches/decode_heic.rs` in the repository; the `libheif`
+//! feature needs the system libheif):
 //!
 //! | Decoder | Time |
 //! |---|---|

@@ -30,15 +30,11 @@ dump-tiles = []
 [dev-dependencies]
 # reads libheif's PNG output in examples/compare_libheif.rs
 zune-png = { path = "../zune-png" }
-criterion = "0.8.2"
-heic = { version = "0.1.6",features = ["parallel"] }
-libheif-rs = { version = "2.6", default-features = false, features = ["v1_17"] }
+# The benchmark against libheif and the `heic` crate lives in
+# `benchmarks/benches/decode_heic.rs` (crate `zune-benches`), so that
+# building this crate's tests does not need the system libheif.
 
 
 [[example]]
 name = "dump_tiles"
 required-features = ["dump-tiles"]
-
-[[bench]]
-name = "heif_bench"
-harness = false

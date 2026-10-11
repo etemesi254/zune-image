@@ -44,6 +44,9 @@ Tested on mac-os solana
 ```shell
 brew install libvips,nasm
 ```
+
+   For the HEIF benchmark against libheif (`decode_heic`, `--features libheif`),
+   also `brew install libheif`.
 1. Create a symlink to allow the system linker to find libraries
 
 ```shell
@@ -66,6 +69,9 @@ This is a short one on ubuntu
 ```shell
 sudo apt install clang libvips libvips-dev nasm
 ```
+
+   For the HEIF benchmark against libheif (`decode_heic`, `--features libheif`),
+   also `sudo apt install libheif-dev` (libheif 1.17 or newer).
 
 1. Run the benchmark
 ```shell

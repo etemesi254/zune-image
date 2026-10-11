@@ -15,8 +15,7 @@
 //!
 //! For the math behind it see <https://blog.ivank.net/fastest-gaussian-blur.html>
 
-use std::ops::Range;
-use crate::traits::NumOps;
+
 use zune_core::bit_depth::BitType;
 use zune_core::log::trace;
 use zune_image::errors::ImageErrors;
@@ -109,17 +108,4 @@ impl OperationsTrait for Blur {
     }
 }
 
-fn horizontal_blur_region_f32(region: &mut PlanarRegionMut<'_, f32>, radii: &[usize; 3]) {
-    let width = region.width;
-    let mut scratch_row = vec![0.0f32; width];
-
-    for channel in region.channels.iter_mut() {
-        for row in channel.chunks_exact_mut(width) {
-            crate::box_blur::box_blur_f32_inner(row, &mut scratch_row, width, radii[0]);
-            crate::box_blur::box_blur_f32_inner(&scratch_row, row, width, radii[1]);
-            crate::box_blur::box_blur_f32_inner(row, &mut scratch_row, width, radii[2]);
-            row.copy_from_slice(&scratch_row);
-        }
-    }
-}
 
