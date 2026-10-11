@@ -12,8 +12,8 @@ exclude = ["/fuzz/*", "/fuzz-samples/*", "/tests/*", "/test-output/*", "/test-ha
 description = "A fast, correct and safe HEIF/HEIC decoder, with its own HEVC decoder"
 
 [dependencies]
-zune-core = { version = "0.5.1", path = "../zune-core" }
-zune-isobmff = { version = "0.5.0", path = "../zune-isobmff" }
+zune-core = { version = "^0.5.3", path = "../zune-core" }
+zune-isobmff = { version = "0.5", path = "../zune-isobmff" }
 
 [features]
 simd = []
