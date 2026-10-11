@@ -33,7 +33,25 @@ pub struct DecodedTile {
     pub yuv:     Vec<u8>
 }
 
-/// A HEIF/Heic Decoder Instance
+/// A HEIF/HEIC decoder.
+///
+/// Create one with [`new`](Self::new) or [`new_with_options`](Self::new_with_options)
+/// around anything that implements [`ZByteReaderTrait`] (e.g. a
+/// [`ZCursor`](zune_core::bytestream::ZCursor) over the file's bytes), then
+/// call [`decode`](Self::decode) or [`decode_into`](Self::decode_into).
+/// Information about the image (size, colorspace, metadata) is available
+/// after [`decode_headers`](Self::decode_headers), which the decode methods
+/// call themselves.
+///
+/// # Example
+/// ```no_run
+/// use zune_heic::HeifDecoder;
+/// use zune_heic::zune_core::bytestream::ZCursor;
+///
+/// let data = std::fs::read("image.heic").unwrap();
+/// let mut decoder = HeifDecoder::new(ZCursor::new(&data));
+/// let pixels = decoder.decode().unwrap();
+/// ```
 pub struct HeifDecoder<T> {
     pub(crate) stream: ZReader<T>,
     pub(crate) ftyp_section: Option<FtypHeader>,
@@ -60,20 +78,47 @@ impl<T> HeifDecoder<T>
 where
     T: ZByteReaderTrait,
 {
-    /// Create a new Decoder instance
+    /// Create a decoder with the default [`DecoderOptions`].
+    ///
+    /// Nothing is read until [`decode_headers`](Self::decode_headers) or one
+    /// of the decode methods is called.
     ///
     /// # Arguments
-    ///  - `stream`: The raw bytes of a heif/heic file.
+    ///  - `stream`: The HEIF/HEIC file, e.g. a [`ZCursor`](zune_core::bytestream::ZCursor)
+    ///    over its bytes or a buffered file.
     #[must_use]
     #[allow(clippy::new_without_default)]
     pub fn new(stream: T) -> Self {
         Self::new_with_options(stream, DecoderOptions::default())
     }
-    /// Create a new decoder instance with the ability to define decode options
+    /// Create a decoder with the given options.
+    ///
+    /// The options used by this decoder are:
+    ///  - [`max_width`](DecoderOptions::max_width) / [`max_height`](DecoderOptions::max_height):
+    ///    larger images are rejected.
+    ///  - [`hevc_max_mdat_size`](DecoderOptions::hevc_max_mdat_size): the
+    ///    largest image data (`mdat` box) accepted; it is read into memory.
+    ///  - [`num_threads`](DecoderOptions::num_threads): threads used to decode
+    ///    the tiles of grid images.
+    ///  - [`hvec_use_apple_videotoolbox`](DecoderOptions::hvec_use_apple_videotoolbox):
+    ///    decode with Apple's hardware decoder (macOS, `std` feature).
     ///
     /// # Arguments
+    ///  - `stream`: The HEIF/HEIC file
     ///  - `options`: Decoding options
-    ///  - `stream`: The actual data stream with raw heif/heic file
+    ///
+    /// # Example
+    /// ```no_run
+    /// use zune_heic::HeifDecoder;
+    /// use zune_heic::zune_core::bytestream::ZCursor;
+    /// use zune_heic::zune_core::options::DecoderOptions;
+    ///
+    /// let data = std::fs::read("image.heic").unwrap();
+    /// // software decoding everywhere, including macOS
+    /// let options = DecoderOptions::default().hvec_set_use_videotoolbox(false);
+    /// let mut decoder = HeifDecoder::new_with_options(ZCursor::new(&data), options);
+    /// let pixels = decoder.decode().unwrap();
+    /// ```
     #[allow(clippy::redundant_field_names)]
     pub fn new_with_options(stream: T, options: DecoderOptions) -> Self {
         Self {
@@ -97,6 +142,28 @@ where
         }
     }
 
+    /// Parse the file structure: everything except the image data itself.
+    ///
+    /// Afterwards [`width`](Self::width), [`height`](Self::height),
+    /// [`colorspace`](Self::colorspace), [`output_buffer_size`](Self::output_buffer_size),
+    /// [`exif_data`](Self::exif_data) and [`icc_data`](Self::icc_data) are
+    /// available. Calling it again does nothing; the decode methods call it
+    /// themselves.
+    ///
+    /// # Errors
+    /// The file is not a valid HEIF file, uses features this decoder does not
+    /// support, is larger than the configured limits, or reading failed.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use zune_heic::HeifDecoder;
+    /// use zune_heic::zune_core::bytestream::ZCursor;
+    ///
+    /// let data = std::fs::read("image.heic").unwrap();
+    /// let mut decoder = HeifDecoder::new(ZCursor::new(&data));
+    /// decoder.decode_headers().unwrap();
+    /// println!("{}x{}", decoder.width().unwrap(), decoder.height().unwrap());
+    /// ```
     pub fn decode_headers(&mut self) -> Result<(), HeicErrors> {
         if self.read_headers {
             //warn!("Headers already read");
@@ -209,7 +276,8 @@ where
         Ok(())
     }
 
-    pub fn get_item_type(&self, item_id: u32) -> [u8; 4] {
+    /// Four-character type of an item (`hvc1`, `grid`, ...), zeroes if unknown
+    fn get_item_type(&self, item_id: u32) -> [u8; 4] {
         self.meta_section
             .as_ref()
             .and_then(|meta| meta.iinf.as_ref())
@@ -301,8 +369,11 @@ where
         }
         Ok(())
     }
-    /// Return the width of the image
+    /// Width of the decoded image in pixels, or `None` before
+    /// [`decode_headers`](Self::decode_headers).
     ///
+    /// This is the width after rotation, i.e. the width of the pixels
+    /// returned by [`decode`](Self::decode).
     pub fn width(&self) -> Option<usize> {
         let w = self.width?;
         let h = self.height?;
@@ -310,6 +381,11 @@ where
         if rot == 90 || rot == 270 { Some(h as usize) } else { Some(w as usize) }
     }
 
+    /// Height of the decoded image in pixels, or `None` before
+    /// [`decode_headers`](Self::decode_headers).
+    ///
+    /// This is the height after rotation, i.e. the height of the pixels
+    /// returned by [`decode`](Self::decode).
     pub fn height(&self) -> Option<usize> {
         let w = self.width?;
         let h = self.height?;
@@ -407,14 +483,89 @@ where
         Ok(())
     }
 
+    /// Return the number of bytes needed to hold the decoded image,
+    /// `width * height * components` of [`colorspace`](Self::colorspace).
+    ///
+    /// # Returns
+    ///  - `Some(usize)`: Minimum size of a buffer for [`decode_into`](Self::decode_into)
+    ///  - `None`: Headers were not decoded yet, or the size overflows `usize`
+    #[must_use]
+    pub fn output_buffer_size(&self) -> Option<usize> {
+        let (w, h) = (self.width? as usize, self.height? as usize);
+        let components = self.colorspace?.num_components();
+        w.checked_mul(h)?.checked_mul(components)
+    }
+
+    /// Decode the primary image, returning its pixels.
+    ///
+    /// The pixels are 8-bit and interleaved in the order of
+    /// [`colorspace`](Self::colorspace) (usually RGB), row by row,
+    /// [`width`](Self::width) × [`height`](Self::height), with any rotation
+    /// and mirroring stored in the file already applied. Its size is
+    /// [`output_buffer_size`](Self::output_buffer_size).
+    ///
+    /// To decode into a buffer you already have, use [`decode_into`](Self::decode_into).
+    ///
+    /// # Errors
+    /// Any error of [`decode_headers`](Self::decode_headers), or invalid or
+    /// unsupported image data.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use zune_heic::HeifDecoder;
+    /// use zune_heic::zune_core::bytestream::ZCursor;
+    ///
+    /// let data = std::fs::read("image.heic").unwrap();
+    /// let mut decoder = HeifDecoder::new(ZCursor::new(&data));
+    /// let pixels = decoder.decode().unwrap();
+    /// let (w, h) = (decoder.width().unwrap(), decoder.height().unwrap());
+    /// ```
     pub fn decode(&mut self) -> Result<Vec<u8>, HeicErrors> {
         self.decode_headers()?;
+        let size = self.output_buffer_size().ok_or(HeicErrors::Generic {
+            msg: "image dimensions overflow usize".to_string(),
+        })?;
+        let mut output = vec![0; size];
+        self.decode_into(&mut output)?;
+        Ok(output)
+    }
+
+    /// Decode the primary image into `out`.
+    ///
+    /// `out` must hold at least [`output_buffer_size`](Self::output_buffer_size)
+    /// bytes; only that many bytes are written. The pixel layout is the one of
+    /// [`decode`](Self::decode).
+    ///
+    /// # Errors
+    /// [`HeicErrors::TooSmallOutput`] if `out` is too small, otherwise as
+    /// [`decode`](Self::decode).
+    ///
+    /// # Example
+    /// ```no_run
+    /// use zune_heic::HeifDecoder;
+    /// use zune_heic::zune_core::bytestream::ZCursor;
+    ///
+    /// let data = std::fs::read("image.heic").unwrap();
+    /// let mut decoder = HeifDecoder::new(ZCursor::new(&data));
+    /// decoder.decode_headers().unwrap();
+    ///
+    /// let mut pixels = vec![0; decoder.output_buffer_size().unwrap()];
+    /// decoder.decode_into(&mut pixels).unwrap();
+    /// ```
+    pub fn decode_into(&mut self, out: &mut [u8]) -> Result<(), HeicErrors> {
+        self.decode_headers()?;
+
+        let expected = self.output_buffer_size().ok_or(HeicErrors::Generic {
+            msg: "image dimensions overflow usize".to_string(),
+        })?;
+        if out.len() < expected {
+            return Err(HeicErrors::TooSmallOutput(expected, out.len()));
+        }
+        let output = &mut out[..expected];
 
         let w = self.width.unwrap() as usize;
         let h = self.height.unwrap() as usize;
         let colors = self.colorspace().unwrap().num_components();
-
-        let mut output = vec![0; w * h * colors];
 
         // Tiles are converted straight into their place on the canvas as soon as
         // they are decoded, so no per-tile RGB copies are kept around. When the
@@ -425,7 +576,7 @@ where
 
         {
             let canvas: &mut [u8] =
-                if rotation != 0 { &mut unrotated_canvas } else { &mut output };
+                if rotation != 0 { &mut unrotated_canvas } else { &mut *output };
 
             // One lock per canvas row: tiles in the same grid row share canvas
             // rows, so they may be written concurrently from different threads.
@@ -542,8 +693,8 @@ where
         }
 
         // Mirroring then rotation (HEIF order), in place / into `output`.
-        self.apply_orientation(&mut unrotated_canvas, &mut output)?;
-        return Ok(output);
+        self.apply_orientation(&mut unrotated_canvas, output)?;
+        Ok(())
     }
 
     /// Determines the final output color space of the primary image,
@@ -710,23 +861,45 @@ where
             self.exif_data = Some(exif_bytes);
         }
 
-        // 5. Restore the reader cursor so the rest of your parsing isn't messed up
+        // 5. Restore the reader cursor so the rest of the parsing isn't messed up
         self.stream.seek(ZSeekFrom::Start(original_position))?;
 
         Ok(())
     }
 
-    /// Get the image colorspace
+    /// Colorspace of the decoded pixels, or `None` before
+    /// [`decode_headers`](Self::decode_headers).
+    ///
+    /// - [`ColorSpace::RGB`] for colour images,
+    /// - [`ColorSpace::Luma`] for greyscale (monochrome) images,
+    /// - [`ColorSpace::RGBA`] / [`ColorSpace::LumaA`] when the image has an
+    ///   alpha plane. Alpha is not decoded yet, so it is always 255.
     pub fn colorspace(&self) -> Option<ColorSpace> {
         self.colorspace
     }
-    /// Return the image exif data if present
     /// Decode every coded image of the primary item on its own and return
     /// its HEVC bitstream together with the decoded (pre colour conversion)
     /// planes, for checking the HEVC decoder against a reference decoder.
     /// Each image is decoded with as many threads as there are CPUs.
     ///
     /// Only available with the `dump-tiles` feature.
+    ///
+    /// # Errors
+    /// As [`decode`](Self::decode).
+    ///
+    /// # Example
+    /// ```no_run
+    /// use zune_heic::HeifDecoder;
+    /// use zune_heic::zune_core::bytestream::ZCursor;
+    ///
+    /// let data = std::fs::read("image.heic").unwrap();
+    /// let mut decoder = HeifDecoder::new(ZCursor::new(&data));
+    /// for tile in decoder.decode_tiles_yuv().unwrap() {
+    ///     // decode `tile.hevc` with e.g. `dec265 -o ref.yuv` and compare with `tile.yuv`
+    ///     std::fs::write(format!("{}.hevc", tile.item_id), &tile.hevc).unwrap();
+    ///     std::fs::write(format!("{}.yuv", tile.item_id), &tile.yuv).unwrap();
+    /// }
+    /// ```
     #[cfg(feature = "dump-tiles")]
     pub fn decode_tiles_yuv(&mut self) -> Result<Vec<DecodedTile>, HeicErrors> {
         use crate::hevc_decoder::nal_parser::NalParser;
@@ -808,9 +981,51 @@ where
         profiles
     }
 
+    /// The Exif metadata of the image, if it has any, available after
+    /// [`decode_headers`](Self::decode_headers).
+    ///
+    /// These are the raw TIFF-structured Exif bytes, starting with the byte
+    /// order mark (`II` or `MM`), ready for an Exif parser. The HEIF header
+    /// in front of them is removed.
+    ///
+    /// Note that the Exif orientation tag describes the stored image; the
+    /// pixels returned by [`decode`](Self::decode) already have the HEIF
+    /// rotation and mirroring applied.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use zune_heic::HeifDecoder;
+    /// use zune_heic::zune_core::bytestream::ZCursor;
+    ///
+    /// let data = std::fs::read("image.heic").unwrap();
+    /// let mut decoder = HeifDecoder::new(ZCursor::new(&data));
+    /// decoder.decode_headers().unwrap();
+    /// if let Some(exif) = decoder.exif_data() {
+    ///     println!("{} bytes of Exif", exif.len());
+    /// }
+    /// ```
     pub fn exif_data(&self) -> Option<&Vec<u8>> {
         self.exif_data.as_ref()
     }
+    /// The ICC colour profile of the image (a `colr` box of type `prof` or
+    /// `rICC`), if it has one, available after
+    /// [`decode_headers`](Self::decode_headers).
+    ///
+    /// The decoded pixels are not converted with this profile; pass it on to
+    /// a colour management system or embed it in the output file.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use zune_heic::HeifDecoder;
+    /// use zune_heic::zune_core::bytestream::ZCursor;
+    ///
+    /// let data = std::fs::read("image.heic").unwrap();
+    /// let mut decoder = HeifDecoder::new(ZCursor::new(&data));
+    /// decoder.decode_headers().unwrap();
+    /// if let Some(icc) = decoder.icc_data() {
+    ///     println!("{} byte ICC profile", icc.len());
+    /// }
+    /// ```
     pub fn icc_data(&self) -> Option<&Vec<u8>> {
         self.icc_data.as_ref()
     }

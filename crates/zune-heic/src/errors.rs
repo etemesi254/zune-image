@@ -8,43 +8,65 @@ use zune_isobmff::{IsoBmffErrors, FourCC};
 
 use crate::hevc_decoder::nal_parser::NalError;
 
+/// Errors returned while decoding a HEIF/HEIC file.
 pub enum HeicErrors {
     /// Wraps an underlying I/O failure.
     Io(ZByteIoError),
 
     /// The parser needed more bytes than were available.
     UnexpectedEof {
+        /// Position in the file
         offset: u64,
+        /// Bytes needed
         needed: u64
     },
 
     /// A FullBox carried a `version` value the parser does not handle.
     UnsupportedVersion {
+        /// Position of the box in the file
         offset:  u64,
+        /// The version found
         version: u8
     },
 
     /// A box payload was shorter than the minimum required by its spec.
     PayloadTooShort {
+        /// Type of the box
         box_type: FourCC,
+        /// Bytes needed
         needed:   usize,
+        /// Bytes available
         have:     usize
     },
 
     /// Any other structural problem found while parsing a specific box.
     ParseError {
+        /// Type of the box
         box_type: FourCC,
+        /// What is wrong
         msg:      String
     },
+    /// A size computation `a - b` would have gone below zero: the file is
+    /// inconsistent.
     WouldUnderflow {
+        /// Left-hand side
         a: usize,
+        /// Right-hand side
         b: usize
     },
+    /// Any other problem, described by `msg`: unsupported features, limits
+    /// exceeded, inconsistent structures.
     Generic {
+        /// What is wrong
         msg: String
     },
+    /// An error in the HEVC bitstream of the image data.
     NalErrors(NalError),
+    /// An error reading an ISO-BMFF box header.
     HeaderError(IsoBmffErrors),
+    /// The buffer given to [`decode_into`](crate::HeifDecoder::decode_into)
+    /// is too small: `(expected, found)` bytes
+    TooSmallOutput(usize, usize),
 }
 impl fmt::Display for HeicErrors {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -76,6 +98,12 @@ impl fmt::Display for HeicErrors {
             }
             HeicErrors::ParseError { box_type, msg } => {
                 write!(f, "Parse error in box '{box_type}': {msg}")
+            }
+            HeicErrors::TooSmallOutput(expected, found) => {
+                write!(
+                    f,
+                    "Too small output, expected buffer with at least {expected} bytes but got one with {found} bytes"
+                )
             }
             HeicErrors::WouldUnderflow { a, b } => {
                 write!(f, "Would underflow ({a}-{b}) ")
@@ -128,6 +156,11 @@ impl fmt::Debug for HeicErrors {
             HeicErrors::Generic { msg } => f.debug_tuple("Generic").field(msg).finish(),
             HeicErrors::NalErrors(msg) => f.debug_tuple("NalErrors").field(msg).finish(),
             HeicErrors::HeaderError(err) => f.debug_tuple("HeaderError").field(err).finish(),
+            HeicErrors::TooSmallOutput(expected, found) => f
+                .debug_tuple("TooSmallOutput")
+                .field(expected)
+                .field(found)
+                .finish(),
         }
     }
 }

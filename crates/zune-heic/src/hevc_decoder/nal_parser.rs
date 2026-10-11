@@ -13,23 +13,34 @@ use core::fmt;
 
 // ── Errors ────────────────────────────────────────────────────────────────────
 
+/// An error in the HEVC bitstream of an image, wrapped in
+/// [`HeicErrors::NalErrors`](crate::HeicErrors::NalErrors).
 #[derive(Debug, Clone, PartialEq)]
 pub enum NalError {
     /// A length prefix or NAL header read would go past the extent boundary.
     UnexpectedEof {
+        /// Index of the data extent (part) of the image item
         extent: usize,
+        /// Position within the extent
         offset: usize
     },
     /// forbidden_zero_bit in the NAL header was 1 — stream is corrupt.
     ForbiddenBitSet,
     /// nuh_temporal_id_plus1 == 0 is illegal per spec §7.4.2.2.
     InvalidTemporalId,
+    /// A syntax element (`field`) has a `value` beyond `limit`, either
+    /// invalid or not supported by this decoder (e.g. a bit depth above 8).
     ParameterOutOfRange {
+        /// Largest allowed value
         limit: i64,
+        /// Value found
         value: i64,
+        /// Name of the syntax element
         field: &'static str
     },
+    /// Any other problem in the bitstream, described by the message.
     Generic(String),
+    /// Any other problem in the bitstream, described by the message.
     GenericStr(&'static str)
 }
 

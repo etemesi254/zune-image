@@ -29,7 +29,7 @@ pub struct HevcSample<'a> {
 impl<T: ZByteReaderTrait> HeifDecoder<T> {
     /// Iterates over HEVC items and passes zero-copy slices to a provided closure.
     #[allow(clippy::too_many_lines)]
-    pub fn process_hevc_samples<F>(&self, mut callback: F) -> Result<(), HeicErrors>
+    pub(crate) fn process_hevc_samples<F>(&self, mut callback: F) -> Result<(), HeicErrors>
     where
         F: FnMut(HevcSample<'_>) -> Result<(), HeicErrors>
     {
@@ -196,7 +196,7 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
     /// Iterates over HEVC items and processes them in parallel using a thread pool.
     #[cfg(feature = "std")]
     #[allow(clippy::too_many_lines)]
-    pub fn process_hevc_samples_parallel<F>(&self, callback: F) -> Result<(), HeicErrors>
+    pub(crate) fn process_hevc_samples_parallel<F>(&self, callback: F) -> Result<(), HeicErrors>
     where
         // Note: F is now Fn (not FnMut) and requires Sync so threads can share it.
         F: Fn(HevcSample<'_>) -> Result<(), HeicErrors> + Sync

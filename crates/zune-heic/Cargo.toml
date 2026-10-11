@@ -1,7 +1,15 @@
 [package]
 name = "zune-heic"
 version = "0.5.0"
+rust-version = "1.89.0"
+authors = ["caleb <etemesicaleb@gmail.com>"]
 edition = "2024"
+repository = "https://github.com/etemesi254/zune-image/tree/dev/crates/zune-heic"
+license = "MIT OR Apache-2.0 OR Zlib"
+keywords = ["heic", "heif", "hevc", "decoder", "image"]
+categories = ["multimedia::images", "no-std"]
+exclude = ["/fuzz/*", "/fuzz-samples/*", "/tests/*", "/test-output/*", "/test-hardware-decoder/*", "/.idea/*"]
+description = "A fast, correct and safe HEIF/HEIC decoder, with its own HEVC decoder"
 
 [dependencies]
 zune-core = { version = "0.5.1", path = "../zune-core" }
@@ -23,8 +31,8 @@ dump-tiles = []
 # reads libheif's PNG output in examples/compare_libheif.rs
 zune-png = { path = "../zune-png" }
 criterion = "0.8.2"
-heic = { version = "0.1.4",features = ["parallel"] }
-
+heic = { version = "0.1.6",features = ["parallel"] }
+libheif-rs = { version = "2.6", default-features = false, features = ["v1_17"] }
 
 
 [[example]]

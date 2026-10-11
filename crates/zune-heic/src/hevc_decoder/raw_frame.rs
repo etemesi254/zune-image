@@ -247,7 +247,10 @@ pub struct PlaneBand<'a> {
     /// copy of the physical row directly above the band (empty for the top band)
     pub above:   Vec<u8>,
     above_start: usize,
+    // width/height are only read by the WPP row hand-off (std)
+    #[cfg_attr(not(feature = "std"), allow(dead_code))]
     pub width:   usize,
+    #[cfg_attr(not(feature = "std"), allow(dead_code))]
     pub height:  usize,
     pub stride:  usize,
     pub padding: usize
@@ -314,6 +317,7 @@ impl<'a> PlaneBand<'a> {
 
     /// Pixels `index..index + len` of the band itself
     #[inline(always)]
+    #[cfg_attr(not(feature = "std"), allow(dead_code))] // used by WPP (std)
     pub fn slice(&self, index: usize, len: usize) -> &[u8] {
         let i = self.local(index);
         &self.band[i..i + len]
@@ -325,12 +329,6 @@ impl<'a> PlaneBand<'a> {
         &mut self.band[i..i + len]
     }
 
-    /// Copy `len` pixels from `src` to `dst` (ranges may overlap)
-    #[inline(always)]
-    pub fn copy_within(&mut self, src: usize, dst: usize, len: usize) {
-        let (s, d) = (self.local(src), self.local(dst));
-        self.band.copy_within(s..s + len, d);
-    }
 }
 
 impl RawFrame {
@@ -358,6 +356,7 @@ impl RawFrame {
 
     /// Converts planar YUV 4:2:0 to RGB and writes it into the provided slice.
     /// Expects `out_rgb` to have a length of at least `width * height * 3`.
+    #[allow(dead_code)] // debugging aid
     pub fn write_rgb_420(&self, out_rgb: &mut [u8]) -> Result<(), NalError> {
         let (width, height) = (self.luma.width, self.luma.height);
         let expected_len = width * height * 3;
@@ -465,6 +464,7 @@ fn convert_row(
 impl RawFrame {
     /// Dumps the reconstructed frame to a P6 PPM file.
     /// This automatically strips HEVC padding and converts YCbCr to RGB.
+    #[allow(dead_code)] // debugging aid
     pub fn dump_ppm(&self, filename: &str) -> std::io::Result<()> {
         let width = self.luma.width;
         let height = self.luma.height;

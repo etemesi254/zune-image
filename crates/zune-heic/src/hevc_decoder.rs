@@ -20,7 +20,7 @@ mod constants;
 pub(crate) mod ctx;
 mod deblocker;
 mod idct;
-mod macros;
+pub(crate) mod macros;
 pub(crate) mod nal_parser;
 pub(crate) mod nal_unit_headers;
 mod nal_unit_parsers;
