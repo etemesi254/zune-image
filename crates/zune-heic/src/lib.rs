@@ -27,6 +27,10 @@
 //! - **Image properties handled:** grids, rotation (`irot`) and mirroring
 //!   (`imir`), colour description (`colr` nclx, or the HEVC VUI) for the
 //!   YCbCr → RGB conversion, ICC profiles and Exif metadata.
+//! - **Alpha.** Alpha planes (auxiliary alpha images, single or grid) are
+//!   decoded into RGBA / LumaA output; premultiplied alpha (`prem`) is
+//!   reported by [`HeifDecoder::is_alpha_premultiplied`].
+//! - **Greyscale** (monochrome HEVC) images decode to [`Luma`](zune_core::colorspace::ColorSpace::Luma).
 //! - **`no_std`** (with `alloc`) when the `std` feature is disabled.
 //!
 //! # Usage
@@ -197,10 +201,10 @@
 //!
 //! - Only the primary image is decoded (no thumbnails, depth maps or image
 //!   sequences).
-//! - 8-bit, intra-coded HEVC only (what HEIF still images use); 10-bit
-//!   images are rejected.
-//! - Alpha planes are detected (the output is then RGBA) but not decoded yet:
-//!   alpha is always 255.
+//! - 8-bit, intra-coded HEVC only (what HEIF still images use), in 4:2:0 or
+//!   monochrome; 10-bit, 4:2:2 and 4:4:4 images are rejected.
+//! - Premultiplied alpha is returned as stored (like libheif); see
+//!   [`HeifDecoder::is_alpha_premultiplied`].
 //! - Clean aperture (`clap`) cropping is not applied.
 //! - With VideoToolbox, the YCbCr → RGB conversion is not the libheif one, so
 //!   the output is not bit-identical to libheif.

@@ -54,7 +54,7 @@ use crate::apple_videotoolbox::types::{
     VTDecompressionSessionDecodeFrame, VTDecompressionSessionRef,
     VTDecompressionSessionWaitForAsynchronousFrames, kCFAllocatorNull
 };
-use crate::decoder::HeifDecoder;
+use crate::decoder::{HeifDecoder, ImageLayout};
 use crate::errors::HeicErrors;
 use crate::processor::HevcSample;
 use crate::utils::Lock;
@@ -514,9 +514,11 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
     /// Decoding is asynchronous; this waits for every submitted frame before
     /// returning, so no callback can run after the canvas is released.
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn decode_hardware_videotoolbox(
-        &self, canvas_rows: &[Lock<&mut [u8]>], placements: &BTreeMap<u32, Vec<usize>>,
-        cols: usize, canvas_w: usize, canvas_h: usize, channels: usize
+        &self, layout: &ImageLayout, canvas_rows: &[Lock<&mut [u8]>],
+        placements: &BTreeMap<u32, Vec<usize>>, cols: usize, canvas_w: usize, canvas_h: usize,
+        channels: usize
     ) -> Result<(), HeicErrors> {
         // Declared before the decoder so it is dropped after it.
         let context = CallbackContext {
@@ -566,7 +568,7 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
             Ok(())
         };
 
-        let submitted = self.process_hevc_samples(&mut processor);
+        let submitted = self.process_hevc_samples(layout, &mut processor);
 
         // Always wait for in-flight frames, even on error: their callbacks
         // write into the canvas.

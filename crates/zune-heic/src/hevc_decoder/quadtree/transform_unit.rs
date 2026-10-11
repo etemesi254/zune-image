@@ -278,7 +278,12 @@ pub fn read_transform_tree(
     let has_chroma = (log2_trafo_size > 2 && ctx.sps.chroma_format != ChromaFormat::Monochrome)
         || ctx.sps.chroma_format == ChromaFormat::Yuv444;
 
-    if has_chroma {
+    if ctx.sps.chroma_format == ChromaFormat::Monochrome {
+        // no chroma: the flags are inferred to be 0 (they must not inherit
+        // the "parent had coefficients" value the root is called with)
+        cbf_cb = 0;
+        cbf_cr = 0;
+    } else if has_chroma {
         // Cb Component
         if cbf_cb != 0 {
             let mut bit = decode_cbf_chroma(ctx, trafo_depth);

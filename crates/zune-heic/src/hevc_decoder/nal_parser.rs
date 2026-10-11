@@ -182,11 +182,33 @@ impl NalFraming {
     /// Sniff framing from the first bytes of a buffer.
     /// Annex B always starts with 0x000001 or 0x00000001.
     pub fn detect(data: &[u8]) -> Self {
-        if data.starts_with(&[0x00, 0x00, 0x00, 0x01]) || data.starts_with(&[0x00, 0x00, 0x01]) {
+        // A length prefix of 0x0000_01xx looks like an Annex B start code, so
+        // first check whether the data is a valid chain of length-prefixed NAL
+        // units (what HEIF items always are), and only then look for start codes.
+        if Self::is_length_prefixed(data) {
+            Self::LengthPrefixed
+        } else if data.starts_with(&[0x00, 0x00, 0x00, 0x01]) || data.starts_with(&[0x00, 0x00, 0x01]) {
             Self::AnnexB
         } else {
             Self::LengthPrefixed
         }
+    }
+
+    /// Whether `data` is entirely made of 4-byte length-prefixed NAL units,
+    /// each non-empty and with the forbidden zero bit clear.
+    fn is_length_prefixed(data: &[u8]) -> bool {
+        let mut rest = data;
+        while !rest.is_empty() {
+            let Some((len, tail)) = rest.split_first_chunk::<4>() else {
+                return false;
+            };
+            let len = u32::from_be_bytes(*len) as usize;
+            if len < 2 || len > tail.len() || tail[0] & 0x80 != 0 {
+                return false;
+            }
+            rest = &tail[len..];
+        }
+        true
     }
 }
 
@@ -386,8 +408,10 @@ where
         return Err(NalError::InvalidTemporalId);
     }
 
-    let nal_type = NalUnitType::from_u8(raw_type)
-        .map_err(|e| NalError::Generic(format!("Unknown nal type: {e}")))?;
+    // Reserved and unspecified NAL unit types must be ignored (H.265 7.4.2.2)
+    let Ok(nal_type) = NalUnitType::from_u8(raw_type) else {
+        return Ok(None);
+    };
 
     let nal_unit = NalUnit {
         nal_type,
@@ -544,6 +568,15 @@ mod tests {
         let data = vec![0x00, 0x00, 0x00, 0x01, 0x42];
         assert_eq!(NalFraming::detect(&data), NalFraming::AnnexB);
         let data = vec![0x00, 0x00, 0x00, 0x06, 0x42];
+        assert_eq!(NalFraming::detect(&data), NalFraming::LengthPrefixed);
+    }
+
+    #[test]
+    fn detect_length_prefix_resembling_start_code() {
+        // a 373-byte NAL unit: its length prefix 00 00 01 75 starts like an
+        // Annex B start code
+        let mut data = vec![0x00, 0x00, 0x01, 0x75, 0x26, 0x01];
+        data.resize(4 + 0x175, 0xAA);
         assert_eq!(NalFraming::detect(&data), NalFraming::LengthPrefixed);
     }
 }

@@ -59,9 +59,9 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
             return Err(NalError::Generic(format!("Invalid Chroma Format (>3) {r}")));
         }
     };
-    // for now do not allow other format types, probably won't work
-    // this will be relaxed as more formats are tested
-    if sps.chroma_format != ChromaFormat::Yuv420 {
+    // 4:2:0 and monochrome (used e.g. for alpha planes) are supported;
+    // 4:2:2 and 4:4:4 are not implemented yet
+    if !matches!(sps.chroma_format, ChromaFormat::Yuv420 | ChromaFormat::Monochrome) {
         return Err(NalError::Generic(format!(
             "Currently unsupported Chroma Format {:?}",
             sps.chroma_format

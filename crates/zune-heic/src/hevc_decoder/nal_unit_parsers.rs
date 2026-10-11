@@ -6,7 +6,7 @@ use crate::hevc_decoder::DEBUG_MORE;
 use crate::hevc_decoder::bitstream::BitReader;
 use crate::hevc_decoder::nal_parser::{NalError, NalUnit};
 use crate::hevc_decoder::nal_unit_headers::{
-    Pps, ProfileIdc, ProfileTierLevel, ScalingLists, SliceHeader, SliceType, Sps, Vui,
+    ChromaFormat, Pps, ProfileIdc, ProfileTierLevel, ScalingLists, SliceHeader, SliceType, Sps, Vui,
     VuiVideoFormat
 };
 
@@ -454,7 +454,10 @@ pub fn decode_slice_header(
         // 6. SAO Flags
         if sps.sample_adaptive_offset_enabled_flag {
             sh.slice_sao_luma_flag = r.read_flag()?;
-            sh.slice_sao_chroma_flag = r.read_flag()?;
+            // only present when there is chroma (ChromaArrayType != 0)
+            if sps.chroma_format != ChromaFormat::Monochrome {
+                sh.slice_sao_chroma_flag = r.read_flag()?;
+            }
         }
 
         // 7. Temporal/Inter Logic (Skipped for I-Slices)

@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 use zune_core::bytestream::ZByteReaderTrait;
 use zune_core::log::trace;
 
-use crate::decoder::HeifDecoder;
+use crate::decoder::{HeifDecoder, ImageLayout};
 use crate::errors::HeicErrors;
 use crate::header_structs::ItemProperty;
 
@@ -27,328 +27,143 @@ pub struct HevcSample<'a> {
     pub extents: Vec<&'a [u8]>
 }
 impl<T: ZByteReaderTrait> HeifDecoder<T> {
-    /// Iterates over HEVC items and passes zero-copy slices to a provided closure.
-    #[allow(clippy::too_many_lines)]
-    pub(crate) fn process_hevc_samples<F>(&self, mut callback: F) -> Result<(), HeicErrors>
+    /// The coded pictures of `layout`, in raster order, as zero-copy slices
+    /// of the image data plus their parameter sets.
+    fn collect_samples(&self, layout: &ImageLayout) -> Result<Vec<HevcSample<'_>>, HeicErrors> {
+        let meta = self.meta_section.as_ref().ok_or(HeicErrors::Generic {
+            msg: "No meta".into()
+        })?;
+        let iloc = meta.iloc.as_ref().ok_or(HeicErrors::Generic {
+            msg: "No iloc".into()
+        })?;
+        let mdat = self.mdat_section.as_ref().ok_or(HeicErrors::Generic {
+            msg: "No mdat loaded".into()
+        })?;
+        let iprp = meta.iprp.as_ref().ok_or(HeicErrors::Generic {
+            msg: "Missing iprp".into()
+        })?;
+        let ipma = iprp.ipma.as_ref().ok_or(HeicErrors::Generic {
+            msg: "Missing ipma".into()
+        })?;
+        let ipco = iprp.ipco.as_ref().ok_or(HeicErrors::Generic {
+            msg: "Missing ipco".into()
+        })?;
+
+        let get_hvcc_for_item = |target_id: u32| -> Option<ParameterSets> {
+            let entry = ipma.entries.iter().find(|e| e.item_id == target_id)?;
+            entry.associations.iter().find_map(|assoc| {
+                let index = usize::from(assoc.property_index).checked_sub(1)?;
+                match ipco.properties.get(index) {
+                    Some(ItemProperty::HvcC { payload }) => Some(extract_hevc_parameter_sets(payload)),
+                    _ => None
+                }
+            })
+        };
+
+        let mut samples = Vec::with_capacity(layout.tile_ids.len());
+        for &item_id in &layout.tile_ids {
+            let item_type = self.get_item_type(item_id);
+            if &item_type != b"hvc1" {
+                return Err(HeicErrors::Generic {
+                    msg: format!(
+                        "Unsupported image item type {:?}",
+                        core::str::from_utf8(&item_type).unwrap_or("????")
+                    )
+                });
+            }
+            // The item's own parameter sets; tiles without them fall back to
+            // the ones of the image (grid) item.
+            let parameter_sets = get_hvcc_for_item(item_id)
+                .filter(|ps| ps.vps.is_some() || ps.sps.is_some() || ps.pps.is_some())
+                .or_else(|| (item_id != layout.item_id).then(|| get_hvcc_for_item(layout.item_id)).flatten())
+                .unwrap_or(ParameterSets {
+                    vps: None,
+                    sps: None,
+                    pps: None
+                });
+
+            let item_iloc =
+                iloc.items
+                    .iter()
+                    .find(|i| i.item_id == item_id)
+                    .ok_or(HeicErrors::Generic {
+                        msg: format!("Item {item_id} missing in iloc")
+                    })?;
+
+            // zero-copy slices of the item's data
+            let mut extents = Vec::with_capacity(item_iloc.extents.len());
+            for extent in &item_iloc.extents {
+                let absolute_offset = match item_iloc.construction_method {
+                    0 => item_iloc.base_offset + extent.offset,
+                    1 => {
+                        let idat_off = meta.idat.as_ref().ok_or(HeicErrors::Generic {
+                            msg: "Missing idat offset".into()
+                        })?;
+                        idat_off.position + item_iloc.base_offset + extent.offset
+                    }
+                    _ => {
+                        return Err(HeicErrors::Generic {
+                            msg: "Unsupported construction method".into()
+                        });
+                    }
+                };
+                let start = absolute_offset
+                    .checked_sub(mdat.start_offset)
+                    .ok_or(HeicErrors::Generic {
+                        msg: "Data offset points to before MDAT payload".into()
+                    })? as usize;
+                let slice = start
+                    .checked_add(extent.length as usize)
+                    .and_then(|end| mdat.raw_data.get(start..end))
+                    .ok_or(HeicErrors::Generic {
+                        msg: "Extent goes out of MDAT bounds!".into()
+                    })?;
+                extents.push(slice);
+            }
+
+            samples.push(HevcSample {
+                item_id,
+                vps: parameter_sets.vps,
+                sps: parameter_sets.sps,
+                pps: parameter_sets.pps,
+                extents
+            });
+        }
+        Ok(samples)
+    }
+
+    /// Pass the coded pictures of `layout` to `callback`, one after the other.
+    pub(crate) fn process_hevc_samples<F>(
+        &self, layout: &ImageLayout, mut callback: F
+    ) -> Result<(), HeicErrors>
     where
         F: FnMut(HevcSample<'_>) -> Result<(), HeicErrors>
     {
-        let meta = self.meta_section.as_ref().ok_or(HeicErrors::Generic {
-            msg: "No meta".into()
-        })?;
-        let pitm = meta.pitm.as_ref().ok_or(HeicErrors::Generic {
-            msg: "No pitm".into()
-        })?;
-        let iinf = meta.iinf.as_ref().ok_or(HeicErrors::Generic {
-            msg: "No iinf".into()
-        })?;
-        let iloc = meta.iloc.as_ref().ok_or(HeicErrors::Generic {
-            msg: "No iloc".into()
-        })?;
-        let mdat = self.mdat_section.as_ref().ok_or(HeicErrors::Generic {
-            msg: "No mdat loaded".into()
-        })?;
-
-        let iprp = meta.iprp.as_ref().ok_or(HeicErrors::Generic {
-            msg: "Missing iprp".into()
-        })?;
-        let ipma = iprp.ipma.as_ref().ok_or(HeicErrors::Generic {
-            msg: "Missing ipma".into()
-        })?;
-        let ipco = iprp.ipco.as_ref().ok_or(HeicErrors::Generic {
-            msg: "Missing ipco".into()
-        })?;
-
-        let mut target_item_ids = Vec::new();
-
-        // 1. Determine which items we need to extract (Grid tiles or Single photo)
-        let primary_infe = iinf
-            .entries
-            .iter()
-            .find(|e| e.item_id == pitm.item_id)
-            .ok_or(HeicErrors::Generic {
-                msg: "Primary item not in iinf".into()
-            })?;
-
-        if &primary_infe.item_type.0 == b"grid" {
-            let iref = meta.iref.as_ref().ok_or(HeicErrors::Generic {
-                msg: "Grid missing iref links".into()
-            })?;
-            let dimg_ref = iref
-                .references
-                .iter()
-                .find(|r| &r.reference_type.0 == b"dimg" && r.from_item_id == pitm.item_id)
-                .ok_or(HeicErrors::Generic {
-                    msg: "Grid missing 'dimg' relationship".into()
-                })?;
-
-            target_item_ids.extend(&dimg_ref.to_item_ids);
-        } else if &primary_infe.item_type.0 == b"hvc1" {
-            target_item_ids.push(pitm.item_id);
-        } else {
-            return Err(HeicErrors::Generic {
-                msg: format!(
-                    "Primary item is an unsupported type: {:?}",
-                    primary_infe.item_type.0
-                )
-            });
-        }
-
-        let get_hvcc_for_item = |target_id: u32| -> ParameterSets {
-            if let Some(entry) = ipma.entries.iter().find(|e| e.item_id == target_id) {
-                for assoc in &entry.associations {
-                    if assoc.property_index == 0 {
-                        continue;
-                    }
-                    let array_index = (assoc.property_index - 1) as usize;
-
-                    if let Some(ItemProperty::HvcC { payload }) = ipco.properties.get(array_index) {
-                        return extract_hevc_parameter_sets(payload);
-                    }
-                }
-            }
-            ParameterSets {
-                vps: None,
-                sps: None,
-                pps: None
-            }
-        };
-
-        // 2. Loop through the targets, slice the data, and trigger the callback
-        for item_id in target_item_ids {
-            // First, try to get the parameter sets directly from the current item
-            let mut parameter_sets = get_hvcc_for_item(item_id);
-            let vps = &mut parameter_sets.vps;
-            let sps = &mut parameter_sets.sps;
-            let pps = &mut parameter_sets.pps;
-            // --- THE FALLBACK ---
-            // If the item doesn't have its own parameter sets, and it is NOT the
-            // primary item itself, fall back to checking the primary item's properties.
-            if vps.is_none() && sps.is_none() && pps.is_none() && item_id != pitm.item_id {
-                let fallback = get_hvcc_for_item(pitm.item_id);
-                *vps = fallback.vps;
-                *sps = fallback.sps;
-                *pps = fallback.pps;
-            }
-
-            let item_iloc =
-                iloc.items
-                    .iter()
-                    .find(|i| i.item_id == item_id)
-                    .ok_or(HeicErrors::Generic {
-                        msg: format!("Item {item_id} missing in iloc")
-                    })?;
-
-            // Prepare our zero-copy vector of slices
-            let mut zero_copy_extents = Vec::with_capacity(item_iloc.extents.len());
-
-            for extent in &item_iloc.extents {
-                let absolute_offset = match item_iloc.construction_method {
-                    0 => item_iloc.base_offset + extent.offset,
-                    1 => {
-                        let idat_off = meta.idat.as_ref().ok_or(HeicErrors::Generic {
-                            msg: "Missing idat offset".into()
-                        })?;
-                        idat_off.position + item_iloc.base_offset + extent.offset
-                    }
-                    _ => {
-                        return Err(HeicErrors::Generic {
-                            msg: "Unsupported construction method".into()
-                        });
-                    }
-                };
-
-                if absolute_offset < mdat.start_offset {
-                    return Err(HeicErrors::Generic {
-                        msg: "Data offset points to before MDAT payload".into()
-                    });
-                }
-
-                let buffer_index = (absolute_offset - mdat.start_offset) as usize;
-                let length = extent.length as usize;
-
-                if buffer_index + length > mdat.raw_data.len() {
-                    return Err(HeicErrors::Generic {
-                        msg: "Extent goes out of MDAT bounds!".into()
-                    });
-                }
-
-                // We take a slice of the existing memory instead of copying!
-                let slice = &mdat.raw_data[buffer_index..(buffer_index + length)];
-                zero_copy_extents.push(slice);
-            }
-
-            let sample = HevcSample {
-                item_id,
-                vps: parameter_sets.vps,
-                sps: parameter_sets.sps,
-                pps: parameter_sets.pps,
-                extents: zero_copy_extents
-            };
-
-            // 3. Yield to the closure
+        for sample in self.collect_samples(layout)? {
             callback(sample)?;
         }
-
         Ok(())
     }
 
-    /// Iterates over HEVC items and processes them in parallel using a thread pool.
+    /// Pass the coded pictures of `layout` to `callback` from
+    /// [`num_threads`](zune_core::options::DecoderOptions::num_threads) threads.
     #[cfg(feature = "std")]
-    #[allow(clippy::too_many_lines)]
-    pub(crate) fn process_hevc_samples_parallel<F>(&self, callback: F) -> Result<(), HeicErrors>
+    pub(crate) fn process_hevc_samples_parallel<F>(
+        &self, layout: &ImageLayout, callback: F
+    ) -> Result<(), HeicErrors>
     where
-        // Note: F is now Fn (not FnMut) and requires Sync so threads can share it.
         F: Fn(HevcSample<'_>) -> Result<(), HeicErrors> + Sync
     {
-        let meta = self.meta_section.as_ref().ok_or(HeicErrors::Generic {
-            msg: "No meta".into()
-        })?;
-        let pitm = meta.pitm.as_ref().ok_or(HeicErrors::Generic {
-            msg: "No pitm".into()
-        })?;
-        let iinf = meta.iinf.as_ref().ok_or(HeicErrors::Generic {
-            msg: "No iinf".into()
-        })?;
-        let iloc = meta.iloc.as_ref().ok_or(HeicErrors::Generic {
-            msg: "No iloc".into()
-        })?;
-        let mdat = self.mdat_section.as_ref().ok_or(HeicErrors::Generic {
-            msg: "No mdat loaded".into()
-        })?;
-        let iprp = meta.iprp.as_ref().ok_or(HeicErrors::Generic {
-            msg: "Missing iprp".into()
-        })?;
-        let ipma = iprp.ipma.as_ref().ok_or(HeicErrors::Generic {
-            msg: "Missing ipma".into()
-        })?;
-        let ipco = iprp.ipco.as_ref().ok_or(HeicErrors::Generic {
-            msg: "Missing ipco".into()
-        })?;
-
-        let mut target_item_ids = Vec::new();
-
-        // 1. Determine which items we need to extract
-        let primary_infe = iinf
-            .entries
-            .iter()
-            .find(|e| e.item_id == pitm.item_id)
-            .ok_or(HeicErrors::Generic {
-                msg: "Primary item not in iinf".into()
-            })?;
-
-        if &primary_infe.item_type.0 == b"grid" {
-            let iref = meta.iref.as_ref().ok_or(HeicErrors::Generic {
-                msg: "Grid missing iref links".into()
-            })?;
-            let dimg_ref = iref
-                .references
-                .iter()
-                .find(|r| &r.reference_type.0 == b"dimg" && r.from_item_id == pitm.item_id)
-                .ok_or(HeicErrors::Generic {
-                    msg: "Grid missing 'dimg' relationship".into()
-                })?;
-            target_item_ids.extend(&dimg_ref.to_item_ids);
-        } else if &primary_infe.item_type.0 == b"hvc1" {
-            target_item_ids.push(pitm.item_id);
-        } else {
-            return Err(HeicErrors::Generic {
-                msg: format!("Unsupported type: {:?}", primary_infe.item_type.0)
-            });
-        }
-
-        let get_hvcc_for_item = |target_id: u32| -> ParameterSets {
-            if let Some(entry) = ipma.entries.iter().find(|e| e.item_id == target_id) {
-                for assoc in &entry.associations {
-                    if assoc.property_index == 0 {
-                        continue;
-                    }
-                    let array_index = (assoc.property_index - 1) as usize;
-                    if let Some(ItemProperty::HvcC { payload }) = ipco.properties.get(array_index) {
-                        return extract_hevc_parameter_sets(payload);
-                    }
-                }
-            }
-            ParameterSets {
-                vps: None,
-                sps: None,
-                pps: None
-            }
-        };
-
-        // 2. Gather all samples into a Vec first so we can distribute them to threads
-        let mut samples_to_decode = Vec::with_capacity(target_item_ids.len());
-
-        for item_id in target_item_ids {
-            let mut parameter_sets = get_hvcc_for_item(item_id);
-
-            if parameter_sets.vps.is_none()
-                && parameter_sets.sps.is_none()
-                && parameter_sets.pps.is_none()
-                && item_id != pitm.item_id
-            {
-                parameter_sets = get_hvcc_for_item(pitm.item_id);
-            }
-
-            let item_iloc =
-                iloc.items
-                    .iter()
-                    .find(|i| i.item_id == item_id)
-                    .ok_or(HeicErrors::Generic {
-                        msg: format!("Item {item_id} missing in iloc")
-                    })?;
-
-            let mut zero_copy_extents = Vec::with_capacity(item_iloc.extents.len());
-
-            for extent in &item_iloc.extents {
-                let absolute_offset = match item_iloc.construction_method {
-                    0 => item_iloc.base_offset + extent.offset,
-                    1 => {
-                        let idat_off = meta.idat.as_ref().ok_or(HeicErrors::Generic {
-                            msg: "Missing idat offset".into()
-                        })?;
-                        idat_off.position + item_iloc.base_offset + extent.offset
-                    }
-                    _ => {
-                        return Err(HeicErrors::Generic {
-                            msg: "Unsupported construction method".into()
-                        });
-                    }
-                };
-
-                let buffer_index = (absolute_offset - mdat.start_offset) as usize;
-                let length = extent.length as usize;
-
-                match mdat.raw_data.get(buffer_index..(buffer_index + length)) {
-                    None => {
-                        return Err(HeicErrors::Generic {
-                            msg: "MDAT would overflow".into()
-                        });
-                    }
-                    Some(slice) => {
-                        zero_copy_extents.push(slice);
-                    }
-                }
-            }
-
-            samples_to_decode.push(HevcSample {
-                item_id,
-                vps: parameter_sets.vps,
-                sps: parameter_sets.sps,
-                pps: parameter_sets.pps,
-                extents: zero_copy_extents
-            });
-        }
-
-        // 3. Parallel Processing using std::thread::scope
         use std::sync::Mutex;
         use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let samples = self.collect_samples(layout)?;
         let next_job_idx = AtomicUsize::new(0);
         let first_error = Mutex::new(None);
 
         // Don't spawn 8 threads if there are only 2 tiles
         let num_threads = (self.options.num_threads() as usize)
-            .min(samples_to_decode.len())
+            .min(samples.len())
             .max(1);
 
         std::thread::scope(|scope| {
@@ -359,27 +174,20 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
                         if first_error.lock().unwrap().is_some() {
                             break;
                         }
-
                         // Grab the next available sample index atomically
                         let idx = next_job_idx.fetch_add(1, Ordering::Relaxed);
-                        if idx >= samples_to_decode.len() {
+                        let Some(sample) = samples.get(idx) else {
                             break; // Queue is empty, thread can exit
-                        }
-
-                        // We need to clone the struct to pass ownership to the callback,
-                        // but because it just holds Option<Vec<u8>> and &['a u8] extents,
-                        // cloning is relatively cheap.
-                        let sample = &samples_to_decode[idx];
-                        let sample_clone = HevcSample {
+                        };
+                        // cheap: parameter sets are small, extents are slices
+                        let sample = HevcSample {
                             item_id: sample.item_id,
                             vps:     sample.vps.clone(),
                             sps:     sample.sps.clone(),
                             pps:     sample.pps.clone(),
                             extents: sample.extents.clone()
                         };
-
-                        // Execute the callback
-                        if let Err(e) = callback(sample_clone) {
+                        if let Err(e) = callback(sample) {
                             let mut err_guard = first_error.lock().unwrap();
                             if err_guard.is_none() {
                                 *err_guard = Some(e);
@@ -395,89 +203,88 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
         if let Some(err) = first_error.into_inner().unwrap() {
             return Err(err);
         }
-
         Ok(())
     }
+}
 
-    /// Applies `imir` mirroring and then `irot` rotation (HEIF order).
-    ///
-    /// * No rotation: `unrotated_canvas` is empty and `output` already holds the
-    ///   stitched image; mirroring is done in place on `output`.
-    /// * Rotation: `unrotated_canvas` holds the stitched image; it is mirrored in
-    ///   place and then rotated into `output`.
-    pub(crate) fn apply_orientation(
-        &self, unrotated_canvas: &mut [u8], output: &mut [u8]
-    ) -> Result<(), HeicErrors> {
-        let unrotated_w = self.width.unwrap() as usize;
-        let unrotated_h = self.height.unwrap() as usize;
-        let channels = self.colorspace().unwrap().num_components();
+/// Applies `imir` mirroring and then `irot` rotation (HEIF order) of
+/// `layout` to an image with `channels` bytes per pixel.
+///
+/// * No rotation: `unrotated_canvas` is empty and `output` already holds the
+///   stitched image; mirroring is done in place on `output`.
+/// * Rotation: `unrotated_canvas` holds the stitched image; it is mirrored in
+///   place and then rotated into `output`.
+pub(crate) fn apply_orientation(
+    layout: &ImageLayout, channels: usize, unrotated_canvas: &mut [u8], output: &mut [u8]
+) -> Result<(), HeicErrors> {
+    let unrotated_w = layout.width;
+    let unrotated_h = layout.height;
 
-        let rotation_degrees = self.rotation.unwrap_or(0);
-        let is_swapped = rotation_degrees == 90 || rotation_degrees == 270;
-        let final_w = if is_swapped { unrotated_h } else { unrotated_w };
+    let rotation_degrees = layout.rotation;
+    let is_swapped = rotation_degrees == 90 || rotation_degrees == 270;
+    let final_w = if is_swapped { unrotated_h } else { unrotated_w };
 
-        // --- STEP 1: Mirroring (Applied BEFORE rotation per HEIF spec) ---
-        if let Some(axis) = self.mirror {
-            trace!("Mirroring image");
-            let canvas: &mut [u8] = if rotation_degrees != 0 { unrotated_canvas } else { output };
-            mirror_in_place(canvas, unrotated_w, unrotated_h, channels, axis);
-            if rotation_degrees == 0 {
-                return Ok(());
-            }
+    // --- STEP 1: Mirroring (Applied BEFORE rotation per HEIF spec) ---
+    if let Some(axis) = layout.mirror {
+        trace!("Mirroring image");
+        let canvas: &mut [u8] = if rotation_degrees != 0 { unrotated_canvas } else { output };
+        mirror_in_place(canvas, unrotated_w, unrotated_h, channels, axis);
+        if rotation_degrees == 0 {
+            return Ok(());
         }
-        // --- STEP 2: Rotation ---
-        if rotation_degrees != 0 {
-            trace!("Rotation degrees: {rotation_degrees}");
-            match rotation_degrees {
-                90 => {
-                    for y in 0..unrotated_h {
-                        for x in 0..unrotated_w {
-                            let src_idx = (y * unrotated_w + x) * channels;
-                            let dest_x = y;
-                            let dest_y = unrotated_w - 1 - x;
-                            let dest_idx = (dest_y * final_w + dest_x) * channels;
-
-                            output[dest_idx..dest_idx + channels]
-                                .copy_from_slice(&unrotated_canvas[src_idx..src_idx + channels]);
-                        }
-                    }
-                }
-                270 => {
-                    for y in 0..unrotated_h {
-                        for x in 0..unrotated_w {
-                            let src_idx = (y * unrotated_w + x) * channels;
-                            let dest_x = unrotated_h - 1 - y;
-                            let dest_y = x;
-                            let dest_idx = (dest_y * final_w + dest_x) * channels;
-
-                            output[dest_idx..dest_idx + channels]
-                                .copy_from_slice(&unrotated_canvas[src_idx..src_idx + channels]);
-                        }
-                    }
-                }
-                180 => {
-                    for y in 0..unrotated_h {
-                        for x in 0..unrotated_w {
-                            let src_idx = (y * unrotated_w + x) * channels;
-                            let dest_x = unrotated_w - 1 - x;
-                            let dest_y = unrotated_h - 1 - y;
-                            let dest_idx = (dest_y * final_w + dest_x) * channels;
-
-                            output[dest_idx..dest_idx + channels]
-                                .copy_from_slice(&unrotated_canvas[src_idx..src_idx + channels]);
-                        }
-                    }
-                }
-                _ => {
-                    return Err(HeicErrors::Generic {
-                        msg: format!("Unsupported rotation: {rotation_degrees}")
-                    });
-                }
-            }
-        }
-
-        Ok(())
     }
+    // --- STEP 2: Rotation ---
+    if rotation_degrees != 0 {
+        trace!("Rotation degrees: {rotation_degrees}");
+        match rotation_degrees {
+            90 => {
+                for y in 0..unrotated_h {
+                    for x in 0..unrotated_w {
+                        let src_idx = (y * unrotated_w + x) * channels;
+                        let dest_x = y;
+                        let dest_y = unrotated_w - 1 - x;
+                        let dest_idx = (dest_y * final_w + dest_x) * channels;
+
+                        output[dest_idx..dest_idx + channels]
+                            .copy_from_slice(&unrotated_canvas[src_idx..src_idx + channels]);
+                    }
+                }
+            }
+            270 => {
+                for y in 0..unrotated_h {
+                    for x in 0..unrotated_w {
+                        let src_idx = (y * unrotated_w + x) * channels;
+                        let dest_x = unrotated_h - 1 - y;
+                        let dest_y = x;
+                        let dest_idx = (dest_y * final_w + dest_x) * channels;
+
+                        output[dest_idx..dest_idx + channels]
+                            .copy_from_slice(&unrotated_canvas[src_idx..src_idx + channels]);
+                    }
+                }
+            }
+            180 => {
+                for y in 0..unrotated_h {
+                    for x in 0..unrotated_w {
+                        let src_idx = (y * unrotated_w + x) * channels;
+                        let dest_x = unrotated_w - 1 - x;
+                        let dest_y = unrotated_h - 1 - y;
+                        let dest_idx = (dest_y * final_w + dest_x) * channels;
+
+                        output[dest_idx..dest_idx + channels]
+                            .copy_from_slice(&unrotated_canvas[src_idx..src_idx + channels]);
+                    }
+                }
+            }
+            _ => {
+                return Err(HeicErrors::Generic {
+                    msg: format!("Unsupported rotation: {rotation_degrees}")
+                });
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// Mirror an interleaved image in place.
