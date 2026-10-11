@@ -161,7 +161,7 @@
 //! # Performance
 //!
 //! Decoding an iPhone photo (`fuzz-samples/IMG_4862.HEIC`, a 4284×5712 grid
-//! of 49 tiles, rotated) to RGB on an Apple M3 Pro (18 GB RAM), measured with
+//! of 49 tiles) to RGB on an Apple M3 Pro (18 GB RAM), measured with
 //! `cargo bench -p zune-heic` (`benches/heif_bench.rs`):
 //!
 //! | Decoder | Time |
@@ -180,7 +180,7 @@
 //!
 //! | Image | Size | libheif | zune-heic |
 //! |---|---|---|---|
-//! | iPhone photo, 49-tile grid, rotated | 4284×5712 | 569 ms | 384 ms |
+//! | iPhone photo, 49-tile grid | 4284×5712 | 569 ms | 384 ms |
 //! | grid, 48 tiles | 4000×3000 | 368 ms | 284 ms |
 //! | single image | 2880×1800 | 243 ms | 119 ms |
 //! | single image | 1920×1920 | 115 ms | 42 ms |
