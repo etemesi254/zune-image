@@ -1,4 +1,4 @@
-use alloc::{borrow::ToOwned, string::ToString, vec::Vec};
+use alloc::{string::ToString, vec, vec::Vec};
 use alloc::collections::BTreeMap;
 
 use zune_core::bytestream::{ZByteReaderTrait, ZReader, ZSeekFrom};
@@ -15,7 +15,8 @@ use crate::header_structs::{
 use crate::headers::{decode_ftyp, decode_meta};
 use crate::hevc_decoder::HevcDecoder;
 use crate::hevc_decoder::nal_parser::NalFraming;
-use crate::processor::{HevcSample, apply_orientation};
+use crate::processor::HevcSample;
+use crate::transform::{self, CleanAperture, Transform};
 use crate::utils::Lock;
 
 
@@ -83,23 +84,17 @@ pub(crate) struct ImageLayout {
     /// Grid tiles are decoded in parallel (std only)
     #[cfg_attr(not(feature = "std"), allow(dead_code))]
     pub is_grid:  bool,
-    /// Size before rotation (`ispe`, else the grid's output size)
-    pub width:    usize,
-    pub height:   usize,
-    /// `irot`, in degrees anti-clockwise
-    pub rotation: u16,
-    /// `imir` axis
-    pub mirror:   Option<u8>,
+    /// Size of the decoded picture (`ispe`, else the grid's output size)
+    pub width:      usize,
+    pub height:     usize,
+    /// `clap`, `irot` and `imir`, in the order they are applied
+    pub transforms: Vec<Transform>,
 }
 
 impl ImageLayout {
-    /// Size after rotation
+    /// Size after the transformations
     pub fn output_dimensions(&self) -> (usize, usize) {
-        if self.rotation == 90 || self.rotation == 270 {
-            (self.height, self.width)
-        } else {
-            (self.width, self.height)
-        }
+        transform::output_size(&self.transforms, (self.width, self.height))
     }
 }
 impl<T> HeifDecoder<T>
@@ -323,14 +318,18 @@ where
             .unwrap_or([0, 0, 0, 0]) // Return null if not found
     }
     /// The layout of image item `item_id`: a `grid` of `hvc1` pictures or a
-    /// single `hvc1` picture, with its `ispe`, `irot` and `imir` properties.
+    /// single `hvc1` picture, with its size (`ispe`) and its transformations
+    /// (`clap`, `irot`, `imir`, in property order, as libheif applies them).
     fn read_layout(&mut self, item_id: u32) -> Result<ImageLayout, HeicErrors> {
         let meta = self.meta_section.as_ref().ok_or(HeicErrors::Generic {
             msg: "no meta section".to_string(),
         })?;
 
-        // properties: size and orientation
-        let (mut width, mut height, mut rotation, mut mirror) = (0, 0, 0, None);
+        // properties: size and transformations
+        let (mut width, mut height) = (0, 0);
+        // the crop rectangle depends on the size at that point, which is
+        // only known once the size is
+        let mut steps: Vec<Result<Transform, CleanAperture>> = Vec::new();
         if let Some(iprp) = &meta.iprp
             && let (Some(ipma), Some(ipco)) = (&iprp.ipma, &iprp.ipco)
             && let Some(entry) = ipma.entries.iter().find(|e| e.item_id == item_id)
@@ -347,11 +346,27 @@ where
                     }
                     ItemProperty::Irot { angle_degrees } => {
                         trace!("Item {item_id} is rotated by {angle_degrees}");
-                        rotation = *angle_degrees;
+                        if *angle_degrees != 0 {
+                            steps.push(Ok(Transform::Rotate(*angle_degrees)));
+                        }
                     }
                     ItemProperty::Imir { axis } => {
                         trace!("Item {item_id} is mirrored on axis {axis}");
-                        mirror = Some(*axis);
+                        // libheif: axis 0 flips top/bottom, axis 1 left/right
+                        steps.push(Ok(if *axis == 0 {
+                            Transform::FlipTopBottom
+                        } else {
+                            Transform::FlipLeftRight
+                        }));
+                    }
+                    ItemProperty::Clap { width, height, horizontal_offset, vertical_offset } => {
+                        trace!("Item {item_id} has a clean aperture");
+                        steps.push(Err(CleanAperture {
+                            width:             *width,
+                            height:            *height,
+                            horizontal_offset: *horizontal_offset,
+                            vertical_offset:   *vertical_offset,
+                        }));
                     }
                     _ => {}
                 }
@@ -438,8 +453,7 @@ where
                     is_grid: true,
                     width,
                     height,
-                    rotation,
-                    mirror,
+                    transforms: Vec::new(),
                 }
             }
             // `hvc1`; other types fail when they are decoded
@@ -450,14 +464,23 @@ where
                 is_grid: false,
                 width,
                 height,
-                rotation,
-                mirror,
+                transforms: Vec::new(),
             },
         };
         if layout.width == 0 || layout.height == 0 {
             return Err(HeicErrors::Generic {
                 msg: format!("Width or height is zero (w={},h={})", layout.width, layout.height),
             });
+        }
+        let mut layout = layout;
+        let mut size = (layout.width, layout.height);
+        for step in steps {
+            let t = match step {
+                Ok(t) => t,
+                Err(clap) => Transform::Crop(clap.crop(size.0, size.1)?),
+            };
+            size = t.output_size(size);
+            layout.transforms.push(t);
         }
         Ok(layout)
     }
@@ -550,7 +573,7 @@ where
     /// Width of the decoded image in pixels, or `None` before
     /// [`decode_headers`](Self::decode_headers).
     ///
-    /// This is the width after rotation, i.e. the width of the pixels
+    /// This is the width after cropping and rotation, i.e. the width of the pixels
     /// returned by [`decode`](Self::decode).
     pub fn width(&self) -> Option<usize> {
         Some(self.primary.as_ref()?.output_dimensions().0)
@@ -559,7 +582,7 @@ where
     /// Height of the decoded image in pixels, or `None` before
     /// [`decode_headers`](Self::decode_headers).
     ///
-    /// This is the height after rotation, i.e. the height of the pixels
+    /// This is the height after cropping and rotation, i.e. the height of the pixels
     /// returned by [`decode`](Self::decode).
     pub fn height(&self) -> Option<usize> {
         Some(self.primary.as_ref()?.output_dimensions().1)
@@ -592,8 +615,8 @@ where
     ///
     /// The pixels are 8-bit and interleaved in the order of
     /// [`colorspace`](Self::colorspace) (usually RGB), row by row,
-    /// [`width`](Self::width) × [`height`](Self::height), with any rotation
-    /// and mirroring stored in the file already applied. Its size is
+    /// [`width`](Self::width) × [`height`](Self::height), with any cropping
+    /// (`clap`), rotation and mirroring stored in the file already applied. Its size is
     /// [`output_buffer_size`](Self::output_buffer_size).
     ///
     /// To decode into a buffer you already have, use [`decode_into`](Self::decode_into).
@@ -707,45 +730,46 @@ where
 
     /// Decode the image described by `layout` into `output`
     /// (`channels` = 1: raw luma samples, 3/4: RGB/RGBA with opaque alpha),
-    /// stitching tiles and applying its rotation and mirroring.
+    /// stitching tiles and applying its transformations (`clap`, `irot`,
+    /// `imir`).
     fn decode_layout(
         &self, layout: &ImageLayout, channels: usize, output: &mut [u8], allow_hardware: bool,
     ) -> Result<(), HeicErrors> {
         let (w, h) = (layout.width, layout.height);
 
+        #[cfg(all(target_os = "macos", feature = "std"))]
+        let use_hardware = allow_hardware && self.options.hvec_use_apple_videotoolbox();
+        #[cfg(not(all(target_os = "macos", feature = "std")))]
+        let use_hardware = {
+            let _ = allow_hardware;
+            false
+        };
+
         // Tiles are converted straight into their place on the canvas as soon as
-        // they are decoded, so no per-tile RGB copies are kept around. When the
-        // image is rotated we need an intermediate (unrotated) canvas; otherwise
-        // the output buffer itself is the canvas.
-        let rotation = layout.rotation;
-        let mut unrotated_canvas =
-            if rotation != 0 { vec![0u8; w * h * channels] } else { Vec::new() };
+        // they are decoded, so no per-tile RGB copies are kept around. Rotating
+        // and cropping need an intermediate canvas; otherwise (no transforms,
+        // or only flips, which work in place) the output buffer is the canvas.
+        let needs_canvas = layout
+            .transforms
+            .iter()
+            .any(|t| matches!(t, Transform::Rotate(_) | Transform::Crop(_)));
+        let mut canvas = if needs_canvas { vec![0u8; w * h * channels] } else { Vec::new() };
 
         {
-            let canvas: &mut [u8] =
-                if rotation != 0 { &mut unrotated_canvas } else { &mut *output };
+            let canvas: &mut [u8] = if needs_canvas { &mut canvas } else { &mut *output };
 
             // One lock per canvas row: tiles in the same grid row share canvas
             // rows, so they may be written concurrently from different threads.
             let canvas_rows: Vec<Lock<&mut [u8]>> =
                 canvas.chunks_mut(w * channels).map(Lock::new).collect();
 
-            // item_id -> grid positions (an item may in theory be referenced more than once)
-            let mut placements: BTreeMap<u32, Vec<usize>> = BTreeMap::new();
-            for (index, &item_id) in layout.tile_ids.iter().enumerate() {
-                placements.entry(item_id).or_default().push(index);
-            }
+            let placements = Self::placements(layout);
             let cols = layout.cols.max(1);
-            // colour description from each item's own `colr` (nclx) box
-            let item_nclx = self.item_nclx_profiles();
-            // conversions built so far, shared by all tiles (usually just one)
-            let conversions: Lock<Vec<(ColourInfo, Conversion)>> = Lock::new(Vec::new());
 
             // Apple VideoToolbox: hardware decode, tiles written straight into
             // the same canvas from the decode callback.
             #[cfg(all(target_os = "macos", feature = "std"))]
-            let decoded_in_hardware = if allow_hardware && self.options.hvec_use_apple_videotoolbox()
-            {
+            if use_hardware {
                 trace!("HEVC using apple video toolbox");
                 self.decode_hardware_videotoolbox(
                     layout,
@@ -756,64 +780,18 @@ where
                     h,
                     channels,
                 )?;
-                true
-            } else {
-                false
-            };
-            #[cfg(not(all(target_os = "macos", feature = "std")))]
-            let decoded_in_hardware = {
-                let _ = allow_hardware;
-                false
-            };
+            }
 
-            if !decoded_in_hardware {
-                // Grid tiles are already decoded in parallel (one tile per thread),
-                // so only a single picture spreads its CTU rows over the CPUs.
-                #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
-                let row_threads = if layout.is_grid {
-                    1
-                } else {
-                    std::thread::available_parallelism().map_or(1, core::num::NonZero::get)
-                };
-                #[cfg(any(not(feature = "std"), target_arch = "wasm32"))]
-                let row_threads = 1;
+            if !use_hardware {
+                // colour description from each item's own `colr` (nclx) box
+                let item_nclx = self.item_nclx_profiles();
+                // conversions built so far, shared by all tiles (usually just one)
+                let conversions: Lock<Vec<(ColourInfo, Conversion)>> = Lock::new(Vec::new());
+                let row_threads = Self::row_threads(layout);
 
-                let processor = |sample: HevcSample| -> Result<(), HeicErrors> {
-                    let mut software_decoder: HevcDecoder = HevcDecoder::new();
-                    software_decoder.set_max_threads(row_threads);
-
-                    let vps = sample.vps.as_deref().ok_or(HeicErrors::Generic {
-                        msg: "vps not found".to_owned(),
-                    })?;
-                    let sps = sample.sps.as_deref().ok_or(HeicErrors::Generic {
-                        msg: "sps not found".to_owned(),
-                    })?;
-                    let pps = sample.pps.as_deref().ok_or(HeicErrors::Generic {
-                        msg: "pps not found".to_owned(),
-                    })?;
-
-                    software_decoder.parse_extradata(vps, NalFraming::RawBytes)?;
-                    software_decoder.parse_extradata(sps, NalFraming::RawBytes)?;
-                    software_decoder.parse_extradata(pps, NalFraming::RawBytes)?;
-
-                    // then decode
-                    let frame = software_decoder.decode(&sample)?.ok_or(HeicErrors::Generic {
-                        msg: "decode failure, no frame found".to_string(),
-                    })?;
-
-                    // Dynamically grab the REAL tile dimensions
-                    let tile_w = software_decoder.width();
-                    let tile_h = software_decoder.height();
-
-                    let positions = placements.get(&sample.item_id).ok_or(HeicErrors::Generic {
-                        msg: format!("Decoded tile {} has no grid position", sample.item_id),
-                    })?;
-
-                    // Like libheif: the item's nclx box, else the HEVC VUI
-                    let colour = item_nclx
-                        .get(&sample.item_id)
-                        .copied()
-                        .unwrap_or_else(|| ColourInfo::from_vui(software_decoder.vui()));
+                self.for_each_picture(layout, |sample: HevcSample| -> Result<(), HeicErrors> {
+                    let (frame, tile_w, tile_h, colour) =
+                        Self::decode_picture(&sample, row_threads, &item_nclx)?;
                     let conv = conversions.with(|built| {
                         if let Some((_, conv)) = built.iter().find(|(info, _)| *info == colour) {
                             return conv.clone();
@@ -823,36 +801,95 @@ where
                         conv
                     });
 
-                    for &index in positions {
+                    for &index in Self::positions(&placements, sample.item_id)? {
                         let base_x = (index % cols) * tile_w;
                         let base_y = (index / cols) * tile_h;
                         frame.write_into_canvas(&canvas_rows, base_x, base_y, w, h, channels, &conv)?;
                     }
                     Ok(())
-                };
-                // no threads without std (or on wasm)
-                #[cfg(any(not(feature = "std"), target_arch = "wasm32"))]
-                {
-                    trace!("Using single threaded sample processor");
-
-                    self.process_hevc_samples(layout, processor)?;
-                }
-
-                #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
-                {
-                    if layout.is_grid {
-                        trace!("Using parallel sample decoder");
-                        self.process_hevc_samples_parallel(layout, processor)?;
-                    } else {
-                        trace!("Using standard sample decoder, image is not grid so no need for parallel");
-                        self.process_hevc_samples(layout, processor)?;
-                    }
-                }
+                })?;
             }
         }
 
-        // Mirroring then rotation (HEIF order), in place / into `output`.
-        apply_orientation(layout, channels, &mut unrotated_canvas, output)
+        transform::apply_interleaved(&layout.transforms, channels, canvas, (w, h), output)
+    }
+
+    /// item_id -> grid positions (an item may in theory be referenced more than once)
+    fn placements(layout: &ImageLayout) -> BTreeMap<u32, Vec<usize>> {
+        let mut placements: BTreeMap<u32, Vec<usize>> = BTreeMap::new();
+        for (index, &item_id) in layout.tile_ids.iter().enumerate() {
+            placements.entry(item_id).or_default().push(index);
+        }
+        placements
+    }
+
+    fn positions(placements: &BTreeMap<u32, Vec<usize>>, item_id: u32) -> Result<&[usize], HeicErrors> {
+        placements.get(&item_id).map(Vec::as_slice).ok_or(HeicErrors::Generic {
+            msg: format!("Decoded tile {item_id} has no grid position"),
+        })
+    }
+
+    /// Threads for the CTU rows of one picture: grid tiles are already
+    /// decoded in parallel (one tile per thread), so only a single picture
+    /// spreads its rows over the CPUs.
+    fn row_threads(layout: &ImageLayout) -> usize {
+        #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+        if !layout.is_grid {
+            return std::thread::available_parallelism().map_or(1, core::num::NonZero::get);
+        }
+        let _ = layout;
+        1
+    }
+
+    /// Run `processor` on every coded picture of `layout`, grid tiles in
+    /// parallel when threads are available.
+    #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+    fn for_each_picture<F>(&self, layout: &ImageLayout, processor: F) -> Result<(), HeicErrors>
+    where
+        F: Fn(HevcSample) -> Result<(), HeicErrors> + Sync,
+    {
+        if layout.is_grid {
+            trace!("Using parallel sample decoder");
+            return self.process_hevc_samples_parallel(layout, processor);
+        }
+        trace!("Using single threaded sample decoder");
+        self.process_hevc_samples(layout, processor)
+    }
+
+    /// Run `processor` on every coded picture of `layout` (no threads
+    /// without std, or on wasm).
+    #[cfg(any(not(feature = "std"), target_arch = "wasm32"))]
+    fn for_each_picture<F>(&self, layout: &ImageLayout, processor: F) -> Result<(), HeicErrors>
+    where
+        F: Fn(HevcSample) -> Result<(), HeicErrors>,
+    {
+        self.process_hevc_samples(layout, processor)
+    }
+
+    /// Decode one coded picture in software. Returns it with its size and
+    /// its colour description (like libheif: the item's nclx box, else the
+    /// HEVC VUI).
+    fn decode_picture(
+        sample: &HevcSample, row_threads: usize, item_nclx: &BTreeMap<u32, ColourInfo>,
+    ) -> Result<(crate::hevc_decoder::RawFrame, usize, usize, ColourInfo), HeicErrors> {
+        fn parameter_set<'a>(set: Option<&'a [u8]>, name: &str) -> Result<&'a [u8], HeicErrors> {
+            set.ok_or(HeicErrors::Generic { msg: format!("{name} not found") })
+        }
+
+        let mut decoder: HevcDecoder = HevcDecoder::new();
+        decoder.set_max_threads(row_threads);
+        decoder.parse_extradata(parameter_set(sample.vps.as_deref(), "vps")?, NalFraming::RawBytes)?;
+        decoder.parse_extradata(parameter_set(sample.sps.as_deref(), "sps")?, NalFraming::RawBytes)?;
+        decoder.parse_extradata(parameter_set(sample.pps.as_deref(), "pps")?, NalFraming::RawBytes)?;
+
+        let frame = decoder.decode(sample)?.ok_or(HeicErrors::Generic {
+            msg: "decode failure, no frame found".to_string(),
+        })?;
+        let colour = item_nclx
+            .get(&sample.item_id)
+            .copied()
+            .unwrap_or_else(|| ColourInfo::from_vui(decoder.vui()));
+        Ok((frame, decoder.width(), decoder.height(), colour))
     }
 
     /// Determines the final output color space of the primary image,
@@ -1121,7 +1158,7 @@ where
     ///
     /// Note that the Exif orientation tag describes the stored image; the
     /// pixels returned by [`decode`](Self::decode) already have the HEIF
-    /// rotation and mirroring applied.
+    /// cropping, rotation and mirroring applied.
     ///
     /// # Example
     /// ```no_run

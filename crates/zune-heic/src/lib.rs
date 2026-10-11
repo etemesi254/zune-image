@@ -24,8 +24,9 @@
 //!   bindings.
 //! - **Hardware decoding on Apple platforms** through VideoToolbox, on by
 //!   default on macOS (see [`DecoderOptions::hvec_set_use_videotoolbox`]).
-//! - **Image properties handled:** grids, rotation (`irot`) and mirroring
-//!   (`imir`), colour description (`colr` nclx, or the HEVC VUI) for the
+//! - **Image properties handled:** grids, clean aperture cropping (`clap`),
+//!   rotation (`irot`) and mirroring (`imir`) in the order the file lists
+//!   them, colour description (`colr` nclx, or the HEVC VUI) for the
 //!   YCbCr → RGB conversion, ICC profiles and Exif metadata.
 //! - **Alpha.** Alpha planes (auxiliary alpha images, single or grid) are
 //!   decoded into RGBA / LumaA output; premultiplied alpha (`prem`) is
@@ -46,8 +47,8 @@
 //! ## Decode a HEIC file
 //!
 //! [`HeifDecoder::decode`] returns interleaved 8-bit pixels in the order of
-//! [`HeifDecoder::colorspace`] (usually RGB), with the rotation and mirroring
-//! stored in the file already applied.
+//! [`HeifDecoder::colorspace`] (usually RGB), with the cropping, rotation and
+//! mirroring stored in the file already applied.
 //!
 //! ```no_run
 //! use zune_heic::HeifDecoder;
@@ -205,7 +206,6 @@
 //!   monochrome; 10-bit, 4:2:2 and 4:4:4 images are rejected.
 //! - Premultiplied alpha is returned as stored (like libheif); see
 //!   [`HeifDecoder::is_alpha_premultiplied`].
-//! - Clean aperture (`clap`) cropping is not applied.
 //! - With VideoToolbox, the YCbCr → RGB conversion is not the libheif one, so
 //!   the output is not bit-identical to libheif.
 //!
@@ -275,6 +275,7 @@ mod hevc_decoder;
 // debug tracing macros, private to the crate
 pub(crate) use hevc_decoder::macros::{dbg_print, dbg_println, debug_more};
 mod processor;
+mod transform;
 mod utils;
 
 pub extern crate zune_core;

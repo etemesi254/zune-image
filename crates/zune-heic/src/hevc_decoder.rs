@@ -8,7 +8,7 @@ use crate::hevc_decoder::nal_unit_headers::{Pps, Sps, Vps};
 use crate::hevc_decoder::nal_unit_parsers::{decode_pps, decode_sps, decode_vps};
 use crate::hevc_decoder::neighbor_tracker::BlockMap;
 use crate::hevc_decoder::quadtree::decode_slice;
-use crate::hevc_decoder::raw_frame::RawFrame;
+pub(crate) use crate::hevc_decoder::raw_frame::RawFrame;
 use crate::processor::HevcSample;
 
 //pub(crate) static DEBUG_MORE: AtomicBool = AtomicBool::new(false);

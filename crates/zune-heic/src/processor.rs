@@ -1,7 +1,6 @@
 use alloc::vec::Vec;
 
 use zune_core::bytestream::ZByteReaderTrait;
-use zune_core::log::trace;
 
 use crate::decoder::{HeifDecoder, ImageLayout};
 use crate::errors::HeicErrors;
@@ -204,112 +203,6 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
             return Err(err);
         }
         Ok(())
-    }
-}
-
-/// Applies `imir` mirroring and then `irot` rotation (HEIF order) of
-/// `layout` to an image with `channels` bytes per pixel.
-///
-/// * No rotation: `unrotated_canvas` is empty and `output` already holds the
-///   stitched image; mirroring is done in place on `output`.
-/// * Rotation: `unrotated_canvas` holds the stitched image; it is mirrored in
-///   place and then rotated into `output`.
-pub(crate) fn apply_orientation(
-    layout: &ImageLayout, channels: usize, unrotated_canvas: &mut [u8], output: &mut [u8]
-) -> Result<(), HeicErrors> {
-    let unrotated_w = layout.width;
-    let unrotated_h = layout.height;
-
-    let rotation_degrees = layout.rotation;
-    let is_swapped = rotation_degrees == 90 || rotation_degrees == 270;
-    let final_w = if is_swapped { unrotated_h } else { unrotated_w };
-
-    // --- STEP 1: Mirroring (Applied BEFORE rotation per HEIF spec) ---
-    if let Some(axis) = layout.mirror {
-        trace!("Mirroring image");
-        let canvas: &mut [u8] = if rotation_degrees != 0 { unrotated_canvas } else { output };
-        mirror_in_place(canvas, unrotated_w, unrotated_h, channels, axis);
-        if rotation_degrees == 0 {
-            return Ok(());
-        }
-    }
-    // --- STEP 2: Rotation ---
-    if rotation_degrees != 0 {
-        trace!("Rotation degrees: {rotation_degrees}");
-        match rotation_degrees {
-            90 => {
-                for y in 0..unrotated_h {
-                    for x in 0..unrotated_w {
-                        let src_idx = (y * unrotated_w + x) * channels;
-                        let dest_x = y;
-                        let dest_y = unrotated_w - 1 - x;
-                        let dest_idx = (dest_y * final_w + dest_x) * channels;
-
-                        output[dest_idx..dest_idx + channels]
-                            .copy_from_slice(&unrotated_canvas[src_idx..src_idx + channels]);
-                    }
-                }
-            }
-            270 => {
-                for y in 0..unrotated_h {
-                    for x in 0..unrotated_w {
-                        let src_idx = (y * unrotated_w + x) * channels;
-                        let dest_x = unrotated_h - 1 - y;
-                        let dest_y = x;
-                        let dest_idx = (dest_y * final_w + dest_x) * channels;
-
-                        output[dest_idx..dest_idx + channels]
-                            .copy_from_slice(&unrotated_canvas[src_idx..src_idx + channels]);
-                    }
-                }
-            }
-            180 => {
-                for y in 0..unrotated_h {
-                    for x in 0..unrotated_w {
-                        let src_idx = (y * unrotated_w + x) * channels;
-                        let dest_x = unrotated_w - 1 - x;
-                        let dest_y = unrotated_h - 1 - y;
-                        let dest_idx = (dest_y * final_w + dest_x) * channels;
-
-                        output[dest_idx..dest_idx + channels]
-                            .copy_from_slice(&unrotated_canvas[src_idx..src_idx + channels]);
-                    }
-                }
-            }
-            _ => {
-                return Err(HeicErrors::Generic {
-                    msg: format!("Unsupported rotation: {rotation_degrees}")
-                });
-            }
-        }
-    }
-
-    Ok(())
-}
-
-/// Mirror an interleaved image in place.
-/// Axis 0: left/right flip (over the vertical axis); axis 1: top/bottom flip.
-fn mirror_in_place(buf: &mut [u8], w: usize, h: usize, channels: usize, axis: u8) {
-    let bytes_per_row = w * channels;
-    if axis == 0 {
-        for row in buf.chunks_exact_mut(bytes_per_row).take(h) {
-            for x in 0..(w / 2) {
-                let left_idx = x * channels;
-                let right_idx = (w - 1 - x) * channels;
-                for c in 0..channels {
-                    row.swap(left_idx + c, right_idx + c);
-                }
-            }
-        }
-    } else if axis == 1 {
-        for y in 0..(h / 2) {
-            let top_row_idx = y * bytes_per_row;
-            let bottom_row_idx = (h - 1 - y) * bytes_per_row;
-
-            let (top_half, bottom_half) = buf.split_at_mut(bottom_row_idx);
-            top_half[top_row_idx..top_row_idx + bytes_per_row]
-                .swap_with_slice(&mut bottom_half[..bytes_per_row]);
-        }
     }
 }
 

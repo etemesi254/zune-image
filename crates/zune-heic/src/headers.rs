@@ -788,6 +788,46 @@ pub fn decode_ipco<R: ZByteReaderTrait>(
                     reader.skip(payload_size - 1)?;
                 }
             }
+            b"imir" => {
+                // only the lowest bit is defined
+                let axis = reader.read_u8_err()? & 1;
+
+                ipco.properties.push(ItemProperty::Imir { axis });
+                if payload_size > 1 {
+                    reader.skip(payload_size - 1)?;
+                }
+            }
+            b"clap" => {
+                if payload_size < 32 {
+                    return Err(HeicErrors::Generic {
+                        msg: format!("clap box too small ({payload_size} bytes)")
+                    });
+                }
+                let mut values = [0u32; 8];
+                for v in &mut values {
+                    *v = reader.get_u32_be_err()?;
+                }
+                // like libheif: every value but the offset numerators (which
+                // are signed) must fit an i32, and no denominator may be 0
+                let [w_n, w_d, h_n, h_d, ho_n, ho_d, vo_n, vo_d] = values;
+                let fits = |v: u32| i32::try_from(v).is_ok();
+                if ![w_n, w_d, h_n, h_d, ho_d, vo_d].into_iter().all(fits)
+                    || [w_d, h_d, ho_d, vo_d].contains(&0)
+                {
+                    return Err(HeicErrors::Generic {
+                        msg: "Invalid clean aperture (clap) values".into()
+                    });
+                }
+                ipco.properties.push(ItemProperty::Clap {
+                    width:             (w_n as i32, w_d as i32),
+                    height:            (h_n as i32, h_d as i32),
+                    horizontal_offset: (ho_n as i32, ho_d as i32),
+                    vertical_offset:   (vo_n as i32, vo_d as i32)
+                });
+                if payload_size > 32 {
+                    reader.skip(payload_size - 32)?;
+                }
+            }
             b"colr" => {
                 // Note: `colr` is NOT a FullBox. No version or flags.
                 // It starts immediately with a 4-byte colour_type string.

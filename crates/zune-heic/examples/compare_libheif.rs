@@ -26,14 +26,27 @@ fn main() -> ExitCode {
     // software decoding only, so this tests zune-heic and not the OS decoder
     let options = DecoderOptions::default().hvec_set_use_videotoolbox(false);
     let mut decoder = HeifDecoder::new_with_options(ZCursor::new(heic.as_slice()), options);
-    let ours = decoder.decode().expect("zune-heic failed to decode");
+    let mut ours = decoder.decode().expect("zune-heic failed to decode");
     let (width, height) = (decoder.width().unwrap(), decoder.height().unwrap());
-    let channels = decoder.colorspace().unwrap().num_components();
+    let mut channels = decoder.colorspace().unwrap().num_components();
 
     let mut png_decoder = PngDecoder::new(ZCursor::new(png.as_slice()));
     let theirs = png_decoder.decode_raw().expect("cannot decode the PNG file");
     let (png_w, png_h) = png_decoder.dimensions().unwrap();
     let png_channels = png_decoder.colorspace().unwrap().num_components();
+
+    // heif-convert writes greyscale images as RGB(A): compare as R = G = B
+    if channels < 3 && png_channels == channels + 2 {
+        ours = ours
+            .chunks_exact(channels)
+            .flat_map(|px| {
+                let mut out = vec![px[0]; 3];
+                out.extend_from_slice(&px[1..]);
+                out
+            })
+            .collect();
+        channels += 2;
+    }
 
     let name = std::path::Path::new(heic_path).file_name().unwrap().to_string_lossy();
     if (width, height, channels) != (png_w, png_h, png_channels) {
