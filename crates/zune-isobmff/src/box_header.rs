@@ -1,3 +1,4 @@
+//! Box header parsing.
 //!
 //! Parses the 8-byte (or 16-byte for extended size) ISOBMFF box header.
 //!
@@ -12,15 +13,38 @@ use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 use crate::FourCC;
 use crate::IsoBmffErrors;
 
+/// Size of a box, from its header.
 #[derive(Debug, Clone)]
 pub enum BoxSize {
-    /// Absolute item length
+    /// The box is this many bytes long, header included.
     Absolute(u64),
-    /// header extends to the end
+    /// The box extends to the end of the file (a `size` of 0).
+    ///
+    /// Only the last box of a file can have this size.
     ToEnd,
 }
 
 /// Parsed header of a single ISOBMFF box.
+///
+/// Read with [`BoxHeader::read`]. After reading, the reader is positioned at
+/// the start of the box's payload, which is
+/// [`get_header_size`](Self::get_header_size) bytes after
+/// [`get_initial_offset`](Self::get_initial_offset).
+///
+/// ```
+/// use zune_core::bytestream::{ZCursor, ZReader};
+/// use zune_isobmff::{BoxHeader, BoxSize};
+///
+/// let data = [0, 0, 0, 12, b'f', b'r', b'e', b'e', 1, 2, 3, 4];
+/// let mut reader = ZReader::new(ZCursor::new(&data[..]));
+/// let header = BoxHeader::read(&mut reader).unwrap();
+///
+/// assert_eq!(header.get_box_type(), &"free");
+/// assert_eq!(header.get_header_size(), 8);
+/// assert!(matches!(header.get_total_size(), BoxSize::Absolute(12)));
+/// // the reader is now at the payload
+/// assert_eq!(reader.position().unwrap(), 8);
+/// ```
 #[derive(Debug, Clone)]
 pub struct BoxHeader {
     /// Absolute byte offset where this box starts.
@@ -36,7 +60,14 @@ pub struct BoxHeader {
 }
 
 impl BoxHeader {
-    /// Try to parse a BoxHeader from the current reader position.
+    /// Parse a box header at the reader's current position.
+    ///
+    /// On success the reader is left at the start of the box's payload. The
+    /// size is not checked against the data available, nor against the
+    /// header size: callers should not trust it.
+    ///
+    /// # Errors
+    /// [`IsoBmffErrors::Io`] if the data ends before the header does.
     pub fn read<T: ZByteReaderTrait>(reader: &mut ZReader<T>) -> Result<Self, IsoBmffErrors> {
         let offset = reader.position()?;
 
@@ -85,7 +116,11 @@ impl BoxHeader {
         self.offset
     }
 
-    /// Size of the header for this box.
+    /// Size of the header for this box: 8 bytes, plus 8 for a 64-bit size
+    /// and 16 for a `uuid` box's UUID.
+    ///
+    /// The payload starts this many bytes after
+    /// [`get_initial_offset`](Self::get_initial_offset).
     pub fn get_header_size(&self) -> u64 {
         self.header_size
     }
@@ -110,6 +145,7 @@ impl BoxHeader {
     }
 }
 
+#[cfg(test)]
 mod tests {
     #[test]
     fn check_standard_header() {
@@ -126,7 +162,7 @@ mod tests {
         assert_eq!(box_header.box_type, crate::FourCC(*b"ftyp"));
         match box_header.get_total_size() {
             super::BoxSize::Absolute(size) => assert_eq!(*size, 24),
-            super::BoxSize::ToEnd => assert!(false, "Expected box size to be absolute"),
+            super::BoxSize::ToEnd => panic!("Expected box size to be absolute"),
         }
         assert!(box_header.get_uuid().is_none());
     }
@@ -147,7 +183,7 @@ mod tests {
         assert_eq!(box_header.box_type, crate::FourCC(*b"ftyp"));
         match box_header.get_total_size() {
             super::BoxSize::Absolute(size) => assert_eq!(*size, 32u64),
-            super::BoxSize::ToEnd => assert!(false, "Expected box size to be absolute"),
+            super::BoxSize::ToEnd => panic!("Expected box size to be absolute"),
         }
         assert!(box_header.get_uuid().is_none());
     }
@@ -165,7 +201,7 @@ mod tests {
         assert_eq!(box_header.header_size, 8);
         assert_eq!(box_header.box_type, crate::FourCC(*b"mdat"));
         match box_header.get_total_size() {
-            super::BoxSize::Absolute(_) => assert!(false, "Expected box size to continue to end"),
+            super::BoxSize::Absolute(_) => panic!("Expected box size to continue to end"),
             super::BoxSize::ToEnd => {}
         }
         assert!(box_header.get_uuid().is_none());
@@ -186,7 +222,7 @@ mod tests {
         assert_eq!(box_header.box_type, crate::FourCC(*b"uuid"));
         match box_header.get_total_size() {
             super::BoxSize::Absolute(size) => assert_eq!(*size, 25u64),
-            super::BoxSize::ToEnd => assert!(false, "Expected box size to be absolute"),
+            super::BoxSize::ToEnd => panic!("Expected box size to be absolute"),
         }
         // See ISO/IEC 14496-12:2026 Section 4.2.3 for this extensibility mechanism
         assert_eq!(

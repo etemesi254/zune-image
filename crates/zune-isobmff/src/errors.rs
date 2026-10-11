@@ -1,15 +1,18 @@
-// isobmff/src/error.rs
+//! Errors returned while parsing boxes
 
 use alloc::string::String;
 use core::fmt;
 
 use zune_core::bytestream::ZByteIoError;
 
+/// Errors returned by this crate.
 pub enum IsoBmffErrors {
-    /// Wraps an underlying I/O failure.
+    /// Reading failed, e.g. the data ends in the middle of a box header.
     Io(ZByteIoError),
 
+    /// Any other error.
     Generic {
+        /// What went wrong
         msg: String,
     },
 }
