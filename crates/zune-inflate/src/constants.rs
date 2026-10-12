@@ -16,7 +16,7 @@ pub const DEFLATE_NUM_LITLEN_SYMS: usize = 288;
 pub const DEFLATE_NUM_OFFSET_SYMS: usize = 32;
 
 /// Maximum possible overrun when decoding codeword lengths
-pub const DELFATE_MAX_LENS_OVERRUN: usize = 137;
+pub const DEFLATE_MAX_LENS_OVERRUN: usize = 137;
 
 /// Order which precode lengths are stored
 pub static DEFLATE_PRECODE_LENS_PERMUTATION: [u8; DEFLATE_NUM_PRECODE_SYMS] = [
@@ -156,7 +156,7 @@ pub const DEFLATE_MAX_MATCH_LEN: usize = 258;
 /// Number of bytes copied per every loop
 pub const FASTCOPY_BYTES: usize = 8;
 
-/// Worst case maximum number of output bytes writtern during each iteration of the
+/// Worst case maximum number of output bytes written during each iteration of the
 /// fastloop.
 pub const FASTLOOP_MAX_BYTES_WRITTEN: usize = 6 + DEFLATE_MAX_MATCH_LEN + (2 * FASTCOPY_BYTES);
 
@@ -166,9 +166,9 @@ pub const FASTLOOP_MAX_BYTES_WRITTEN: usize = 6 + DEFLATE_MAX_MATCH_LEN + (2 * F
 pub const DEFLATE_MAX_BLOCK_SIZE: usize = 1 << 15;
 /// Minimum supported match length for deflate
 pub const DEFLATE_MIN_LENGTH: usize = 3;
-/// Size for which the match fidner should not try to find matches
+/// Size for which the match finder should not try to find matches
 /// if we are this close to the end
 pub const DEFLATE_WINDOW_SIZE: usize = 10;
 
-/// Max sequnces expected to be found in a block
+/// Max sequences expected to be found in a block
 pub const MAX_SEQ_PER_BLOCK: usize = DEFLATE_MAX_BLOCK_SIZE / 3;
