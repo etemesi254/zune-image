@@ -156,5 +156,23 @@
   {
     "name": "arith/prog-restart.jpg",
     "hash": 308699570423173762598813957121638158295
+  },
+  {
+    "name": "noninterleaved-dc-table-1-17x19.jpg",
+    "hash": 260187211213493560908542562379946200200,
+    "colorspace": "rgb",
+    "comment": "Progressive separate DC-first scans using chroma Huffman table 1; authored color grid."
+  },
+  {
+    "name": "noninterleaved-dc-table-2-83x59.jpg",
+    "hash": 274891929724699243682941713076100204759,
+    "colorspace": "rgb",
+    "comment": "Progressive separate DC-first scans using chroma Huffman table 2; authored color grid."
+  },
+  {
+    "name": "noninterleaved-dc-table-3-160x120.jpg",
+    "hash": 338905096724338343787526504398364891758,
+    "colorspace": "rgb",
+    "comment": "Progressive separate DC-first scans using chroma Huffman table 3; authored color grid."
   }
 ]
