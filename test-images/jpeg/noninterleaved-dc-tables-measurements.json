@@ -1,0 +1,209 @@
+{
+  "reference_decoder": "libjpeg-turbo 3.1.4.1 (build 20260327)",
+  "command": "djpeg -outfile reference.ppm <fixture>",
+  "output": "P6 RGB, 8-bit channels",
+  "test_channel_tolerance": 2,
+  "fixtures": [
+    {
+      "fixture": "noninterleaved-dc-table-1-17x19.jpg",
+      "jpeg_sha256": "db772d10ff4a5a5bdf6833da263397e16b44478c7368b071168a3d3e3d493b4a",
+      "reference_ppm_sha256": "5404e3eda8dabd1e9818a212c1a6102a3051dd2bab39894e287abb9c7d0aa59e",
+      "width": 17,
+      "height": 19,
+      "chroma_dc_table": 1,
+      "samples": [
+        {
+          "x": 5,
+          "y": 5,
+          "rgb": [
+            221,
+            30,
+            20
+          ]
+        },
+        {
+          "x": 15,
+          "y": 5,
+          "rgb": [
+            19,
+            199,
+            42
+          ]
+        },
+        {
+          "x": 5,
+          "y": 16,
+          "rgb": [
+            40,
+            20,
+            231
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "noninterleaved-dc-table-2-83x59.jpg",
+      "jpeg_sha256": "1c884d86ea28d0566aa9b4cff53d08b0434d4cbe749929d76d752b8532be9ae7",
+      "reference_ppm_sha256": "e73ed8b6ec14a76e83cae356544442dfae5c5c44a9d6f1a722b3fc5c75fcb680",
+      "width": 83,
+      "height": 59,
+      "chroma_dc_table": 2,
+      "samples": [
+        {
+          "x": 5,
+          "y": 5,
+          "rgb": [
+            221,
+            30,
+            20
+          ]
+        },
+        {
+          "x": 18,
+          "y": 5,
+          "rgb": [
+            20,
+            200,
+            39
+          ]
+        },
+        {
+          "x": 31,
+          "y": 5,
+          "rgb": [
+            42,
+            20,
+            229
+          ]
+        },
+        {
+          "x": 44,
+          "y": 5,
+          "rgb": [
+            230,
+            180,
+            21
+          ]
+        },
+        {
+          "x": 57,
+          "y": 5,
+          "rgb": [
+            21,
+            180,
+            220
+          ]
+        },
+        {
+          "x": 70,
+          "y": 5,
+          "rgb": [
+            241,
+            240,
+            246
+          ]
+        },
+        {
+          "x": 5,
+          "y": 16,
+          "rgb": [
+            43,
+            18,
+            231
+          ]
+        },
+        {
+          "x": 57,
+          "y": 49,
+          "rgb": [
+            222,
+            28,
+            16
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "noninterleaved-dc-table-3-160x120.jpg",
+      "jpeg_sha256": "ba47d203f4fd0c9494c9e32408acc25781cefa92aa80de0b7234aba2252aa81a",
+      "reference_ppm_sha256": "e420f0f1d0b5be135c0814f6a7f85dc1b5862563023902350e5dfa08c2e483dd",
+      "width": 160,
+      "height": 120,
+      "chroma_dc_table": 3,
+      "samples": [
+        {
+          "x": 5,
+          "y": 5,
+          "rgb": [
+            221,
+            30,
+            20
+          ]
+        },
+        {
+          "x": 18,
+          "y": 5,
+          "rgb": [
+            20,
+            200,
+            39
+          ]
+        },
+        {
+          "x": 31,
+          "y": 5,
+          "rgb": [
+            42,
+            20,
+            229
+          ]
+        },
+        {
+          "x": 44,
+          "y": 5,
+          "rgb": [
+            230,
+            180,
+            21
+          ]
+        },
+        {
+          "x": 57,
+          "y": 5,
+          "rgb": [
+            21,
+            180,
+            220
+          ]
+        },
+        {
+          "x": 70,
+          "y": 5,
+          "rgb": [
+            241,
+            240,
+            246
+          ]
+        },
+        {
+          "x": 109,
+          "y": 71,
+          "rgb": [
+            39,
+            19,
+            230
+          ]
+        },
+        {
+          "x": 148,
+          "y": 115,
+          "rgb": [
+            20,
+            200,
+            39
+          ]
+        }
+      ]
+    }
+  ]
+}
