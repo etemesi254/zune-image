@@ -1005,10 +1005,16 @@ fn app1_xmp(payload: &[u8]) -> Vec<u8> {
 }
 
 fn app1_extended_xmp(guid: &[u8; 32], payload: &[u8]) -> Vec<u8> {
+    app1_extended_xmp_part(guid, payload.len() as u32, 0, payload)
+}
+
+fn app1_extended_xmp_part(
+    guid: &[u8; 32], total_size: u32, offset: u32, payload: &[u8]
+) -> Vec<u8> {
     let mut body = b"http://ns.adobe.com/xmp/extension/\0".to_vec();
     body.extend_from_slice(guid);
-    body.extend_from_slice(&(payload.len() as u32).to_be_bytes());
-    body.extend_from_slice(&0_u32.to_be_bytes());
+    body.extend_from_slice(&total_size.to_be_bytes());
+    body.extend_from_slice(&offset.to_be_bytes());
     body.extend_from_slice(payload);
     marker_segment(0xE1, &body)
 }
@@ -1152,6 +1158,49 @@ fn header_metadata_markers_commit_once_across_retries() {
         .decode_into(&mut out)
         .expect("decode should succeed after metadata retries");
     assert_eq!(out, expected, "pixels must match one-shot decode");
+}
+
+#[test]
+fn extended_xmp_parts_reassemble_after_incremental_header_retries() {
+    let base = include_bytes!("../../../test-images/jpeg/tiny_non_interleaved_444.jpg");
+    let guid = *b"0123456789abcdef0123456789abcdef";
+    let payload = b"out-of-order extended XMP survives byte-wise header retries";
+    let split_a = 17;
+    let split_b = 41;
+    let data = inject_header_segments(
+        base,
+        &[
+            app1_extended_xmp_part(
+                &guid,
+                payload.len() as u32,
+                split_b as u32,
+                &payload[split_b..]
+            ),
+            app1_extended_xmp_part(&guid, payload.len() as u32, 0, &payload[..split_a]),
+            app1_extended_xmp_part(
+                &guid,
+                payload.len() as u32,
+                split_a as u32,
+                &payload[split_a..split_b]
+            ),
+        ]
+    );
+
+    let limit = Rc::new(Cell::new(0));
+    let cursor = GrowableCursor::new(&data, Rc::clone(&limit));
+    let mut decoder = JpegDecoder::new(cursor);
+    for available in 1..=data.len() {
+        limit.set(available);
+        match decoder.decode_headers() {
+            Ok(()) => break,
+            Err(error) if error.is_recoverable_eof() => {}
+            Err(error) => panic!("unexpected error at byte {available}: {error:?}")
+        }
+    }
+
+    let info = decoder.info().unwrap();
+    assert_eq!(info.extended_xmp.as_deref(), Some(payload.as_slice()));
+    assert_eq!(info.extended_xmp_guid.as_deref(), Some(guid.as_slice()));
 }
 
 /// Sanity check: give headers + partial scan, get EOF, then give

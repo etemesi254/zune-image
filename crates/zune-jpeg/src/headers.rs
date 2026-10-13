@@ -741,7 +741,14 @@ pub(crate) fn parse_app1<T: ZByteReaderTrait>(
         match payload {
             App1Payload::Exif(data) => decoder.info.exif_data = Some(data),
             App1Payload::Xmp(data) => decoder.info.xmp_data = Some(data),
-            App1Payload::ExtendedXmp(seg) => decoder.extended_xmp_segments.push(seg),
+            App1Payload::ExtendedXmp(seg) => {
+                let bytes_received = decoder
+                    .extended_xmp_bytes_received
+                    .checked_add(seg.data.len())
+                    .ok_or(DecodeErrors::FormatStatic("Extended XMP size overflow"))?;
+                decoder.extended_xmp_segments.push(seg);
+                decoder.extended_xmp_bytes_received = bytes_received;
+            }
             App1Payload::Unknown => {}
         }
         Ok(())

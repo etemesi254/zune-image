@@ -238,23 +238,26 @@ pub(crate) struct ScanCheckpoint {
 // Snapshot append-only metadata so marker or scan replay can roll it back.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct HeaderAppendStateSnapshot {
-    icc:  usize,
-    xmp:  usize,
-    gain: usize
+    icc:       usize,
+    xmp:       usize,
+    xmp_bytes: usize,
+    gain:      usize
 }
 
 impl HeaderAppendStateSnapshot {
     pub(crate) fn capture<T: ZByteReaderTrait>(decoder: &JpegDecoder<T>) -> Self {
         Self {
-            icc:  decoder.icc_data.len(),
-            xmp:  decoder.extended_xmp_segments.len(),
-            gain: decoder.info.gain_map_info.len()
+            icc:       decoder.icc_data.len(),
+            xmp:       decoder.extended_xmp_segments.len(),
+            xmp_bytes: decoder.extended_xmp_bytes_received,
+            gain:      decoder.info.gain_map_info.len()
         }
     }
 
     pub(crate) fn rollback<T: ZByteReaderTrait>(self, decoder: &mut JpegDecoder<T>) {
         decoder.icc_data.truncate(self.icc);
         decoder.extended_xmp_segments.truncate(self.xmp);
+        decoder.extended_xmp_bytes_received = self.xmp_bytes;
         decoder.info.gain_map_info.truncate(self.gain);
     }
 }
@@ -375,6 +378,8 @@ pub struct JpegDecoder<T> {
     pub(crate) coeff:    usize, // Solves some weird bug :)
     /// Extended XMP segments
     pub(crate) extended_xmp_segments: Vec<ExtendedXmpSegment>,
+    /// Total Extended XMP payload bytes committed so far.
+    pub(crate) extended_xmp_bytes_received: usize,
     /// Stream position where the header parser should resume on a future
     /// call after a recoverable EOF. Zero means "start from SOI".
     ///
@@ -1460,6 +1465,7 @@ where
             is_mjpeg:                    false,
             coeff:                       1,
             extended_xmp_segments:       vec![],
+            extended_xmp_bytes_received: 0,
             header_resume_position:      0,
             scan_state:                  None,
             pixels_decoded:              0,
@@ -1964,7 +1970,10 @@ where
     }
     #[allow(clippy::cast_possible_truncation)]
     fn reassemble_extended_xmp(&mut self) {
-        if self.extended_xmp_segments.is_empty() {
+        let Some(first_segment) = self.extended_xmp_segments.first() else {
+            return;
+        };
+        if self.extended_xmp_bytes_received < first_segment.total_size as usize {
             return;
         }
 
@@ -1979,6 +1988,7 @@ where
             if &segment.guid != guid || segment.total_size != total_size {
                 error!("Inconsistent Extended XMP segments");
                 self.extended_xmp_segments.clear();
+                self.extended_xmp_bytes_received = 0;
                 return;
             }
         }
@@ -1992,7 +2002,16 @@ where
                 complete = false;
                 break;
             }
-            rolling_offset += segment.data.len() as u32;
+            let Some(next_offset) = u32::try_from(segment.data.len())
+                .ok()
+                .and_then(|len| rolling_offset.checked_add(len))
+            else {
+                error!("Extended XMP size overflow");
+                self.extended_xmp_segments.clear();
+                self.extended_xmp_bytes_received = 0;
+                return;
+            };
+            rolling_offset = next_offset;
         }
 
         if complete && rolling_offset == total_size {
@@ -2003,11 +2022,12 @@ where
             self.info.extended_xmp = Some(result);
             self.info.extended_xmp_guid = Some(guid.clone());
             self.extended_xmp_segments.clear();
-        } else if rolling_offset > total_size {
-            error!("Extended XMP overflow");
+            self.extended_xmp_bytes_received = 0;
+        } else {
+            error!("Invalid Extended XMP segment layout");
             self.extended_xmp_segments.clear();
+            self.extended_xmp_bytes_received = 0;
         }
-        // Else: Incomplete, wait for more.
     }
     /// Decode Decoder headers
     ///
@@ -3258,6 +3278,103 @@ impl ImageInfo {
     #[allow(dead_code)]
     pub(crate) fn set_y(&mut self, sample: u16) {
         self.y_density = sample;
+    }
+}
+
+#[cfg(test)]
+mod extended_xmp_tests {
+    use zune_core::bytestream::ZCursor;
+
+    use super::{ExtendedXmpSegment, HeaderAppendStateSnapshot, JpegDecoder};
+
+    #[test]
+    fn reassembly_waits_until_declared_payload_is_present() {
+        const PARTS: u32 = 10_000;
+        let guid = vec![b'G'; 32];
+        let mut decoder = JpegDecoder::new(ZCursor::new(&[]));
+
+        for offset in (1..PARTS).rev() {
+            decoder.extended_xmp_segments.push(ExtendedXmpSegment {
+                offset,
+                total_size: PARTS,
+                guid: guid.clone(),
+                data: vec![(offset % 251) as u8]
+            });
+            decoder.extended_xmp_bytes_received += 1;
+            decoder.reassemble_extended_xmp();
+
+            assert_eq!(decoder.extended_xmp_segments[0].offset, PARTS - 1);
+            assert!(decoder.info.extended_xmp.is_none());
+        }
+
+        decoder.extended_xmp_segments.push(ExtendedXmpSegment {
+            offset: 0,
+            total_size: PARTS,
+            guid: guid.clone(),
+            data: vec![0]
+        });
+        decoder.extended_xmp_bytes_received += 1;
+        decoder.reassemble_extended_xmp();
+
+        let xmp = decoder.info.extended_xmp.unwrap();
+        assert_eq!(xmp.len(), PARTS as usize);
+        assert_eq!(xmp[0], 0);
+        assert_eq!(xmp[PARTS as usize - 1], ((PARTS - 1) % 251) as u8);
+        assert_eq!(decoder.info.extended_xmp_guid, Some(guid));
+        assert!(decoder.extended_xmp_segments.is_empty());
+        assert_eq!(decoder.extended_xmp_bytes_received, 0);
+    }
+
+    #[test]
+    fn invalid_layout_is_discarded_once_payload_reaches_declared_size() {
+        let guid = vec![b'G'; 32];
+        let mut decoder = JpegDecoder::new(ZCursor::new(&[]));
+        decoder.extended_xmp_segments = vec![
+            ExtendedXmpSegment {
+                offset: 0,
+                total_size: 4,
+                guid: guid.clone(),
+                data: vec![1, 2]
+            },
+            ExtendedXmpSegment {
+                offset: 1,
+                total_size: 4,
+                guid,
+                data: vec![3, 4]
+            }
+        ];
+        decoder.extended_xmp_bytes_received = 4;
+
+        decoder.reassemble_extended_xmp();
+
+        assert!(decoder.info.extended_xmp.is_none());
+        assert!(decoder.extended_xmp_segments.is_empty());
+        assert_eq!(decoder.extended_xmp_bytes_received, 0);
+    }
+
+    #[test]
+    fn append_snapshot_rolls_back_extended_xmp_byte_count() {
+        let mut decoder = JpegDecoder::new(ZCursor::new(&[]));
+        decoder.extended_xmp_segments.push(ExtendedXmpSegment {
+            offset: 0,
+            total_size: 4,
+            guid: vec![b'G'; 32],
+            data: vec![1, 2]
+        });
+        decoder.extended_xmp_bytes_received = 2;
+        let snapshot = HeaderAppendStateSnapshot::capture(&decoder);
+
+        decoder.extended_xmp_segments.push(ExtendedXmpSegment {
+            offset: 2,
+            total_size: 4,
+            guid: vec![b'G'; 32],
+            data: vec![3, 4]
+        });
+        decoder.extended_xmp_bytes_received = 4;
+        snapshot.rollback(&mut decoder);
+
+        assert_eq!(decoder.extended_xmp_segments.len(), 1);
+        assert_eq!(decoder.extended_xmp_bytes_received, 2);
     }
 }
 
