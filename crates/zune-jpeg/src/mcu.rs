@@ -435,7 +435,16 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 // full components, which we skipped earlier.
                 if all_components_in_first_scan {
                     let pull_row_ready = output.requested_raw_stripe().is_some();
+                    let final_pull_row = pull_row_ready && i + 1 == scan_mcu_height;
                     if pull_row_ready {
+                        if final_pull_row {
+                            if let McuContinuation::InterScanMarker(marker) = &terminate {
+                                // `check_stream_marker_after_mcu_width` removes the marker before
+                                // returning it. Keep it in the final-row checkpoint so a suspended
+                                // trailing marker sequence can replay from this exact boundary.
+                                *stream.marker() = Some(*marker);
+                            }
+                        }
                         let dc_predictions = core::array::from_fn(|idx| {
                             self.components
                                 .get(idx)
@@ -469,28 +478,58 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             }
                         }
                         McuDecodeOutput::RawPlanes(raw_planes) => {
-                            self.copy_raw_planes_for_mcu_stripe(i, raw_planes)?;
+                            if !final_pull_row {
+                                self.copy_raw_planes_for_mcu_stripe(i, raw_planes)?;
+                            }
                         }
                     }
-                    if pull_row_ready {
+                    if pull_row_ready && !final_pull_row {
                         return Ok(());
                     }
                     // This row's coefficient buffers can be reused next, so
                     // any checkpoint inside the row is no longer valid.
-                    self.invalidate_scan_checkpoint();
+                    if !final_pull_row {
+                        self.invalidate_scan_checkpoint();
+                    }
                 }
 
                 match terminate {
                     McuContinuation::Ok => {}
                     McuContinuation::AnotherSos if all_components_in_first_scan => {
+                        if self.scan_eof_is_error() {
+                            return Err(DecodeErrors::FormatStatic(
+                                "Unexpected SOS after completed scan"
+                            ));
+                        }
                         warn!("More than one SOS despite already having all components");
+                        if let McuDecodeOutput::RawPlanes(raw_planes) = output {
+                            self.copy_raw_planes_for_mcu_stripe(i, raw_planes)?;
+                            self.invalidate_scan_checkpoint();
+                        }
                         return Ok(());
                     }
                     McuContinuation::AnotherSos => continue 'sos,
                     McuContinuation::InterScanMarker(marker) => {
                         // Handle inter-scan markers (DHT/DQT/etc) uniformly here.
                         // This keeps all marker handling in the outer loop.
-                        if self.advance_to_next_sos(marker, &mut stream)? {
+                        if self.advance_to_next_sos(
+                            marker,
+                            &mut stream,
+                            all_components_in_first_scan,
+                        )? {
+                            if all_components_in_first_scan {
+                                if self.scan_eof_is_error() {
+                                    return Err(DecodeErrors::FormatStatic(
+                                        "Unexpected SOS after completed scan"
+                                    ));
+                                }
+                                warn!("More than one SOS despite already having all components");
+                                if let McuDecodeOutput::RawPlanes(raw_planes) = output {
+                                    self.copy_raw_planes_for_mcu_stripe(i, raw_planes)?;
+                                    self.invalidate_scan_checkpoint();
+                                }
+                                return Ok(());
+                            }
                             continue 'sos;
                         }
                         // Hit EOI
@@ -530,7 +569,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         continue 'sos;
                     }
                     Ok(marker) => {
-                        if self.advance_to_next_sos(marker, &mut stream)? {
+                        if self.advance_to_next_sos(marker, &mut stream, false)? {
                             continue 'sos;
                         }
                         break;
@@ -604,8 +643,32 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         if !*stream.seen_eoi() {
             let marker = get_marker(&mut self.stream, &mut stream);
             match marker {
-                Ok(_m) => {
-                    trace!("Found marker {_m:?}");
+                Ok(Marker::EOI) => {
+                    self.reassemble_extended_xmp();
+                    *stream.seen_eoi() = true;
+                    trace!("Found EOI marker");
+                }
+                Ok(
+                    marker @ (Marker::DAC
+                    | Marker::DHT
+                    | Marker::DQT
+                    | Marker::DRI
+                    | Marker::COM
+                    | Marker::APP(_)),
+                ) => {
+                    if self.advance_to_next_sos(marker, &mut stream, true)? {
+                        warn!("More than one SOS despite already having all components");
+                    }
+                }
+                Ok(marker) => {
+                    if self.scan_eof_is_error() {
+                        return Err(DecodeErrors::Format(format!(
+                            "Unexpected marker {marker:?} after completed scan"
+                        )));
+                    }
+                    // Preserve the previous lenient behavior for standalone
+                    // markers such as an unexpected additional SOS.
+                    trace!("Found marker {marker:?}");
                 }
                 Err(e) if e.is_recoverable_eof() => {
                     if self.scan_eof_is_error() {
@@ -618,6 +681,17 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         return Err(e);
                     }
                     error!("{e}");
+                }
+            }
+        }
+
+        if all_components_in_first_scan {
+            if let Some(final_stripe) = mcu_height.checked_sub(1) {
+                if let McuDecodeOutput::RawPlanes(raw_planes) = output {
+                    if raw_planes.requested_stripe == Some(final_stripe) {
+                        self.copy_raw_planes_for_mcu_stripe(final_stripe, raw_planes)?;
+                        self.invalidate_scan_checkpoint();
+                    }
                 }
             }
         }
@@ -1102,13 +1176,14 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     /// # Arguments
     /// * `first_marker` - The first marker that was already detected (not yet parsed)
     /// * `stream` - The bitstream state
+    /// * `final_scan` - Preserve lenient completion when no further scan is expected
     ///
     /// # Returns
     /// * `Ok(true)` - Found SOS, ready to continue decoding
     /// * `Ok(false)` - Found EOI, decoding complete
     /// * `Err(_)` - Error (too many markers, unexpected marker in strict mode, etc.)
     fn advance_to_next_sos<B: BitStream>(
-        &mut self, first_marker: Marker, stream: &mut B,
+        &mut self, first_marker: Marker, stream: &mut B, final_scan: bool,
     ) -> Result<bool, DecodeErrors> {
         // Limit iterations to prevent DoS from malicious files.
         const MAX_INTER_SCAN_MARKERS: usize = 64;
@@ -1130,6 +1205,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 match $result {
                     Ok(value) => value,
                     Err(e) => {
+                        if final_scan && e.is_recoverable_eof() && !self.scan_eof_is_error() {
+                            self.reassemble_extended_xmp();
+                            return Ok(false);
+                        }
                         if e.is_recoverable_eof() || matches!(e, DecodeErrors::Cancelled) {
                             if let Some((append_snapshot, header_snapshot)) = &inter_scan_snapshot {
                                 append_snapshot.rollback(self);
@@ -1176,6 +1255,20 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     restore_inter_scan_on_suspend!(self.parse_marker_inner(marker));
                 }
                 other => {
+                    if final_scan {
+                        if !self.scan_eof_is_error() {
+                            warn!("Stopping after unexpected final marker {other:?}");
+                            self.reassemble_extended_xmp();
+                            return Ok(false);
+                        }
+                        if let Some((append_snapshot, header_snapshot)) = &inter_scan_snapshot {
+                            append_snapshot.rollback(self);
+                            self.restore_scan_header_state(header_snapshot);
+                        }
+                        return Err(DecodeErrors::Format(format!(
+                            "Unexpected marker {other:?} after completed scan"
+                        )));
+                    }
                     if self.options.strict_mode() {
                         return Err(DecodeErrors::Format(format!(
                             "Unexpected marker {other:?} while scanning for SOS between scans"
@@ -1197,6 +1290,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             }
         }
 
+        if final_scan && !self.scan_eof_is_error() {
+            self.reassemble_extended_xmp();
+            return Ok(false);
+        }
         Err(DecodeErrors::FormatStatic(
             "Too many markers between scans (exceeded limit of 64)",
         ))

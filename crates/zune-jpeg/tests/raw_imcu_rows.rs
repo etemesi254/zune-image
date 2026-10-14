@@ -79,6 +79,23 @@ impl Seek for GrowableCursor<'_> {
     }
 }
 
+fn marker_segment(code: u8, body: &[u8]) -> Vec<u8> {
+    let length = u16::try_from(body.len() + 2).unwrap();
+    let mut segment = vec![0xFF, code];
+    segment.extend_from_slice(&length.to_be_bytes());
+    segment.extend_from_slice(body);
+    segment
+}
+
+fn extended_xmp_part(guid: &[u8; 32], total: u32, offset: u32, data: &[u8]) -> Vec<u8> {
+    let mut body = b"http://ns.adobe.com/xmp/extension/\0".to_vec();
+    body.extend_from_slice(guid);
+    body.extend_from_slice(&total.to_be_bytes());
+    body.extend_from_slice(&offset.to_be_bytes());
+    body.extend_from_slice(data);
+    marker_segment(0xE1, &body)
+}
+
 fn decode_whole(bytes: &[u8]) -> (Vec<Vec<u8>>, [zune_jpeg::PlaneInfo; 4], usize) {
     let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
     decoder.decode_headers().unwrap();
@@ -457,6 +474,122 @@ fn suspension_cut_points_are_atomic_and_retry_exactly() {
         1,
         10,
     );
+}
+
+#[test]
+fn final_raw_row_waits_for_trailing_extended_xmp_and_eoi() {
+    const SENTINEL: u8 = 0xCD;
+    let base = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let guid = *b"0123456789abcdef0123456789abcdef";
+    let payload = b"raw output waits for trailing Extended XMP metadata";
+    let split = 19;
+    let parts = [
+        extended_xmp_part(
+            &guid,
+            payload.len() as u32,
+            split as u32,
+            &payload[split..],
+        ),
+        extended_xmp_part(&guid, payload.len() as u32, 0, &payload[..split]),
+    ];
+    let eoi = base.windows(2).rposition(|marker| marker == [0xFF, 0xD9]).unwrap();
+    let mut data = base[..eoi].to_vec();
+    for part in &parts {
+        data.extend_from_slice(part);
+    }
+    let cutoff = eoi + parts[0].len() + parts[1].len() / 2;
+    data.extend_from_slice(&base[eoi..]);
+
+    let limit = Rc::new(Cell::new(cutoff));
+    let cursor = GrowableCursor::new(&data, Rc::clone(&limit));
+    let mut decoder = JpegDecoder::new(cursor);
+    decoder.decode_headers().unwrap();
+    let mut raw = decoder.raw_output();
+    let layout = raw.layout().unwrap();
+    let count = raw.num_components().unwrap();
+    let strides: Vec<usize> = layout[..count].iter().map(|plane| plane.width).collect();
+    let mut rows_written = [0usize; 4];
+
+    loop {
+        let mut storage: Vec<Vec<u8>> = layout[..count]
+            .iter()
+            .map(|plane| vec![SENTINEL; plane.width * plane.vertical_sampling_factor * 8])
+            .collect();
+        let mut refs: Vec<&mut [u8]> = storage.iter_mut().map(Vec::as_mut_slice).collect();
+        match raw.decode_next_imcu_row(&mut refs, &strides).unwrap() {
+            RawImcuRowStatus::RowReady { rows_written: rows } => {
+                for index in 0..count {
+                    rows_written[index] += rows[index];
+                }
+            }
+            RawImcuRowStatus::NeedMoreInput => {
+                assert!(storage.iter().flatten().all(|byte| *byte == SENTINEL));
+                break;
+            }
+            RawImcuRowStatus::Complete => panic!("completed before trailing metadata was visible"),
+            _ => unreachable!(),
+        }
+    }
+
+    limit.set(data.len());
+    let mut final_storage: Vec<Vec<u8>> = layout[..count]
+        .iter()
+        .map(|plane| vec![SENTINEL; plane.width * plane.vertical_sampling_factor * 8])
+        .collect();
+    let mut final_refs: Vec<&mut [u8]> =
+        final_storage.iter_mut().map(Vec::as_mut_slice).collect();
+    let RawImcuRowStatus::RowReady { rows_written: rows } =
+        raw.decode_next_imcu_row(&mut final_refs, &strides).unwrap()
+    else {
+        panic!("final row was not published after trailing metadata completed")
+    };
+    for index in 0..count {
+        rows_written[index] += rows[index];
+        assert_eq!(rows_written[index], layout[index].height);
+    }
+    drop(raw);
+
+    let info = decoder.info().unwrap();
+    assert_eq!(info.extended_xmp.as_deref(), Some(payload.as_slice()));
+    assert_eq!(info.extended_xmp_guid.as_deref(), Some(guid.as_slice()));
+}
+
+#[test]
+fn final_raw_row_is_not_published_after_unexpected_trailing_marker() {
+    const SENTINEL: u8 = 0xCD;
+    let base = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let eoi = base.windows(2).rposition(|marker| marker == [0xFF, 0xD9]).unwrap();
+
+    for padding in [0, 64] {
+        let mut data = base[..eoi].to_vec();
+        data.resize(data.len() + padding, 0);
+        data.extend_from_slice(&marker_segment(0xFE, b"trailing comment"));
+        data.extend_from_slice(&[0xFF, 0xD0]);
+        data.extend_from_slice(&base[eoi..]);
+
+        let mut decoder = JpegDecoder::new(ZCursor::new(&data));
+        decoder.decode_headers().unwrap();
+        let mut raw = decoder.raw_output();
+        let layout = raw.layout().unwrap();
+        let count = raw.num_components().unwrap();
+        let strides: Vec<usize> = layout[..count].iter().map(|plane| plane.width).collect();
+
+        loop {
+            let mut storage: Vec<Vec<u8>> = layout[..count]
+                .iter()
+                .map(|plane| vec![SENTINEL; plane.width * plane.vertical_sampling_factor * 8])
+                .collect();
+            let mut refs: Vec<&mut [u8]> = storage.iter_mut().map(Vec::as_mut_slice).collect();
+            match raw.decode_next_imcu_row(&mut refs, &strides) {
+                Ok(RawImcuRowStatus::RowReady { .. }) => {}
+                Err(DecodeErrors::Format(_)) | Err(DecodeErrors::FormatStatic(_)) => {
+                    assert!(storage.iter().flatten().all(|byte| *byte == SENTINEL));
+                    break;
+                }
+                result => panic!("unexpected final marker result: {result:?}"),
+            }
+        }
+    }
 }
 
 #[test]
