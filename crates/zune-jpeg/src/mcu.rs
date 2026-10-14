@@ -462,11 +462,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 if output.requested_raw_stripe().is_some() && stream.overread_by() > 0 {
                     return Err(DecodeErrors::ExhaustedData);
                 }
-                if output.requested_raw_stripe().is_some()
-                    && matches!(terminate, McuContinuation::Terminate)
-                    && !*stream.seen_eoi()
-                {
-                    return Err(DecodeErrors::ExhaustedData);
+                if output.requested_raw_stripe().is_some() {
+                    if let McuContinuation::Terminate(reason) = &terminate {
+                        return Err(reason.raw_error());
+                    }
                 }
 
                 if i + 1 == scan_mcu_height
@@ -596,7 +595,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         // Hit EOI
                         break;
                     }
-                    McuContinuation::Terminate => {
+                    McuContinuation::Terminate(_) => {
                         warn!("Got terminate signal, will not process further");
                         if let Some(v) = output.pixels_mut().and_then(|p| p.get_mut(pixels_written..)) {
                             v.fill(128);
@@ -1086,7 +1085,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                                 Err(err)
                             } else {
                                 error!("{}", err);
-                                Ok(McuContinuation::Terminate)
+                                Ok(McuContinuation::Terminate(
+                                    TerminationReason::CorruptEntropy,
+                                ))
                             };
                         };
 
@@ -1333,7 +1334,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 self.stream.skip(skip)?;
                 stream.reset();
                 B::reset_arith_tables(&mut self.entropy_tables);
-                return Ok(McuContinuation::Terminate);
+                return Ok(McuContinuation::Terminate(
+                    TerminationReason::UnexpectedDnl,
+                ));
             } else {
                 if self.options.strict_mode() {
                     return Err(DecodeErrors::Format(format!(
@@ -1347,7 +1350,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 stream.marker().take();
                 stream.reset();
                 B::reset_arith_tables(&mut self.entropy_tables);
-                return Ok(McuContinuation::Terminate);
+                return Ok(McuContinuation::Terminate(
+                    TerminationReason::UnexpectedMarker,
+                ));
             }
         }
 
@@ -1715,8 +1720,25 @@ enum McuContinuation {
     /// Found an inter-scan marker (DHT/DQT/DRI/COM/APP) that needs handling.
     /// The caller should parse it and scan for the next SOS.
     InterScanMarker(Marker),
-    Terminate,
+    Terminate(TerminationReason),
     /// The DNL marker was found and parsed. The scan is complete and
     /// `info.height` has been updated to the actual number of lines.
     DnlFound(u16)
+}
+
+enum TerminationReason {
+    CorruptEntropy,
+    UnexpectedDnl,
+    UnexpectedMarker,
+}
+
+impl TerminationReason {
+    fn raw_error(&self) -> DecodeErrors {
+        let message = match self {
+            Self::CorruptEntropy => "Terminal entropy corruption during raw output",
+            Self::UnexpectedDnl => "Unexpected DNL marker during raw output",
+            Self::UnexpectedMarker => "Unexpected marker during raw output",
+        };
+        DecodeErrors::FormatStatic(message)
+    }
 }

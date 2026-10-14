@@ -45,7 +45,7 @@ impl<'a, T: ZByteWriterTrait> JfifWrite for TempVt<'a, T> {
 }
 impl<T: ZByteReaderTrait> DecoderTrait for zune_jpeg::JpegDecoder<T> {
     fn decode(&mut self) -> Result<Image, crate::errors::ImageErrors> {
-        let mut metadata = self.read_headers()?.unwrap();
+        self.read_headers()?;
         // best case uhdr identification
 
         let is_uhdr = {
@@ -77,6 +77,7 @@ impl<T: ZByteReaderTrait> DecoderTrait for zune_jpeg::JpegDecoder<T> {
 
         let colorspace = self.output_colorspace().unwrap();
         let (width, height) = self.dimensions().unwrap();
+        let mut metadata = self.read_headers()?.unwrap();
         metadata.set_dimensions(width, height);
 
         let mut image = Image::from_u8(&pixels, width, height, colorspace);
@@ -138,6 +139,13 @@ impl From<zune_jpeg::errors::DecodeErrors> for ImageErrors {
 mod tests {
     use super::*;
 
+    fn marker_segment(code: u8, body: &[u8]) -> Vec<u8> {
+        let mut marker = vec![0xFF, code];
+        marker.extend(((body.len() + 2) as u16).to_be_bytes());
+        marker.extend_from_slice(body);
+        marker
+    }
+
     #[test]
     fn dnl_decode_refreshes_public_image_metadata_dimensions() {
         let base = include_bytes!("../../../zune-jpeg/tests/images/dnl_read_ahead.jpg");
@@ -159,6 +167,31 @@ mod tests {
         let expected = (usize::from(width), usize::from(height));
         assert_eq!(image.dimensions(), expected);
         assert_eq!(image.metadata.dimensions(), expected);
+    }
+
+    #[test]
+    fn jpeg_wrapper_refreshes_post_sos_metadata() {
+        let base = include_bytes!("../../../../test-images/jpeg/2029.jpg");
+        let eoi = base.windows(2).rposition(|marker| marker == [0xFF, 0xD9]).unwrap();
+        let icc_payload = b"post-SOS ICC profile";
+        let mut icc_body = b"ICC_PROFILE\0".to_vec();
+        icc_body.extend([1, 1]);
+        icc_body.extend_from_slice(icc_payload);
+        let exif_body = b"Exif\0\0II\x2A\0\x08\0\0\0\0\0\0\0\0\0\0\0";
+
+        let mut data = base[..eoi].to_vec();
+        data.extend_from_slice(&marker_segment(0xE2, &icc_body));
+        data.extend_from_slice(&marker_segment(0xE1, exif_body));
+        data.extend_from_slice(&base[eoi..]);
+
+        let mut decoder = JpegDecoder::new(ZCursor::new(&data));
+        let image = <JpegDecoder<_> as DecoderTrait>::decode(&mut decoder).unwrap();
+        assert_eq!(
+            image.metadata.icc_chunk().map(Vec::as_slice),
+            Some(icc_payload.as_slice())
+        );
+        #[cfg(feature = "metadata")]
+        assert!(image.metadata.exif().is_some());
     }
 }
 // Okay I just need to really appreciate jpeg-encoder crate

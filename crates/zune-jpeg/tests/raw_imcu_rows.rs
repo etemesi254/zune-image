@@ -593,6 +593,58 @@ fn final_raw_row_is_not_published_after_unexpected_trailing_marker() {
 }
 
 #[test]
+fn raw_pull_terminal_corruption_is_not_retryable() {
+    const SENTINEL: u8 = 0xCD;
+    let base = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let eoi = base.windows(2).rposition(|marker| marker == [0xFF, 0xD9]).unwrap();
+    let mut data = base[..eoi].to_vec();
+    data.extend([0xFF, 0xDC, 0x00, 0x04, 0x00, 0x01]);
+    data.extend_from_slice(&base[eoi..]);
+
+    let mut decoder = JpegDecoder::new(ZCursor::new(&data));
+    decoder.decode_headers().unwrap();
+    let mut raw = decoder.raw_output();
+    let layout = raw.layout().unwrap();
+    let count = raw.num_components().unwrap();
+    let strides: Vec<usize> = layout[..count].iter().map(|plane| plane.width).collect();
+
+    loop {
+        let mut storage: Vec<Vec<u8>> = layout[..count]
+            .iter()
+            .map(|plane| vec![SENTINEL; plane.width * plane.vertical_sampling_factor * 8])
+            .collect();
+        let mut refs: Vec<&mut [u8]> = storage.iter_mut().map(Vec::as_mut_slice).collect();
+        match raw.decode_next_imcu_row(&mut refs, &strides) {
+            Ok(RawImcuRowStatus::RowReady { .. }) => {}
+            Err(DecodeErrors::FormatStatic(message)) => {
+                assert!(message.contains("Unexpected DNL"));
+                assert!(storage.iter().flatten().all(|byte| *byte == SENTINEL));
+
+                let mut retry_storage: Vec<Vec<u8>> = layout[..count]
+                    .iter()
+                    .map(|plane| {
+                        vec![SENTINEL; plane.width * plane.vertical_sampling_factor * 8]
+                    })
+                    .collect();
+                let mut retry_refs: Vec<&mut [u8]> =
+                    retry_storage.iter_mut().map(Vec::as_mut_slice).collect();
+                assert!(matches!(
+                    raw.decode_next_imcu_row(&mut retry_refs, &strides),
+                    Err(DecodeErrors::FormatStatic(retry_message))
+                        if retry_message.contains("Unexpected DNL")
+                ));
+                assert!(retry_storage.iter().flatten().all(|byte| *byte == SENTINEL));
+                break;
+            }
+            Ok(RawImcuRowStatus::NeedMoreInput) => {
+                panic!("terminal corruption was reported as NeedMoreInput")
+            }
+            result => panic!("unexpected terminal corruption result: {result:?}"),
+        }
+    }
+}
+
+#[test]
 fn raw_pull_accepts_more_than_64_trailing_xmp_parts() {
     let base = include_bytes!("../../../test-images/jpeg/2029.jpg");
     let guid = *b"0123456789abcdef0123456789abcdef";
