@@ -354,6 +354,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 if self.mcu_checkpoints_enabled
                     && !self.is_progressive
                     && B::supports_mcu_checkpoint()
+                    && self.pending_dnl_height.is_none()
                 {
                     let dc_predictions = core::array::from_fn(|idx| {
                         self.components
@@ -486,7 +487,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 if all_components_in_first_scan {
                     let pull_row_ready = output.requested_raw_stripe().is_some();
                     let final_pull_row = pull_row_ready && i + 1 == scan_mcu_height;
-                    if pull_row_ready {
+                    if pull_row_ready && self.pending_dnl_height.is_none() {
                         if final_pull_row {
                             if let McuContinuation::InterScanMarker(marker) = &terminate {
                                 // `check_stream_marker_after_mcu_width` removes the marker before
@@ -538,7 +539,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     }
                     // This row's coefficient buffers can be reused next, so
                     // any checkpoint inside the row is no longer valid.
-                    if !final_pull_row {
+                    if !final_pull_row && self.pending_dnl_height.is_none() {
                         self.invalidate_scan_checkpoint();
                     }
                 }
@@ -630,7 +631,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         continue 'sos;
                     }
                     Ok(marker) => {
-                        if self.advance_to_next_sos(marker, &mut stream, false)? {
+                        if self.advance_to_next_sos(
+                            marker,
+                            &mut stream,
+                            all_required_components_seen,
+                        )? {
                             continue 'sos;
                         }
                         break;
@@ -1132,7 +1137,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
             if self.todo == 0 {
                 let handled_restart = self.handle_rst_main_with_status(stream)?;
-                if handled_restart {
+                if handled_restart && self.pending_dnl_height.is_none() {
                     // Coefficient buffers (`raw_coeff` and `progressive`)
                     // live on the decoder across `decode_into` calls, so
                     // they don't need to be snapshotted here. We only
