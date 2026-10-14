@@ -1969,7 +1969,7 @@ where
         self.idct_1x1_func = choose_idct_1x1_func(&self.options);
     }
     #[allow(clippy::cast_possible_truncation)]
-    fn reassemble_extended_xmp(&mut self) {
+    pub(crate) fn reassemble_extended_xmp(&mut self) {
         let Some(first_segment) = self.extended_xmp_segments.first() else {
             return;
         };

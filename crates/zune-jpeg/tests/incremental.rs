@@ -992,6 +992,17 @@ fn inject_header_segments(base: &[u8], segments: &[Vec<u8>]) -> Vec<u8> {
     out
 }
 
+fn inject_segments_at(base: &[u8], offset: usize, segments: &[Vec<u8>]) -> Vec<u8> {
+    let extra_len = segments.iter().map(Vec::len).sum::<usize>();
+    let mut out = Vec::with_capacity(base.len() + extra_len);
+    out.extend_from_slice(&base[..offset]);
+    for segment in segments {
+        out.extend_from_slice(segment);
+    }
+    out.extend_from_slice(&base[offset..]);
+    out
+}
+
 fn app1_exif(payload: &[u8]) -> Vec<u8> {
     let mut body = b"Exif\0\0".to_vec();
     body.extend_from_slice(payload);
@@ -1201,6 +1212,71 @@ fn extended_xmp_parts_reassemble_after_incremental_header_retries() {
     let info = decoder.info().unwrap();
     assert_eq!(info.extended_xmp.as_deref(), Some(payload.as_slice()));
     assert_eq!(info.extended_xmp_guid.as_deref(), Some(guid.as_slice()));
+}
+
+fn check_extended_xmp_after_scan_marker(base: &[u8], insertion_offset: usize) {
+    let guid = *b"0123456789abcdef0123456789abcdef";
+    let payload = b"extended XMP completed after entropy decoding started";
+    let split_a = 13;
+    let split_b = 37;
+    let segments = [
+        app1_extended_xmp_part(
+            &guid,
+            payload.len() as u32,
+            split_b as u32,
+            &payload[split_b..]
+        ),
+        app1_extended_xmp_part(&guid, payload.len() as u32, 0, &payload[..split_a]),
+        app1_extended_xmp_part(
+            &guid,
+            payload.len() as u32,
+            split_a as u32,
+            &payload[split_a..split_b]
+        ),
+    ];
+    let data = inject_segments_at(base, insertion_offset, &segments);
+
+    let mut one_shot = JpegDecoder::new(ZCursor::new(&data));
+    one_shot.decode().unwrap();
+    let info = one_shot.info().unwrap();
+    assert_eq!(info.extended_xmp.as_deref(), Some(payload.as_slice()));
+    assert_eq!(info.extended_xmp_guid.as_deref(), Some(guid.as_slice()));
+
+    let cutoff = insertion_offset + segments[0].len() + segments[1].len() / 2;
+    let limit = Rc::new(Cell::new(cutoff));
+    let cursor = GrowableCursor::new(&data, Rc::clone(&limit));
+    let mut decoder = JpegDecoder::new(cursor);
+    decoder.set_incremental_mode(true);
+    decoder.decode_headers().unwrap();
+    let mut output = vec![0; decoder.output_buffer_size().unwrap()];
+    let error = decoder.decode_into(&mut output).unwrap_err();
+    assert!(error.is_recoverable_eof(), "{error:?}");
+    assert!(decoder.info().unwrap().extended_xmp.is_none());
+
+    limit.set(data.len());
+    decoder.decode_into(&mut output).unwrap();
+    let info = decoder.info().unwrap();
+    assert_eq!(info.extended_xmp.as_deref(), Some(payload.as_slice()));
+    assert_eq!(info.extended_xmp_guid.as_deref(), Some(guid.as_slice()));
+}
+
+#[test]
+fn extended_xmp_between_progressive_scans_reassembles_after_retry() {
+    let base = include_bytes!("../../../test-images/jpeg/progressive_restart_420.jpg");
+    let second_sos = base
+        .windows(2)
+        .enumerate()
+        .filter_map(|(offset, marker)| (marker == [0xFF, 0xDA]).then_some(offset))
+        .nth(1)
+        .unwrap();
+    check_extended_xmp_after_scan_marker(base, second_sos);
+}
+
+#[test]
+fn extended_xmp_before_eoi_reassembles_after_retry() {
+    let base = include_bytes!("../../../test-images/jpeg/tiny_non_interleaved_444.jpg");
+    let eoi = base.windows(2).rposition(|marker| marker == [0xFF, 0xD9]).unwrap();
+    check_extended_xmp_after_scan_marker(base, eoi);
 }
 
 /// Sanity check: give headers + partial scan, get EOF, then give
