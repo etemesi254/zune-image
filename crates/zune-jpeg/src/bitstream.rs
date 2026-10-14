@@ -121,6 +121,7 @@ pub(crate) struct HuffmanBitstreamState {
     pub(crate) overread_by:    usize,
     pub(crate) zeros_past_end: usize,
     pub(crate) exhausted:      bool,
+    pub(crate) stuffed_past_end: bool,
     pub(crate) seen_eoi:       bool,
     pub(crate) eob_run:        i32
 }
@@ -293,6 +294,12 @@ pub(crate) struct BitStreamHuffman {
     /// Set once the decoder takes more bits than the buffer holds, which only a scan read past
     /// its data does.
     exhausted:           bool,
+    /// Set once a stuffing resolution — the byte read after an entropy `0xFF` — consumed a
+    /// byte past the end of the data. The resolution byte is not appended to the buffer, so
+    /// it reaches no counter of appended zeros, but it was still consumed: whether that
+    /// `0xFF` was data or the first half of a marker is exactly what the missing byte would
+    /// have said, so a row that reached it is not publishable.
+    stuffed_past_end:    bool,
     /// True if we have seen end of image marker.
     /// Don't read anything after that.
     seen_eoi:            bool,
@@ -521,6 +528,7 @@ impl BitStream for BitStreamHuffman {
             overread_by:         0,
             zeros_past_end:      0,
             exhausted:           false,
+            stuffed_past_end:    false,
             seen_eoi:            false,
             strict:              false,
         }
@@ -543,6 +551,7 @@ impl BitStream for BitStreamHuffman {
             overread_by:         0,
             zeros_past_end:      0,
             exhausted:           false,
+            stuffed_past_end:    false,
             seen_eoi:            false,
             strict:              false,
         }
@@ -559,7 +568,9 @@ impl BitStream for BitStreamHuffman {
     #[inline(always)]
     fn consumed_past_end(&self) -> bool {
         self.overread_by > 0
-            && (self.exhausted || self.zeros_past_end > usize::from(self.bits_left))
+            && (self.exhausted
+                || self.zeros_past_end > usize::from(self.bits_left)
+                || self.stuffed_past_end)
     }
     #[inline(always)]
     fn seen_eoi(&mut self) -> &mut bool {
@@ -595,9 +606,10 @@ impl BitStream for BitStreamHuffman {
             aligned_buffer: self.aligned_buffer,
             bits_left:      self.bits_left,
             marker:         self.marker,
-            overread_by:    self.overread_by,
-            zeros_past_end: self.zeros_past_end,
-            exhausted:      self.exhausted,
+            overread_by:      self.overread_by,
+            zeros_past_end:   self.zeros_past_end,
+            exhausted:        self.exhausted,
+            stuffed_past_end: self.stuffed_past_end,
             seen_eoi:       self.seen_eoi,
             eob_run:        self.eob_run
         }
@@ -612,6 +624,7 @@ impl BitStream for BitStreamHuffman {
         self.overread_by = state.overread_by;
         self.zeros_past_end = state.zeros_past_end;
         self.exhausted = state.exhausted;
+        self.stuffed_past_end = state.stuffed_past_end;
         self.seen_eoi = state.seen_eoi;
         self.eob_run = state.eob_run;
     }
@@ -664,13 +677,20 @@ impl BitStream for BitStreamHuffman {
                 $bits_left += 8;
                 // Check for special case  of OxFF, to see if it's a stream or a marker
                 if $byte == 0xff {
-                    // read next byte
+                    // read next byte; when the data has ended this read is a zero the data
+                    // never held, and resolving the stuffing against it consumed it: whether
+                    // the 0xFF was data or the first half of a marker is what the missing
+                    // byte would have said, and a row that reached it is not publishable
+                    let stuffed_past_end = reader.eof()?;
                     let mut next_byte = u64::from(reader.read_u8());
+                    self.stuffed_past_end |= stuffed_past_end;
                     // Byte snuffing, if we encounter byte snuff, we skip the byte
                     if next_byte != 0x00 {
                         // skip that byte we read
                         while next_byte == 0xFF {
+                            let more_past_end = reader.eof()?;
                             next_byte = u64::from(reader.read_u8());
+                            self.stuffed_past_end |= more_past_end;
                         }
                     }
                     // read_u8 gives 0 once the input runs out. That 0 is not a stuffed
