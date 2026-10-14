@@ -174,6 +174,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             preserve_progressive_scans
                         );
                     }
+                    self.reassemble_extended_xmp();
 
                     stream.update_progressive_params(
                         self.succ_high,
@@ -245,7 +246,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             }
         }
 
-    self.finish_progressive_decoding(block, output)
+        self.reassemble_extended_xmp();
+        self.finish_progressive_decoding(block, output)
     }
 
     fn decode_progressive_scan<B: BitStream>(

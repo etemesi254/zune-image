@@ -1082,6 +1082,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 error!("Marker `{m:?}` Found within Huffman Stream, possibly corrupt jpeg");
 
                 self.parse_marker_inner(*m)?;
+                self.reassemble_extended_xmp();
                 stream.marker().take();
                 stream.reset();
                 B::reset_arith_tables(&mut self.entropy_tables);
@@ -1153,6 +1154,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             match marker {
                 Marker::SOS => {
                     restore_inter_scan_on_suspend!(self.parse_marker_inner(Marker::SOS));
+                    self.reassemble_extended_xmp();
                     self.invalidate_scan_checkpoint();
                     stream.reset();
                     B::reset_arith_tables(&mut self.entropy_tables);
@@ -1160,6 +1162,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     return Ok(true);
                 }
                 Marker::EOI => {
+                    self.reassemble_extended_xmp();
                     *stream.seen_eoi() = true;
                     trace!("Found EOI marker");
                     return Ok(false);
