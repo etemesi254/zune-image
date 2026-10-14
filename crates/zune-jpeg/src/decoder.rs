@@ -139,13 +139,15 @@ pub(crate) struct ScanDecodeState {
     pub(crate) scan_start_position:        usize,
     pub(crate) scan_start_height:          u16,
     pub(crate) scan_start_expects_dnl:     bool,
+    pub(crate) resolved_dnl_height:        Option<u16>,
     pub(crate) append_snapshot:            HeaderAppendStateSnapshot,
     pub(crate) sos_snapshot:               SosParamsSnapshot,
     pub(crate) header_snapshot:            ScanHeaderStateSnapshot,
     pub(crate) scan_checkpoint:            Option<Box<ScanCheckpoint>>,
     pub(crate) progressive_checkpoint:     Option<Box<ProgressiveScanCheckpoint>>,
     pub(crate) progressive_fine_checkpoint: Option<Box<ProgressiveFineCheckpoint>>,
-    pub(crate) baseline_components_seen:   [bool; MAX_COMPONENTS]
+    pub(crate) baseline_components_seen:   [bool; MAX_COMPONENTS],
+    pub(crate) baseline_scans_seen:        usize
 }
 
 /// Saved state at the start of a progressive scan.
@@ -1228,15 +1230,31 @@ where
             scan_start_position,
             scan_start_height: self.info.height,
             scan_start_expects_dnl: self.expects_dnl,
+            resolved_dnl_height: None,
             append_snapshot,
             sos_snapshot,
             header_snapshot,
             scan_checkpoint: None,
             progressive_checkpoint: None,
             progressive_fine_checkpoint: None,
-            baseline_components_seen: [false; MAX_COMPONENTS]
+            baseline_components_seen: [false; MAX_COMPONENTS],
+            baseline_scans_seen: 0
         }));
         Ok(())
+    }
+
+    pub(crate) fn resolve_dnl_height(&mut self, height: u16) {
+        self.info.set_height(height);
+        self.expects_dnl = false;
+        if let Some(state) = self.scan_state.as_deref_mut() {
+            if state.scan_start_expects_dnl {
+                state.resolved_dnl_height = Some(height);
+            }
+        }
+    }
+
+    fn resolved_dnl_height(&self) -> Option<u16> {
+        self.scan_state.as_deref().and_then(|state| state.resolved_dnl_height)
     }
 
     pub(crate) fn mark_baseline_scan_components_complete(
@@ -1258,6 +1276,16 @@ where
         self.scan_state.as_deref().is_some_and(|state| {
             state.baseline_components_seen[..self.components.len()].iter().all(|seen| *seen)
         })
+    }
+
+    pub(crate) fn baseline_scans_seen(&self) -> usize {
+        self.scan_state.as_deref().map_or(0, |state| state.baseline_scans_seen)
+    }
+
+    pub(crate) fn set_baseline_scans_seen(&mut self, scans_seen: usize) {
+        if let Some(state) = self.scan_state.as_deref_mut() {
+            state.baseline_scans_seen = scans_seen;
+        }
     }
 
     pub(crate) fn scan_checkpoint(&self) -> Option<&ScanCheckpoint> {
@@ -1599,8 +1627,16 @@ where
     ///
     #[must_use]
     pub fn output_buffer_size(&self) -> Option<usize> {
-        let height =
-            if self.expects_dnl { self.options.max_height() } else { usize::from(self.height()) };
+        let height = self.resolved_dnl_height().map_or_else(
+            || {
+                if self.expects_dnl {
+                    self.options.max_height()
+                } else {
+                    usize::from(self.height())
+                }
+            },
+            usize::from,
+        );
         self.output_buffer_size_for_height(height)
     }
 
@@ -2392,8 +2428,7 @@ where
                     }
                     let height = u16::from_be_bytes([b[0], b[1]]);
                     if decoder.expects_dnl {
-                        decoder.info.set_height(height);
-                        decoder.expects_dnl = false;
+                        decoder.resolve_dnl_height(height);
                     }
                     Ok(())
                 })?;
@@ -2839,6 +2874,7 @@ where
                 if !self.is_progressive {
                     if let Some(state) = self.scan_state.as_deref_mut() {
                         state.baseline_components_seen = [false; MAX_COMPONENTS];
+                        state.baseline_scans_seen = 0;
                     }
                 }
             }
@@ -2910,15 +2946,15 @@ where
 
     pub fn decode_into(&mut self, out: &mut [u8]) -> Result<(), DecodeErrors> {
         self.abort_raw_pull_sequence();
-        let resolved_dnl_height = self.scan_state.as_deref().and_then(|state| {
-            (state.scan_start_expects_dnl && !self.expects_dnl && self.info.height != 0)
-                .then_some(usize::from(self.info.height))
-        });
         self.prepare_for_scan_decode()?;
 
-        let expected_size = if self.expects_dnl {
+        let resolved_dnl_height = self.resolved_dnl_height();
+        let expected_size = if let Some(height) = resolved_dnl_height {
+            self.output_buffer_size_for_height(usize::from(height))
+                .ok_or(DecodeErrors::FormatStatic("DNL image dimensions overflow usize"))?
+        } else if self.expects_dnl {
             self.output_buffer_size_for_height(
-                resolved_dnl_height.unwrap_or_else(|| self.options.max_height()),
+                self.options.max_height(),
             )
             .ok_or(DecodeErrors::FormatStatic("DNL image dimensions overflow usize"))?
         } else {
@@ -2926,6 +2962,10 @@ where
         };
 
         if out.len() < expected_size {
+            if let Some(height) = resolved_dnl_height {
+                self.info.set_height(height);
+                self.expects_dnl = false;
+            }
             // too small of a size
             return Err(DecodeErrors::TooSmallOutput(expected_size, out.len()));
         }
