@@ -753,7 +753,18 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         // decode headers
         self.decode_headers()?;
 
-        self.decode_stream_into(out)
+        let frame_len = self.frame_info().map_or(0, |frame| {
+            let components = self.colorspace().map_or(0, |c| c.num_components());
+            frame
+                .width
+                .saturating_mul(frame.height)
+                .saturating_mul(components)
+        });
+        self.decode_stream_into(out)?;
+
+        let samples_len = frame_len.saturating_mul(2).min(out.len());
+        self.convert_to_byte_endian(&mut out[..samples_len]);
+        Ok(())
     }
 
     /// Decode data returning it into `Vec<u8>`.
@@ -773,7 +784,20 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
     ///
     /// [decode]: PngDecoder::decode
     pub fn decode_raw(&mut self) -> Result<Vec<u8>, PngDecodeErrors> {
-        self.decode_stream_raw()
+        let mut out = self.decode_stream_raw()?;
+        self.convert_to_byte_endian(&mut out);
+        Ok(out)
+    }
+
+    /// Samples are decoded in PNG byte order (big endian), swap 16 bit samples
+    /// if the options ask for little endian
+    fn convert_to_byte_endian(&self, samples: &mut [u8]) {
+        if self.png_info.depth == 16
+            && !self.options.png_get_strip_to_8bit()
+            && self.options.byte_endian() == ByteEndian::LE
+        {
+            samples.chunks_exact_mut(2).for_each(|x| x.swap(0, 1));
+        }
     }
     /// Return the metadata (`FrameInfo`) for the *next* frame waiting to be decoded.
     ///
