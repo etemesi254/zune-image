@@ -454,6 +454,7 @@ pub(crate) fn parse_start_of_frame<T: ZByteReaderTrait>(
         // intercept the DNL marker rather than stopping at row 0.
         if img_height == 0 {
             img.expects_dnl = true;
+            img.dnl_image = true;
         }
         img.info.components = num_components;
         img.components = components;

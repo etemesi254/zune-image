@@ -1118,6 +1118,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         */
         self.h_max = 1;
         self.v_max = 1;
+        self.mcu_width = 8;
+        self.mcu_height = 8;
         self.info.sample_ratio = SampleRatios::None;
         self.is_interleaved = false;
         self.components[0].vertical_sample = 1;

@@ -139,7 +139,6 @@ pub(crate) struct ScanDecodeState {
     pub(crate) scan_start_position:        usize,
     pub(crate) scan_start_height:          u16,
     pub(crate) scan_start_expects_dnl:     bool,
-    pub(crate) resolved_dnl_height:        Option<u16>,
     pub(crate) append_snapshot:            HeaderAppendStateSnapshot,
     pub(crate) sos_snapshot:               SosParamsSnapshot,
     pub(crate) header_snapshot:            ScanHeaderStateSnapshot,
@@ -460,6 +459,18 @@ pub struct JpegDecoder<T> {
     /// and store the real height; if it never arrives, decoding returns an
     /// error.
     pub(crate) expects_dnl: bool,
+    /// Persistent identity for images whose SOF height was supplied through
+    /// DNL, including tolerated pre-SOS DNL placement.
+    pub(crate) dnl_image: bool,
+    /// Height committed by DNL. Kept outside scan replay state so public
+    /// geometry and option validation remain stable while the parser rewinds.
+    pub(crate) resolved_dnl_height: Option<u16>,
+    /// DNL height parsed through entropy read-ahead but not yet reached by the
+    /// MCU-row decoder.
+    pub(crate) pending_dnl_height: Option<u16>,
+    /// Reader position immediately after the pending DNL body. Any movement
+    /// while DNL is pending means decoding attempted to consume post-DNL data.
+    pub(crate) pending_dnl_stream_position: Option<u64>,
     /// Sequential raw iMCU-row progress shared across borrowing sessions.
     raw_pull_state: RawPullState
 }
@@ -735,7 +746,7 @@ where
 
         let layout = self.pull_layout()?;
         let n = self.decoder.components.len();
-        if self.decoder.expects_dnl {
+        if self.decoder.is_dnl_image() {
             return Err(DecodeErrors::FormatStatic(
                 "raw output does not support DNL images"
             ));
@@ -998,7 +1009,7 @@ where
     /// [`DecodeErrors::Format`] for the wrong plane count, or an error from
     /// the underlying decode pipeline.
     pub fn decode_into_planes(&mut self, planes: &mut [&mut [u8]]) -> Result<(), DecodeErrors> {
-        if self.decoder.expects_dnl {
+        if self.decoder.is_dnl_image() {
             return Err(DecodeErrors::FormatStatic(
                 "raw output does not support DNL images"
             ));
@@ -1076,7 +1087,7 @@ where
     pub fn decode_into_planes_strided(
         &mut self, planes: &mut [&mut [u8]], strides: &[usize]
     ) -> Result<(), DecodeErrors> {
-        if self.decoder.expects_dnl {
+        if self.decoder.is_dnl_image() {
             return Err(DecodeErrors::FormatStatic(
                 "raw output does not support DNL images"
             ));
@@ -1230,7 +1241,6 @@ where
             scan_start_position,
             scan_start_height: self.info.height,
             scan_start_expects_dnl: self.expects_dnl,
-            resolved_dnl_height: None,
             append_snapshot,
             sos_snapshot,
             header_snapshot,
@@ -1243,18 +1253,47 @@ where
         Ok(())
     }
 
-    pub(crate) fn resolve_dnl_height(&mut self, height: u16) {
-        self.info.set_height(height);
-        self.expects_dnl = false;
-        if let Some(state) = self.scan_state.as_deref_mut() {
-            if state.scan_start_expects_dnl {
-                state.resolved_dnl_height = Some(height);
+    pub(crate) fn validate_dnl_height(&self, height: u16) -> Result<(), DecodeErrors> {
+        if height == 0 {
+            return Err(DecodeErrors::FormatStatic("DNL height must be nonzero"));
+        }
+        if usize::from(height) > self.options.max_height() {
+            return Err(DecodeErrors::Format(format!(
+                "DNL height {height} greater than height limit {}",
+                self.options.max_height()
+            )));
+        }
+        if let Some(resolved) = self.resolved_dnl_height() {
+            if resolved != height {
+                return Err(DecodeErrors::Format(format!(
+                    "DNL height changed from {resolved} to {height} during replay"
+                )));
             }
         }
+        Ok(())
     }
 
-    fn resolved_dnl_height(&self) -> Option<u16> {
-        self.scan_state.as_deref().and_then(|state| state.resolved_dnl_height)
+    pub(crate) fn resolve_dnl_height(&mut self, height: u16) -> Result<(), DecodeErrors> {
+        self.validate_dnl_height(height)?;
+        self.info.set_height(height);
+        self.expects_dnl = false;
+        self.resolved_dnl_height = Some(height);
+        Ok(())
+    }
+
+    pub(crate) fn resolved_dnl_height(&self) -> Option<u16> {
+        self.resolved_dnl_height
+    }
+
+    pub(crate) fn is_dnl_image(&self) -> bool {
+        self.dnl_image
+    }
+
+    fn republish_resolved_dnl_height(&mut self) {
+        if let Some(height) = self.resolved_dnl_height() {
+            self.info.set_height(height);
+            self.expects_dnl = false;
+        }
     }
 
     pub(crate) fn mark_baseline_scan_components_complete(
@@ -1535,6 +1574,10 @@ where
             progressive_render_incomplete: false,
             marker_body_scratch:         Vec::new(),
             expects_dnl:                 false,
+            dnl_image:                   false,
+            resolved_dnl_height:         None,
+            pending_dnl_height:          None,
+            pending_dnl_stream_position: None,
             raw_pull_state:              RawPullState::default()
         }
     }
@@ -1647,6 +1690,18 @@ where
         usize::from(self.width())
             .checked_mul(height)?
             .checked_mul(self.options.jpeg_get_out_colorspace().num_components())
+    }
+
+    fn decode_output_buffer_size(&self) -> Result<usize, DecodeErrors> {
+        if let Some(height) = self.resolved_dnl_height() {
+            self.validate_dnl_height(height)?;
+            self.output_buffer_size_for_height(usize::from(height))
+        } else if self.expects_dnl {
+            self.output_buffer_size_for_height(self.options.max_height())
+        } else {
+            self.output_buffer_size()
+        }
+        .ok_or(DecodeErrors::FormatStatic("Image dimensions overflow usize"))
     }
 
     /// Return the number of output bytes known to be stable after the most
@@ -2427,8 +2482,12 @@ where
                         ));
                     }
                     let height = u16::from_be_bytes([b[0], b[1]]);
-                    if decoder.expects_dnl {
-                        decoder.resolve_dnl_height(height);
+                    if decoder.dnl_image {
+                        if decoder.expects_dnl {
+                            decoder.resolve_dnl_height(height)?;
+                        } else {
+                            decoder.validate_dnl_height(height)?;
+                        }
                     }
                     Ok(())
                 })?;
@@ -2624,6 +2683,11 @@ where
                 "12-bit JPEG pixel decoding is not supported"
             ));
         }
+        if self.is_progressive && self.expects_dnl {
+            return Err(DecodeErrors::FormatStatic(
+                "progressive JPEG with in-scan DNL is not supported",
+            ));
+        }
         Ok(())
     }
 
@@ -2774,6 +2838,8 @@ where
                 progressive_view,
                 progressive_fine_view
             } = plan;
+            self.pending_dnl_height = None;
+            self.pending_dnl_stream_position = None;
             self.info.set_height(scan_start_height);
             self.expects_dnl = scan_start_expects_dnl;
             // Roll back inline metadata from a previous scan attempt.
@@ -2940,33 +3006,35 @@ where
                 }
                 Ok(())
             }
-            Err(e) => Err(e)
+            Err(e) => {
+                self.republish_resolved_dnl_height();
+                Err(e)
+            }
         }
     }
 
     pub fn decode_into(&mut self, out: &mut [u8]) -> Result<(), DecodeErrors> {
         self.abort_raw_pull_sequence();
-        self.prepare_for_scan_decode()?;
-
-        let resolved_dnl_height = self.resolved_dnl_height();
-        let expected_size = if let Some(height) = resolved_dnl_height {
-            self.output_buffer_size_for_height(usize::from(height))
-                .ok_or(DecodeErrors::FormatStatic("DNL image dimensions overflow usize"))?
-        } else if self.expects_dnl {
-            self.output_buffer_size_for_height(
-                self.options.max_height(),
-            )
-            .ok_or(DecodeErrors::FormatStatic("DNL image dimensions overflow usize"))?
-        } else {
-            self.output_buffer_size().unwrap()
-        };
-
-        if out.len() < expected_size {
-            if let Some(height) = resolved_dnl_height {
-                self.info.set_height(height);
-                self.expects_dnl = false;
+        if self.headers_decoded {
+            let expected_size = self.decode_output_buffer_size()?;
+            if out.len() < expected_size {
+                return Err(DecodeErrors::TooSmallOutput(expected_size, out.len()));
             }
-            // too small of a size
+        }
+        if let Err(error) = self.prepare_for_scan_decode() {
+            self.republish_resolved_dnl_height();
+            return Err(error);
+        }
+
+        let expected_size = match self.decode_output_buffer_size() {
+            Ok(size) => size,
+            Err(error) => {
+                self.republish_resolved_dnl_height();
+                return Err(error);
+            }
+        };
+        if out.len() < expected_size {
+            self.republish_resolved_dnl_height();
             return Err(DecodeErrors::TooSmallOutput(expected_size, out.len()));
         }
 

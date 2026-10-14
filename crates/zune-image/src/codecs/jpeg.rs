@@ -45,7 +45,7 @@ impl<'a, T: ZByteWriterTrait> JfifWrite for TempVt<'a, T> {
 }
 impl<T: ZByteReaderTrait> DecoderTrait for zune_jpeg::JpegDecoder<T> {
     fn decode(&mut self) -> Result<Image, crate::errors::ImageErrors> {
-        let metadata = self.read_headers()?.unwrap();
+        let mut metadata = self.read_headers()?.unwrap();
         // best case uhdr identification
 
         let is_uhdr = {
@@ -77,6 +77,7 @@ impl<T: ZByteReaderTrait> DecoderTrait for zune_jpeg::JpegDecoder<T> {
 
         let colorspace = self.output_colorspace().unwrap();
         let (width, height) = self.dimensions().unwrap();
+        metadata.set_dimensions(width, height);
 
         let mut image = Image::from_u8(&pixels, width, height, colorspace);
         image.metadata = metadata;
@@ -130,6 +131,34 @@ impl From<zune_jpeg::errors::DecodeErrors> for ImageErrors {
         let err = format!("jpg: {from:?}");
 
         ImageErrors::ImageDecodeErrors(err)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dnl_decode_refreshes_public_image_metadata_dimensions() {
+        let base = include_bytes!("../../../zune-jpeg/tests/images/dnl_read_ahead.jpg");
+        let sof = base
+            .windows(2)
+            .position(|marker| marker == [0xFF, 0xC0])
+            .unwrap();
+        let height = u16::from_be_bytes([base[sof + 5], base[sof + 6]]);
+        let width = u16::from_be_bytes([base[sof + 7], base[sof + 8]]);
+        let eoi = base.windows(2).rposition(|marker| marker == [0xFF, 0xD9]).unwrap();
+        let mut data = base[..eoi].to_vec();
+        data[sof + 5..sof + 7].fill(0);
+        data.extend([0xFF, 0xDC, 0x00, 0x04]);
+        data.extend(height.to_be_bytes());
+        data.extend_from_slice(&base[eoi..]);
+
+        let mut decoder = JpegDecoder::new(ZCursor::new(&data));
+        let image = <JpegDecoder<_> as DecoderTrait>::decode(&mut decoder).unwrap();
+        let expected = (usize::from(width), usize::from(height));
+        assert_eq!(image.dimensions(), expected);
+        assert_eq!(image.metadata.dimensions(), expected);
     }
 }
 // Okay I just need to really appreciate jpeg-encoder crate
