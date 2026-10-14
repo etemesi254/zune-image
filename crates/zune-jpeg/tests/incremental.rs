@@ -1052,6 +1052,34 @@ fn com_segment(payload: &[u8]) -> Vec<u8> {
     marker_segment(0xFE, payload)
 }
 
+fn with_dnl_and_trailing_segments(
+    base: &[u8], segments: &[Vec<u8>],
+) -> (Vec<u8>, usize, usize, u16, u16) {
+    let sof = base
+        .windows(2)
+        .position(|marker| marker == [0xFF, 0xC0])
+        .expect("baseline JPEG must contain SOF0");
+    let height = u16::from_be_bytes([base[sof + 5], base[sof + 6]]);
+    let width = u16::from_be_bytes([base[sof + 7], base[sof + 8]]);
+    let eoi = base
+        .windows(2)
+        .rposition(|marker| marker == [0xFF, 0xD9])
+        .expect("baseline JPEG must contain EOI");
+
+    let mut data = base.to_vec();
+    data[sof + 5..sof + 7].fill(0);
+    data.truncate(eoi);
+    data.extend([0xFF, 0xDC, 0x00, 0x04]);
+    data.extend(height.to_be_bytes());
+    let trailing_start = data.len();
+    for segment in segments {
+        data.extend_from_slice(segment);
+    }
+    let eoi_offset = data.len();
+    data.extend_from_slice(&base[eoi..]);
+    (data, trailing_start, eoi_offset, width, height)
+}
+
 /// Inject a synthetic APP2 ICC chunk before SOS so header parsing sees it.
 fn inject_header_icc(base: &[u8], payload: &[u8]) -> Vec<u8> {
     let sos = base
@@ -1379,6 +1407,82 @@ fn complete_extended_xmp_before_eoi_rolls_back_on_incremental_eof() {
     let info = decoder.info().unwrap();
     assert_eq!(info.extended_xmp.as_deref(), Some(payload.as_slice()));
     assert_eq!(info.extended_xmp_guid.as_deref(), Some(guid.as_slice()));
+}
+
+#[test]
+fn dnl_state_rolls_back_when_trailing_metadata_suspends() {
+    let base = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let guid = *b"0123456789abcdef0123456789abcdef";
+    let payload = b"Extended XMP after DNL";
+    let extended_xmp = app1_extended_xmp(&guid, payload);
+    let (data, app_start, eoi_offset, width, height) =
+        with_dnl_and_trailing_segments(base, core::slice::from_ref(&extended_xmp));
+
+    let reference_options = DecoderOptions::default()
+        .set_max_height(usize::from(height))
+        .jpeg_set_out_colorspace(ColorSpace::Luma);
+    let mut reference = JpegDecoder::new_with_options(ZCursor::new(base), reference_options);
+    let expected = reference.decode().unwrap();
+    assert!(expected.iter().any(|sample| *sample != 0));
+
+    let cutoffs = [
+        ("inside trailing APP1", app_start + extended_xmp.len() / 2),
+        ("before EOI", eoi_offset),
+    ];
+    for (mode, incremental, strict) in
+        [("incremental", true, false), ("strict", false, true)]
+    {
+        for (boundary, cutoff) in cutoffs {
+            let options = DecoderOptions::default()
+                .set_max_height(usize::from(height))
+                .jpeg_set_out_colorspace(ColorSpace::Luma)
+                .set_strict_mode(strict);
+            let limit = Rc::new(Cell::new(cutoff));
+            let cursor = GrowableCursor::new(&data, Rc::clone(&limit));
+            let mut decoder = JpegDecoder::new_with_options(cursor, options);
+            decoder.set_incremental_mode(incremental);
+            decoder.decode_headers().unwrap();
+            let expected_size = usize::from(width) * usize::from(height);
+            assert_eq!(decoder.output_buffer_size(), Some(expected_size));
+            let mut output = vec![0xA5; decoder.output_buffer_size().unwrap()];
+
+            let error = decoder.decode_into(&mut output).unwrap_err();
+            assert!(
+                error.is_recoverable_eof(),
+                "{mode} at {boundary}: unexpected error {error:?}"
+            );
+            assert_eq!(decoder.info().unwrap().height, height);
+            assert!(decoder.info().unwrap().extended_xmp.is_none());
+
+            limit.set(data.len());
+            decoder.decode_into(&mut output).unwrap_or_else(|error| {
+                panic!("{mode} at {boundary}: retry failed: {error:?}")
+            });
+            let info = decoder.info().unwrap();
+            assert_eq!(info.height, height);
+            assert_eq!(info.extended_xmp.as_deref(), Some(payload.as_slice()));
+            assert_eq!(info.extended_xmp_guid.as_deref(), Some(guid.as_slice()));
+            assert_pixels_match(&output, &expected, mode, data.len());
+
+            let mut replay = vec![0xA5; output.len()];
+            decoder.decode_into(&mut replay).unwrap_or_else(|error| {
+                panic!("{mode} at {boundary}: replay after success failed: {error:?}")
+            });
+            assert_pixels_match(&replay, &expected, mode, data.len());
+
+            decoder.set_options(
+                DecoderOptions::default()
+                    .set_max_height(usize::from(height))
+                    .jpeg_set_out_colorspace(ColorSpace::Luma)
+                    .set_strict_mode(strict),
+            );
+            let mut option_replay = vec![0xA5; output.len()];
+            decoder.decode_into(&mut option_replay).unwrap_or_else(|error| {
+                panic!("{mode} at {boundary}: replay after set_options failed: {error:?}")
+            });
+            assert_pixels_match(&option_replay, &expected, mode, data.len());
+        }
+    }
 }
 
 fn check_complete_extended_xmp_before_missing_eoi(base: &[u8]) {
