@@ -259,10 +259,16 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
         // Every scan walks the whole image, so bound the number of scans as the
         // progressive decoder does (jpeg_get_max_scans).
-        let mut scans_seen = 0_usize;
+        let mut scans_seen = self.baseline_scans_seen();
+        let mut resuming_current_scan = resuming && scans_seen != 0;
         let mut all_required_components_seen = self.baseline_components_complete();
         'sos: loop {
-            scans_seen += 1;
+            if resuming_current_scan {
+                resuming_current_scan = false;
+            } else {
+                scans_seen = scans_seen.saturating_add(1);
+                self.set_baseline_scans_seen(scans_seen);
+            }
             if scans_seen > self.options.jpeg_get_max_scans() {
                 return Err(DecodeErrors::Format(format!(
                     "Too many scans, exceeded limit of {}",
@@ -629,8 +635,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 Ok(Marker::DNL) => {
                     let _length = self.stream.get_u16_be_err()?;
                     let height = self.stream.get_u16_be_err()?;
-                    self.info.set_height(height);
-                    self.expects_dnl = false;
+                    self.resolve_dnl_height(height);
                     all_required_components_seen = self.mark_baseline_scan_components_complete(
                         &scan_components[..scan_component_count],
                     );
@@ -1150,8 +1155,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     // reader has already drained the entropy data.
                     let _length = self.stream.get_u16_be_err()?;
                     let height = self.stream.get_u16_be_err()?;
-                    self.info.set_height(height);
-                    self.expects_dnl = false;
+                    self.resolve_dnl_height(height);
                     trace!("DNL marker: actual image height = {height}");
                     return Ok(McuContinuation::DnlFound);
                 } else {

@@ -1464,6 +1464,19 @@ fn dnl_state_rolls_back_when_trailing_metadata_suspends() {
             assert_eq!(info.extended_xmp_guid.as_deref(), Some(guid.as_slice()));
             assert_pixels_match(&output, &expected, mode, data.len());
 
+            let mut too_small = vec![0xA5; output.len() - 1];
+            let error = decoder.decode_into(&mut too_small).unwrap_err();
+            assert!(
+                matches!(
+                    error,
+                    DecodeErrors::TooSmallOutput(required, actual)
+                        if required == output.len() && actual == too_small.len()
+                ),
+                "{mode} at {boundary}: unexpected short-buffer error {error:?}"
+            );
+            assert_eq!(decoder.info().unwrap().height, height);
+            assert_eq!(decoder.output_buffer_size(), Some(output.len()));
+
             let mut replay = vec![0xA5; output.len()];
             decoder.decode_into(&mut replay).unwrap_or_else(|error| {
                 panic!("{mode} at {boundary}: replay after success failed: {error:?}")
@@ -3347,6 +3360,37 @@ fn baseline_multi_sos_marker_boundaries_recover() {
             }
         }
     }
+}
+
+#[test]
+fn baseline_scan_limit_is_preserved_across_incremental_retry() {
+    let data = include_bytes!("../../../test-images/jpeg/tiny_non_interleaved_444.jpg");
+    let options = DecoderOptions::default().jpeg_set_max_scans(2);
+
+    let mut one_shot = JpegDecoder::new_with_options(ZCursor::new(data), options);
+    let error = one_shot.decode().unwrap_err();
+    assert!(
+        matches!(&error, DecodeErrors::Format(message) if message.contains("Too many scans")),
+        "one-shot decode returned {error:?}"
+    );
+
+    let cutoff = sos_data_start(data, 1) + 1;
+    let limit = Rc::new(Cell::new(cutoff));
+    let cursor = GrowableCursor::new(data, Rc::clone(&limit));
+    let mut incremental = JpegDecoder::new_with_options(cursor, options);
+    incremental.set_incremental_mode(true);
+    incremental.decode_headers().unwrap();
+    let mut output = vec![0; incremental.output_buffer_size().unwrap()];
+
+    let error = incremental.decode_into(&mut output).unwrap_err();
+    assert!(error.is_recoverable_eof(), "first attempt returned {error:?}");
+
+    limit.set(data.len());
+    let error = incremental.decode_into(&mut output).unwrap_err();
+    assert!(
+        matches!(&error, DecodeErrors::Format(message) if message.contains("Too many scans")),
+        "incremental retry returned {error:?}"
+    );
 }
 
 #[test]
