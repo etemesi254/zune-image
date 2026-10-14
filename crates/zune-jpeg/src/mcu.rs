@@ -122,7 +122,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             // For non-interleaved images( (1*1) subsampling)
             // number of MCU's are the widths (+7 to account for paddings) divided bu 8.
             mcu_width = (self.info.width as usize).div_ceil(8);
-            mcu_height = (self.info.height as usize).div_ceil(8);
+            mcu_height = if self.expects_dnl {
+                self.options.max_height().div_ceil(8)
+            } else {
+                (self.info.height as usize).div_ceil(8)
+            };
         }
         if self.is_interleaved
             && self.input_colorspace.num_components() > 1
@@ -149,7 +153,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             self.reset_params();
 
             mcu_width = self.info.width.div_ceil(8) as usize;
-            mcu_height = self.info.height.div_ceil(8) as usize;
+            mcu_height = if self.expects_dnl {
+                self.options.max_height().div_ceil(8)
+            } else {
+                self.info.height.div_ceil(8) as usize
+            };
         }
         let width = usize::from(self.info.width);
 
@@ -204,6 +212,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         // (upsampled) pixels immediately after each MCU, for convenience we use each row of MCUS.
         // Otherwise, we must first wait until following SOS provide the remaining components.
         let all_components_in_first_scan = usize::from(self.num_scans) == self.components.len();
+        if self.expects_dnl && !all_components_in_first_scan {
+            return Err(DecodeErrors::FormatStatic(
+                "baseline multi-scan JPEG with DNL is not supported",
+            ));
+        }
 
         if all_components_in_first_scan {
             // No multi-SOS scratch is needed for this call; release any
@@ -262,7 +275,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let mut scans_seen = self.baseline_scans_seen();
         let mut resuming_current_scan = resuming && scans_seen != 0;
         let mut all_required_components_seen = self.baseline_components_complete();
+        let mut last_scan_rows_decoded: usize;
         'sos: loop {
+            last_scan_rows_decoded = 0;
             if resuming_current_scan {
                 resuming_current_scan = false;
             } else {
@@ -427,6 +442,19 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     }
                     Err(e) => return Err(e)
                 };
+                last_scan_rows_decoded = i + 1;
+                let effective_mcu_height =
+                    if let McuContinuation::DnlFound(height) = &terminate {
+                        self.validate_dnl_scan_rows(
+                            *height,
+                            last_scan_rows_decoded,
+                            all_components_in_first_scan,
+                        )?;
+                        self.resolve_dnl_height(*height)?;
+                        last_scan_rows_decoded
+                    } else {
+                        mcu_height
+                    };
 
                 // A pull request must not publish a row assembled after the
                 // entropy reader exhausted visible input.
@@ -445,7 +473,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         &terminate,
                         McuContinuation::AnotherSos
                             | McuContinuation::InterScanMarker(_)
-                            | McuContinuation::DnlFound
+                            | McuContinuation::DnlFound(_)
                     )
                 {
                     all_required_components_seen = self.mark_baseline_scan_components_complete(
@@ -486,7 +514,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             self.post_process(
                                 pixels,
                                 i,
-                                mcu_height,
+                                effective_mcu_height,
                                 width,
                                 padded_width,
                                 &mut pixels_written,
@@ -517,6 +545,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
                 match terminate {
                     McuContinuation::Ok => {}
+                    McuContinuation::AnotherSos if self.dnl_image => {
+                        return Err(DecodeErrors::FormatStatic(
+                            "JPEG with DNL cannot contain multiple scans",
+                        ));
+                    }
                     McuContinuation::AnotherSos if all_components_in_first_scan => {
                         if self.scan_eof_is_error() {
                             return Err(DecodeErrors::FormatStatic(
@@ -539,6 +572,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             &mut stream,
                             all_required_components_seen,
                         )? {
+                            if self.dnl_image {
+                                return Err(DecodeErrors::FormatStatic(
+                                    "JPEG with DNL cannot contain multiple scans",
+                                ));
+                            }
                             if all_components_in_first_scan {
                                 if self.scan_eof_is_error() {
                                     return Err(DecodeErrors::FormatStatic(
@@ -564,7 +602,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         }
                         return Ok(());
                     }
-                    McuContinuation::DnlFound => {
+                    McuContinuation::DnlFound(height) => {
+                        debug_assert_eq!(self.resolved_dnl_height(), Some(height));
                         // DNL marker was consumed and info.height is now set.
                         // The image is complete; break out cleanly without
                         // grey-filling any remaining buffer space.
@@ -633,9 +672,20 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             let scan_component_count = usize::from(self.num_scans);
             match get_marker(&mut self.stream, &mut stream) {
                 Ok(Marker::DNL) => {
-                    let _length = self.stream.get_u16_be_err()?;
+                    let length = self.stream.get_u16_be_err()?;
+                    if length != 4 {
+                        return Err(DecodeErrors::FormatStatic(
+                            "Malformed DNL segment: length must be 4",
+                        ));
+                    }
                     let height = self.stream.get_u16_be_err()?;
-                    self.resolve_dnl_height(height);
+                    self.validate_dnl_height(height)?;
+                    self.validate_dnl_scan_rows(
+                        height,
+                        last_scan_rows_decoded,
+                        all_components_in_first_scan,
+                    )?;
+                    self.resolve_dnl_height(height)?;
                     all_required_components_seen = self.mark_baseline_scan_components_complete(
                         &scan_components[..scan_component_count],
                     );
@@ -680,15 +730,26 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     | Marker::DQT
                     | Marker::DRI
                     | Marker::COM
-                    | Marker::APP(_)),
+                    | Marker::APP(_)
+                    | Marker::DNL),
                 ) => {
                     if self.advance_to_next_sos(
                         marker,
                         &mut stream,
                         all_required_components_seen,
                     )? {
+                        if self.dnl_image {
+                            return Err(DecodeErrors::FormatStatic(
+                                "JPEG with DNL cannot contain multiple scans",
+                            ));
+                        }
                         warn!("More than one SOS despite already having all components");
                     }
+                }
+                Ok(Marker::SOS) if self.dnl_image => {
+                    return Err(DecodeErrors::FormatStatic(
+                        "JPEG with DNL cannot contain multiple scans",
+                    ));
                 }
                 Ok(marker) => {
                     if self.scan_eof_is_error() {
@@ -1054,10 +1115,24 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 }
             }
 
+            if self.pending_dnl_height.is_some() {
+                let stream_moved = if let Some(position) = self.pending_dnl_stream_position {
+                    self.stream.position()? != position
+                } else {
+                    false
+                };
+                if stream_moved || stream.marker().is_some() || stream.overread_by() > 0 {
+                    return Err(DecodeErrors::FormatStatic(
+                        "Entropy data ended before the height declared by DNL",
+                    ));
+                }
+            }
+
             self.todo = self.todo.wrapping_sub(1);
 
             if self.todo == 0 {
-                if self.handle_rst_main_with_status(stream)? {
+                let handled_restart = self.handle_rst_main_with_status(stream)?;
+                if handled_restart {
                     // Coefficient buffers (`raw_coeff` and `progressive`)
                     // live on the decoder across `decode_into` calls, so
                     // they don't need to be snapshotted here. We only
@@ -1070,19 +1145,93 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     });
                     self.checkpoint_scan(mcu_row, j + 1, ctx_pixels_written, dc_predictions)?;
                 }
+                if !handled_restart && stream.marker().is_some() {
+                    if matches!(stream.marker(), Some(Marker::DNL)) && j + 1 < mcu_width {
+                        return Err(DecodeErrors::FormatStatic(
+                            "DNL marker found before the end of an MCU row",
+                        ));
+                    }
+                    break;
+                }
                 continue;
             }
 
+            if !B::marker_ends_data() && matches!(stream.marker(), Some(Marker::DNL)) {
+                if j + 1 < mcu_width {
+                    return Err(DecodeErrors::FormatStatic(
+                        "DNL marker found before the end of an MCU row",
+                    ));
+                }
+                break;
+            }
+
             if B::marker_ends_data() && stream.marker().is_some() && stream.bits_left() == 0 {
+                if matches!(stream.marker(), Some(Marker::DNL)) && j + 1 < mcu_width {
+                    return Err(DecodeErrors::FormatStatic(
+                        "DNL marker found before the end of an MCU row",
+                    ));
+                }
                 break;
             }
         }
 
-        self.check_stream_marker_after_mcu_width(stream, is_last_row)
+        self.check_stream_marker_after_mcu_width(stream, is_last_row, mcu_row)
+    }
+
+    fn dnl_scan_rows(
+        &self, height: u16, all_components_in_scan: bool,
+    ) -> Result<usize, DecodeErrors> {
+        let height = usize::from(height);
+        let rows = if all_components_in_scan {
+            height.div_ceil(self.mcu_height)
+        } else {
+            let component_index = self.z_order.first().copied().unwrap_or(0);
+            let component = self.components.get(component_index).ok_or(
+                DecodeErrors::FormatStatic("DNL scan references an unknown component"),
+            )?;
+            height
+                .checked_mul(component.vertical_sample)
+                .ok_or(DecodeErrors::FormatStatic("DNL scan height overflow"))?
+                .div_ceil(self.v_max * 8)
+        };
+        Ok(rows)
+    }
+
+    fn validate_dnl_scan_rows(
+        &self, height: u16, decoded_rows: usize, all_components_in_scan: bool,
+    ) -> Result<(), DecodeErrors> {
+        let expected_rows = self.dnl_scan_rows(height, all_components_in_scan)?;
+        if decoded_rows != expected_rows {
+            return Err(DecodeErrors::Format(format!(
+                "DNL height {height} requires {expected_rows} MCU rows, decoded {decoded_rows}"
+            )));
+        }
+        Ok(())
+    }
+
+    fn handle_pending_dnl(
+        &mut self, mcu_row: usize,
+    ) -> Result<McuContinuation, DecodeErrors> {
+        let height = self
+            .pending_dnl_height
+            .ok_or(DecodeErrors::FormatStatic("Missing pending DNL height"))?;
+        let decoded_rows = mcu_row + 1;
+        let expected_rows = self.dnl_scan_rows(height, true)?;
+        if decoded_rows < expected_rows {
+            return Ok(McuContinuation::Ok);
+        }
+        if decoded_rows > expected_rows {
+            return Err(DecodeErrors::Format(format!(
+                "DNL height {height} requires {expected_rows} MCU rows, decoded {decoded_rows}"
+            )));
+        }
+        self.pending_dnl_height = None;
+        self.pending_dnl_stream_position = None;
+        Ok(McuContinuation::DnlFound(height))
     }
 
     fn check_stream_marker_after_mcu_width<B: BitStream>(
-        &mut self, stream: &mut B, is_last_row: bool,
+        &mut self, stream: &mut B, is_last_row: bool, mcu_row: usize,
     ) -> Result<McuContinuation, DecodeErrors> {
         // After all interleaved components, that's an MCU
         // handle stream markers
@@ -1094,8 +1243,30 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         //
         // But libjpeg-turbo allows it because of some weird reason. so I'll also
         // allow it because of some weird reason.
+        if self.pending_dnl_height.is_some() {
+            return self.handle_pending_dnl(mcu_row);
+        }
         let bits_left = stream.bits_left();
         if let Some(m) = stream.marker() {
+            if *m == Marker::DNL && self.dnl_image {
+                self.check_cancelled()?;
+                stream.marker().take();
+                let length = self.stream.get_u16_be_err()?;
+                if length != 4 {
+                    return Err(DecodeErrors::FormatStatic(
+                        "Malformed DNL segment: length must be 4",
+                    ));
+                }
+                let height = self.stream.get_u16_be_err()?;
+                if self.expects_dnl {
+                    self.resolve_dnl_height(height)?;
+                } else {
+                    self.validate_dnl_height(height)?;
+                }
+                self.pending_dnl_height = Some(height);
+                self.pending_dnl_stream_position = Some(self.stream.position()?);
+                return self.handle_pending_dnl(mcu_row);
+            }
             let ends_scan = matches!(
                 m,
                 Marker::SOS
@@ -1143,39 +1314,21 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 trace!("Found inter-scan marker {m:?}");
                 return Ok(McuContinuation::InterScanMarker(m));
             } else if let Marker::DNL = m {
-                self.check_cancelled()?;
-                // DNL appears right after the last entropy-coded row. It
-                // carries the actual line count for images whose SOF height
-                // was 0. Only act on it when we were expecting one; otherwise
-                // treat it as an unexpected marker.
-                if self.expects_dnl {
-                    let _m = stream.marker().take().unwrap();
-                    // Consume the DNL segment: 2-byte length (always 4) + 2-byte height.
-                    // We read directly from the stream because the bitstream
-                    // reader has already drained the entropy data.
-                    let _length = self.stream.get_u16_be_err()?;
-                    let height = self.stream.get_u16_be_err()?;
-                    self.resolve_dnl_height(height);
-                    trace!("DNL marker: actual image height = {height}");
-                    return Ok(McuContinuation::DnlFound);
-                } else {
-                    // Spurious DNL on a normal image — warn and terminate
-                    // (parsing it would silently corrupt info.height).\n                    // Swallow the segment body so the stream stays consistent.
-                    if self.options.strict_mode() {
-                        return Err(DecodeErrors::Format(format!(
-                            "Marker {:?} found where not expected", m
-                        )));
-                    }
-                    error!("Unexpected DNL marker in Huffman stream, possibly corrupt jpeg");
-                    stream.marker().take();
-                    // Skip the DNL body (length-prefixed: read length, skip payload).
-                    let length = self.stream.get_u16_be_err()?;
-                    let skip = usize::from(length).saturating_sub(2);
-                    self.stream.skip(skip)?;
-                    stream.reset();
-                    B::reset_arith_tables(&mut self.entropy_tables);
-                    return Ok(McuContinuation::Terminate);
+                // DNL on a non-DNL image remains invalid; the expected-DNL
+                // path was consumed above before other marker dispatch.
+                if self.options.strict_mode() {
+                    return Err(DecodeErrors::Format(format!(
+                        "Marker {:?} found where not expected", m
+                    )));
                 }
+                error!("Unexpected DNL marker in Huffman stream, possibly corrupt jpeg");
+                stream.marker().take();
+                let length = self.stream.get_u16_be_err()?;
+                let skip = usize::from(length).saturating_sub(2);
+                self.stream.skip(skip)?;
+                stream.reset();
+                B::reset_arith_tables(&mut self.entropy_tables);
+                return Ok(McuContinuation::Terminate);
             } else {
                 if self.options.strict_mode() {
                     return Err(DecodeErrors::Format(format!(
@@ -1287,7 +1440,12 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     trace!("Found EOI marker");
                     return Ok(false);
                 }
-                Marker::DAC | Marker::DHT | Marker::DQT | Marker::DRI | Marker::COM => {
+                Marker::DAC
+                | Marker::DHT
+                | Marker::DQT
+                | Marker::DRI
+                | Marker::COM
+                | Marker::DNL => {
                     trace!("Parsing inter-scan marker {marker:?}");
                     restore_inter_scan_on_suspend!(self.parse_marker_inner(marker));
                 }
@@ -1363,6 +1521,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 | Marker::DRI
                 | Marker::COM
                 | Marker::APP(_)
+                | Marker::DNL
                 | Marker::EOI => {}
                 _ => {
                     if self.options.strict_mode() {
@@ -1554,5 +1713,5 @@ enum McuContinuation {
     Terminate,
     /// The DNL marker was found and parsed. The scan is complete and
     /// `info.height` has been updated to the actual number of lines.
-    DnlFound
+    DnlFound(u16)
 }

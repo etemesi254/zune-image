@@ -15,7 +15,7 @@ use zune_core::bytestream::{ZByteReaderTrait, ZCursor};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::DecoderOptions;
 use zune_jpeg::errors::DecodeErrors;
-use zune_jpeg::{JpegDecoder, RawDecodeSession, RawImcuRowStatus};
+use zune_jpeg::{JpegDecoder, NeverCancel, RawDecodeSession, RawImcuRowStatus};
 
 use std::cell::{Cell, RefCell};
 use std::io::{BufRead, Cursor, Read, Seek, SeekFrom};
@@ -1055,10 +1055,13 @@ fn com_segment(payload: &[u8]) -> Vec<u8> {
 fn with_dnl_and_trailing_segments(
     base: &[u8], segments: &[Vec<u8>],
 ) -> (Vec<u8>, usize, usize, u16, u16) {
-    let sof = base
-        .windows(2)
-        .position(|marker| marker == [0xFF, 0xC0])
-        .expect("baseline JPEG must contain SOF0");
+    let sof = list_jpeg_markers(base)
+        .into_iter()
+        .find(|(_, code, _)| {
+            (0xC0..=0xC2).contains(code) || (0xC9..=0xCA).contains(code)
+        })
+        .map(|(offset, _, _)| offset)
+        .expect("JPEG must contain a supported SOF marker");
     let height = u16::from_be_bytes([base[sof + 5], base[sof + 6]]);
     let width = u16::from_be_bytes([base[sof + 7], base[sof + 8]]);
     let eoi = base
@@ -1078,6 +1081,28 @@ fn with_dnl_and_trailing_segments(
     let eoi_offset = data.len();
     data.extend_from_slice(&base[eoi..]);
     (data, trailing_start, eoi_offset, width, height)
+}
+
+fn with_pre_sos_dnl(base: &[u8]) -> (Vec<u8>, u16) {
+    let sof = list_jpeg_markers(base)
+        .into_iter()
+        .find(|(_, code, _)| {
+            (0xC0..=0xC2).contains(code) || (0xC9..=0xCA).contains(code)
+        })
+        .map(|(offset, _, _)| offset)
+        .expect("JPEG must contain a supported SOF marker");
+    let height = u16::from_be_bytes([base[sof + 5], base[sof + 6]]);
+    let sos = base
+        .windows(2)
+        .position(|marker| marker == [0xFF, 0xDA])
+        .expect("JPEG must contain SOS");
+    let mut data = base.to_vec();
+    data[sof + 5..sof + 7].fill(0);
+    data.splice(
+        sos..sos,
+        [0xFF, 0xDC, 0x00, 0x04, (height >> 8) as u8, height as u8],
+    );
+    (data, height)
 }
 
 /// Inject a synthetic APP2 ICC chunk before SOS so header parsing sees it.
@@ -1496,6 +1521,525 @@ fn dnl_state_rolls_back_when_trailing_metadata_suspends() {
             assert_pixels_match(&option_replay, &expected, mode, data.len());
         }
     }
+}
+
+#[test]
+fn dnl_rejects_invalid_height_and_length() {
+    let base = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let (data, dnl_end, _, _, height) = with_dnl_and_trailing_segments(base, &[]);
+    let dnl = dnl_end - 6;
+
+    let mut malformed_length = data.clone();
+    malformed_length[dnl + 2..dnl + 4].copy_from_slice(&5_u16.to_be_bytes());
+    let error = JpegDecoder::new(ZCursor::new(&malformed_length)).decode().unwrap_err();
+    assert!(
+        matches!(error, DecodeErrors::FormatStatic(message) if message.contains("DNL")),
+        "invalid DNL length returned {error:?}"
+    );
+
+    let mut zero_height = data.clone();
+    zero_height[dnl + 4..dnl + 6].fill(0);
+    let error = JpegDecoder::new(ZCursor::new(&zero_height)).decode().unwrap_err();
+    assert!(
+        matches!(error, DecodeErrors::FormatStatic(message) if message.contains("nonzero")),
+        "zero DNL height returned {error:?}"
+    );
+
+    let options = DecoderOptions::default().set_max_height(usize::from(height) - 1);
+    let mut over_limit = JpegDecoder::new_with_options(ZCursor::new(&data), options);
+    let error = over_limit.decode().unwrap_err();
+    assert!(
+        matches!(&error, DecodeErrors::Format(message) if message.contains("height limit")),
+        "over-limit DNL height returned {error:?}"
+    );
+
+    let mut inconsistent_rows = data;
+    inconsistent_rows[dnl + 4..dnl + 6].copy_from_slice(&(height / 2).to_be_bytes());
+    let options = DecoderOptions::default().set_max_height(usize::from(height));
+    let mut inconsistent =
+        JpegDecoder::new_with_options(ZCursor::new(&inconsistent_rows), options);
+    let error = inconsistent.decode().unwrap_err();
+    assert!(
+        matches!(&error, DecodeErrors::Format(message) if message.contains("MCU rows")),
+        "inconsistent DNL height returned {error:?}"
+    );
+}
+
+#[test]
+fn unsupported_multi_scan_and_progressive_dnl_are_rejected() {
+    for (name, base, expected_message) in [
+        (
+            "baseline multi-scan",
+            include_bytes!("../../../test-images/jpeg/tiny_non_interleaved_444.jpg").as_slice(),
+            "baseline multi-scan",
+        ),
+        (
+            "progressive",
+            include_bytes!("../../../test-images/jpeg/progressive_restart_420.jpg").as_slice(),
+            "progressive JPEG",
+        ),
+    ] {
+        let (data, _, _, _, _) = with_dnl_and_trailing_segments(base, &[]);
+        let error = JpegDecoder::new(ZCursor::new(&data)).decode().unwrap_err();
+        assert!(
+            matches!(&error, DecodeErrors::FormatStatic(message) if message.contains(expected_message)),
+            "{name} DNL returned {error:?}"
+        );
+    }
+}
+
+#[test]
+fn dnl_rejects_additional_sos_on_every_marker_path() {
+    let base = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let extra_sos =
+        vec![0xFF, 0xDA, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3F, 0x00];
+    let (mut before_dnl, dnl_end, _, _, height) =
+        with_dnl_and_trailing_segments(base, &[]);
+    before_dnl.splice(dnl_end - 6..dnl_end - 6, extra_sos.iter().copied());
+    let (after_dnl, _, _, _, _) =
+        with_dnl_and_trailing_segments(base, core::slice::from_ref(&extra_sos));
+    let (after_setup_marker, _, _, _, _) = with_dnl_and_trailing_segments(
+        base,
+        &[marker_segment(0xE3, b"setup before forbidden SOS"), extra_sos],
+    );
+
+    for (path, data) in [
+        ("before DNL", before_dnl),
+        ("directly after DNL", after_dnl),
+        ("after trailing setup marker", after_setup_marker),
+    ] {
+        for strict in [false, true] {
+            let options = DecoderOptions::default()
+                .set_max_height(usize::from(height))
+                .set_strict_mode(strict);
+            let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&data), options);
+            let error = decoder.decode().unwrap_err();
+            assert!(
+                matches!(&error, DecodeErrors::FormatStatic(message) if message.contains("multiple scans")),
+                "{path}, strict={strict}: returned {error:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn strict_dnl_accepts_scan_ending_on_restart_interval() {
+    let base = include_bytes!("../../../test-images/jpeg/four_components.jpg");
+    let (data, _, _, _, height) = with_dnl_and_trailing_segments(base, &[]);
+    let options = DecoderOptions::default()
+        .set_max_height(usize::from(height))
+        .set_strict_mode(true);
+    let mut reference = JpegDecoder::new_with_options(ZCursor::new(base), options);
+    let expected = reference.decode().unwrap();
+    let mut dnl = JpegDecoder::new_with_options(ZCursor::new(&data), options);
+    let actual = dnl.decode().unwrap();
+    assert_pixels_match(&actual, &expected, "restart-boundary DNL", data.len());
+}
+
+#[test]
+fn dnl_before_end_of_mcu_row_is_rejected() {
+    let base = include_bytes!("../../../test-images/jpeg/four_components.jpg");
+    let markers = list_jpeg_markers(base);
+    let sof = markers
+        .iter()
+        .find(|(_, code, _)| *code == 0xC0)
+        .map(|(offset, _, _)| *offset)
+        .expect("fixture must contain SOF0");
+    let rst = markers
+        .iter()
+        .find(|(_, code, _)| (0xD0..=0xD7).contains(code))
+        .map(|(offset, _, _)| *offset)
+        .expect("fixture must contain a restart marker");
+    let components = usize::from(base[sof + 9]);
+    let h_max = (0..components)
+        .map(|index| usize::from(base[sof + 11 + index * 3] >> 4))
+        .max()
+        .unwrap();
+    let width = u16::from_be_bytes([base[sof + 7], base[sof + 8]]);
+    let widened = width + (h_max * 8) as u16;
+
+    let mut data = base.to_vec();
+    data[sof + 5..sof + 7].fill(0);
+    data[sof + 7..sof + 9].copy_from_slice(&widened.to_be_bytes());
+    data.splice(rst..rst + 2, [0xFF, 0xDC, 0x00, 0x04, 0x00, 0x01]);
+
+    let options = DecoderOptions::default().set_strict_mode(true);
+    let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&data), options);
+    let error = decoder.decode().unwrap_err();
+    assert!(
+        matches!(&error, DecodeErrors::FormatStatic(message) if message.contains("end of an MCU row")),
+        "partial-row DNL returned {error:?}"
+    );
+}
+
+#[test]
+fn huffman_dnl_read_ahead_waits_for_declared_final_row() {
+    let base = include_bytes!("images/dnl_read_ahead.jpg");
+    let (data, _, _, _, height) = with_dnl_and_trailing_segments(base, &[]);
+    let options = DecoderOptions::default()
+        .set_max_height(usize::from(height))
+        .jpeg_set_out_colorspace(ColorSpace::Luma);
+    let mut reference = JpegDecoder::new_with_options(ZCursor::new(base), options);
+    let expected = reference.decode().unwrap();
+    let mut dnl = JpegDecoder::new_with_options(ZCursor::new(&data), options);
+    let actual = dnl.decode().unwrap();
+    assert_pixels_match(&actual, &expected, "Huffman DNL read-ahead", data.len());
+}
+
+#[test]
+fn pending_dnl_rejects_rows_beyond_buffered_entropy() {
+    let base = include_bytes!("images/dnl_read_ahead.jpg");
+    let (mut data, dnl_end, _, _, height) = with_dnl_and_trailing_segments(base, &[]);
+    let declared_height = height + 8;
+    data[dnl_end - 2..dnl_end].copy_from_slice(&declared_height.to_be_bytes());
+    for trailing_bytes in [0, 32] {
+        let mut candidate = data.clone();
+        let eoi = candidate
+            .windows(2)
+            .rposition(|marker| marker == [0xFF, 0xD9])
+            .unwrap();
+        candidate.splice(eoi..eoi, core::iter::repeat(0).take(trailing_bytes));
+        let options = DecoderOptions::default()
+            .set_max_height(usize::from(declared_height))
+            .jpeg_set_out_colorspace(ColorSpace::Luma)
+            .set_strict_mode(true);
+        let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&candidate), options);
+        let error = decoder.decode().unwrap_err();
+        assert!(
+            matches!(&error, DecodeErrors::FormatStatic(message) if message.contains("Entropy data ended")),
+            "overstated pending DNL height with {trailing_bytes} trailing bytes returned {error:?}"
+        );
+    }
+}
+
+#[test]
+#[cfg(feature = "arith")]
+fn arithmetic_dnl_before_end_of_mcu_row_is_rejected() {
+    let base = include_bytes!("../../../test-images/jpeg/arith/seq.jpg");
+    let sof = list_jpeg_markers(base)
+        .into_iter()
+        .find(|(_, code, _)| *code == 0xC9)
+        .map(|(offset, _, _)| offset)
+        .expect("fixture must contain sequential arithmetic SOF");
+    let entropy = sos_data_start(base, 0);
+    let mut data = base[..entropy + 8].to_vec();
+    data[sof + 5..sof + 7].fill(0);
+    data.extend([0xFF, 0xDC, 0x00, 0x04, 0x00, 0x01, 0xFF, 0xD9]);
+
+    let mut decoder = JpegDecoder::new(ZCursor::new(&data));
+    let error = decoder.decode().unwrap_err();
+    assert!(
+        matches!(&error, DecodeErrors::FormatStatic(message) if message.contains("end of an MCU row")),
+        "partial-row arithmetic DNL returned {error:?}"
+    );
+}
+
+#[test]
+fn duplicate_pre_sos_dnl_must_match_resolved_height() {
+    let base = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let (mut data, height) = with_pre_sos_dnl(base);
+    let sos = list_jpeg_markers(&data)
+        .into_iter()
+        .find(|(_, code, _)| *code == 0xDA)
+        .map(|(offset, _, _)| offset)
+        .expect("fixture must contain SOS");
+    let conflicting = height - 1;
+    data.splice(
+        sos..sos,
+        [
+            0xFF,
+            0xDC,
+            0x00,
+            0x04,
+            (conflicting >> 8) as u8,
+            conflicting as u8,
+        ],
+    );
+
+    let mut decoder = JpegDecoder::new(ZCursor::new(&data));
+    let error = decoder.decode().unwrap_err();
+    assert!(
+        matches!(&error, DecodeErrors::Format(message) if message.contains("changed")),
+        "conflicting pre-SOS DNL returned {error:?}"
+    );
+}
+
+#[test]
+fn duplicate_trailing_dnl_must_match_resolved_height() {
+    let base = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let (_, _, _, _, height) = with_dnl_and_trailing_segments(base, &[]);
+    let matching = vec![
+        0xFF,
+        0xDC,
+        0x00,
+        0x04,
+        (height >> 8) as u8,
+        height as u8,
+    ];
+    let conflicting_height = height - 1;
+    let conflicting = vec![
+        0xFF,
+        0xDC,
+        0x00,
+        0x04,
+        (conflicting_height >> 8) as u8,
+        conflicting_height as u8,
+    ];
+
+    let (matching_data, _, _, _, _) =
+        with_dnl_and_trailing_segments(base, &[matching]);
+    let options = DecoderOptions::default()
+        .set_max_height(usize::from(height))
+        .set_strict_mode(true);
+    JpegDecoder::new_with_options(ZCursor::new(&matching_data), options)
+        .decode()
+        .unwrap();
+
+    let (conflicting_data, _, _, _, _) =
+        with_dnl_and_trailing_segments(base, &[conflicting]);
+    for strict in [false, true] {
+        let options = DecoderOptions::default()
+            .set_max_height(usize::from(height))
+            .set_strict_mode(strict);
+        let mut decoder =
+            JpegDecoder::new_with_options(ZCursor::new(&conflicting_data), options);
+        let error = decoder.decode().unwrap_err();
+        assert!(
+            matches!(&error, DecodeErrors::Format(message) if message.contains("changed")),
+            "conflicting trailing DNL, strict={strict}, returned {error:?}"
+        );
+    }
+}
+
+#[test]
+fn resolved_entropy_dnl_uses_declared_row_barrier() {
+    let base = include_bytes!("images/dnl_read_ahead.jpg");
+    let (mut data, height) = with_pre_sos_dnl(base);
+    let eoi = data.windows(2).rposition(|marker| marker == [0xFF, 0xD9]).unwrap();
+    data.splice(
+        eoi..eoi,
+        [
+            0xFF,
+            0xDC,
+            0x00,
+            0x04,
+            (height >> 8) as u8,
+            height as u8,
+        ],
+    );
+    let options = DecoderOptions::default()
+        .set_max_height(usize::from(height))
+        .jpeg_set_out_colorspace(ColorSpace::Luma)
+        .set_strict_mode(true);
+    let mut reference = JpegDecoder::new_with_options(ZCursor::new(base), options);
+    let expected = reference.decode().unwrap();
+    let mut duplicate = JpegDecoder::new_with_options(ZCursor::new(&data), options);
+    let actual = duplicate.decode().unwrap();
+    assert_pixels_match(&actual, &expected, "resolved entropy DNL", data.len());
+
+    let entropy = sos_data_start(&data, 0);
+    let mut premature = data[..entropy + 1].to_vec();
+    premature.extend([
+        0xFF,
+        0xDC,
+        0x00,
+        0x04,
+        (height >> 8) as u8,
+        height as u8,
+        0xFF,
+        0xD9,
+    ]);
+    let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&premature), options);
+    let error = decoder.decode().unwrap_err();
+    assert!(
+        matches!(&error, DecodeErrors::FormatStatic(message) if message.contains("Entropy data ended")),
+        "premature resolved entropy DNL returned {error:?}"
+    );
+}
+
+#[test]
+fn pre_sos_dnl_keeps_persistent_identity() {
+    let base = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let (data, height) = with_pre_sos_dnl(base);
+    let options = DecoderOptions::default()
+        .set_max_height(usize::from(height))
+        .jpeg_set_out_colorspace(ColorSpace::Luma);
+    let mut reference = JpegDecoder::new_with_options(ZCursor::new(base), options);
+    let expected = reference.decode().unwrap();
+    let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&data), options);
+    let actual = decoder.decode().unwrap();
+    assert_pixels_match(&actual, &expected, "pre-SOS DNL", data.len());
+
+    let mut raw = decoder.raw_output();
+    let mut planes = [];
+    assert!(matches!(
+        raw.decode_into_planes(&mut planes),
+        Err(DecodeErrors::FormatStatic(
+            "raw output does not support DNL images"
+        ))
+    ));
+    drop(raw);
+
+    decoder.set_options(
+        DecoderOptions::default()
+            .set_max_height(usize::from(height) - 1)
+            .jpeg_set_out_colorspace(ColorSpace::Luma),
+    );
+    let mut replay = vec![0xA5; actual.len()];
+    let error = decoder.decode_into(&mut replay).unwrap_err();
+    assert!(
+        matches!(&error, DecodeErrors::Format(message) if message.contains("height limit")),
+        "lowered pre-SOS DNL limit returned {error:?}"
+    );
+}
+
+#[test]
+fn dnl_vertical_subsampling_final_rows_match_original() {
+    let base = include_bytes!(
+        "../../../test-images/jpeg/large_vertical_samp_7680_4320.jpg"
+    );
+    let (data, _, _, _, height) = with_dnl_and_trailing_segments(base, &[]);
+    assert_eq!(height % 16, 0, "fixture must end on a vertically sampled MCU row");
+
+    let expected = JpegDecoder::new(ZCursor::new(base)).decode().unwrap();
+    let actual = JpegDecoder::new(ZCursor::new(&data)).decode().unwrap();
+    assert_pixels_match(&actual, &expected, "vertical-subsampling DNL", data.len());
+}
+
+#[test]
+fn sampled_grayscale_dnl_matches_original() {
+    let base = include_bytes!(
+        "../../../test-images/jpeg/app14/single_component_transform_zero.jpg"
+    );
+    let (data, _, _, _, height) = with_dnl_and_trailing_segments(base, &[]);
+    let options = DecoderOptions::default()
+        .set_max_height(usize::from(height))
+        .jpeg_set_out_colorspace(ColorSpace::Luma);
+    let mut reference = JpegDecoder::new_with_options(ZCursor::new(base), options);
+    let expected = reference.decode().unwrap();
+    let mut dnl = JpegDecoder::new_with_options(ZCursor::new(&data), options);
+    let actual = dnl.decode().unwrap();
+    assert_pixels_match(&actual, &expected, "sampled grayscale DNL", data.len());
+}
+
+#[test]
+fn dnl_replay_rejects_lowered_height_limit() {
+    let base = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let (data, _, _, width, height) = with_dnl_and_trailing_segments(base, &[]);
+    let options = DecoderOptions::default()
+        .set_max_height(usize::from(height))
+        .jpeg_set_out_colorspace(ColorSpace::Luma);
+    let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&data), options);
+    let expected = decoder.decode().unwrap();
+
+    decoder.set_options(
+        DecoderOptions::default()
+            .set_max_height(usize::from(height) - 1)
+            .jpeg_set_out_colorspace(ColorSpace::Luma),
+    );
+    assert_eq!(decoder.output_buffer_size(), Some(usize::from(width) * usize::from(height)));
+    let mut output = vec![0xA5; expected.len()];
+    let error = decoder.decode_into(&mut output).unwrap_err();
+    assert!(
+        matches!(&error, DecodeErrors::Format(message) if message.contains("height limit")),
+        "lowered DNL limit returned {error:?}"
+    );
+    assert_eq!(decoder.info().unwrap().height, height);
+
+    decoder.set_options(options);
+    decoder.decode_into(&mut output).unwrap();
+    assert_pixels_match(&output, &expected, "DNL lowered-limit retry", data.len());
+}
+
+#[test]
+fn dnl_cancelled_replay_preserves_resolved_geometry() {
+    let base = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let (data, _, _, width, height) = with_dnl_and_trailing_segments(base, &[]);
+    let options = DecoderOptions::default()
+        .set_max_height(usize::from(height))
+        .jpeg_set_out_colorspace(ColorSpace::Luma);
+    let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&data), options);
+    let expected = decoder.decode().unwrap();
+
+    decoder.set_cancel_interval(1);
+    decoder.set_cancel(|| true);
+    let mut output = vec![0xA5; expected.len()];
+    let error = decoder.decode_into(&mut output).unwrap_err();
+    assert!(matches!(error, DecodeErrors::Cancelled));
+    assert_eq!(decoder.info().unwrap().height, height);
+    assert_eq!(decoder.dimensions(), Some((usize::from(width), usize::from(height))));
+    assert_eq!(decoder.output_buffer_size(), Some(expected.len()));
+
+    decoder.set_cancel(NeverCancel);
+    decoder.decode_into(&mut output).unwrap();
+    assert_pixels_match(&output, &expected, "DNL cancellation retry", data.len());
+}
+
+#[test]
+fn raw_output_rejects_dnl_after_pixel_decode() {
+    let base = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let (data, _, _, _, height) = with_dnl_and_trailing_segments(base, &[]);
+    let options = DecoderOptions::default()
+        .set_max_height(usize::from(height))
+        .jpeg_set_out_colorspace(ColorSpace::Luma);
+    let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&data), options);
+    decoder.decode().unwrap();
+
+    let mut raw = decoder.raw_output();
+    let mut planes = [];
+    assert!(matches!(
+        raw.decode_into_planes(&mut planes),
+        Err(DecodeErrors::FormatStatic(
+            "raw output does not support DNL images"
+        ))
+    ));
+    assert!(matches!(
+        raw.decode_into_planes_strided(&mut planes, &[]),
+        Err(DecodeErrors::FormatStatic(
+            "raw output does not support DNL images"
+        ))
+    ));
+    assert!(matches!(
+        raw.decode_next_imcu_row(&mut planes, &[]),
+        Err(DecodeErrors::FormatStatic(
+            "raw output does not support DNL images"
+        ))
+    ));
+}
+
+#[test]
+fn too_small_replay_preserves_trailing_metadata() {
+    let base = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let icc_payload = b"trailing ICC survives output preflight";
+    let gain_payload = b"\x00\x00\x00\x01trailing gain map survives output preflight";
+    let eoi = base.windows(2).rposition(|marker| marker == [0xFF, 0xD9]).unwrap();
+    let data = inject_segments_at(
+        base,
+        eoi,
+        &[icc_app2_chunk(icc_payload), app2_gain_map(gain_payload)],
+    );
+    let mut decoder = JpegDecoder::new(ZCursor::new(&data));
+    let expected = decoder.decode().unwrap();
+    assert_eq!(decoder.icc_profile().as_deref(), Some(icc_payload.as_slice()));
+    assert_eq!(decoder.info().unwrap().gain_map_info.len(), 1);
+    assert_eq!(
+        decoder.info().unwrap().gain_map_info[0].data.as_slice(),
+        gain_payload
+    );
+
+    let mut too_small = vec![0xA5; expected.len() - 1];
+    let error = decoder.decode_into(&mut too_small).unwrap_err();
+    assert!(matches!(error, DecodeErrors::TooSmallOutput(_, _)));
+    assert_eq!(decoder.icc_profile().as_deref(), Some(icc_payload.as_slice()));
+    assert_eq!(decoder.info().unwrap().gain_map_info.len(), 1);
+    assert_eq!(
+        decoder.info().unwrap().gain_map_info[0].data.as_slice(),
+        gain_payload
+    );
+
+    let mut replay = vec![0xA5; expected.len()];
+    decoder.decode_into(&mut replay).unwrap();
+    assert_pixels_match(&replay, &expected, "trailing metadata replay", data.len());
 }
 
 fn check_complete_extended_xmp_before_missing_eoi(base: &[u8]) {
