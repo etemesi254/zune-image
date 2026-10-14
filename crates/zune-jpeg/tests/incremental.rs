@@ -2577,10 +2577,16 @@ fn baseline_scan_eof_respects_lenient_and_incremental_modes() {
         lenient.iter().any(|byte| *byte != 0),
         "lenient truncated decode should produce best-effort pixels"
     );
+    // The digest changed from `0x1eab_e750_2dcb_ddc3` (the legacy pixels) when a
+    // row that consumed the zero padding appended past the end of the data
+    // stopped being published even in part: every completed row before it is
+    // the same best-effort content as before, and the row that ran out of
+    // data — whose last block carried values decoded from padding — and
+    // everything after it are the neutral filler instead.
     assert_eq!(
         fnv1a(&lenient),
-        0x1eab_e750_2dcb_ddc3,
-        "lenient output should match the legacy decoded pixels"
+        0x4297eaaf2b39cae4,
+        "lenient output should match the completed rows plus the neutral filler"
     );
 
     let strict_error = decode_with_mode(truncated, false, true)
