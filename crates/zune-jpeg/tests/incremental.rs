@@ -1279,6 +1279,146 @@ fn extended_xmp_before_eoi_reassembles_after_retry() {
     check_extended_xmp_after_scan_marker(base, eoi);
 }
 
+#[test]
+fn extended_xmp_after_interleaved_scan_reassembles_after_retry() {
+    let base = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    assert_eq!(
+        base.windows(2).filter(|marker| *marker == [0xFF, 0xDA]).count(),
+        1
+    );
+    let eoi = base.windows(2).rposition(|marker| marker == [0xFF, 0xD9]).unwrap();
+    let mut padded = base[..eoi].to_vec();
+    // Keep the entropy reader from latching the APP1 marker while decoding the
+    // final MCU. The post-scan marker fallback must find and dispatch it.
+    padded.extend_from_slice(&[0; 64]);
+    let insertion_offset = padded.len();
+    padded.extend_from_slice(&base[eoi..]);
+    check_extended_xmp_after_scan_marker(&padded, insertion_offset);
+}
+
+#[test]
+fn latched_extended_xmp_after_interleaved_scan_reassembles_after_retry() {
+    let base = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let eoi = base.windows(2).rposition(|marker| marker == [0xFF, 0xD9]).unwrap();
+    check_extended_xmp_after_scan_marker(base, eoi);
+}
+
+#[test]
+fn extended_xmp_after_unhandled_app_marker_reassembles_after_retry() {
+    let base = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let eoi = base.windows(2).rposition(|marker| marker == [0xFF, 0xD9]).unwrap();
+    let mut padded = base[..eoi].to_vec();
+    padded.extend_from_slice(&[0; 64]);
+    padded.extend_from_slice(&marker_segment(0xE3, b"unhandled APP3 payload"));
+    let insertion_offset = padded.len();
+    padded.extend_from_slice(&base[eoi..]);
+    check_extended_xmp_after_scan_marker(&padded, insertion_offset);
+}
+
+#[test]
+fn unhandled_app_marker_is_accepted_by_strict_inter_scan_parser() {
+    let base = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let expected = decode_with_mode(base, false, true).unwrap();
+    let eoi = base.windows(2).rposition(|marker| marker == [0xFF, 0xD9]).unwrap();
+    let data = inject_segments_at(
+        base,
+        eoi,
+        &[
+            com_segment(b"enter the inter-scan marker loop"),
+            marker_segment(0xE3, b"valid APP3 payload"),
+        ]
+    );
+
+    let actual = decode_with_mode(&data, false, true).unwrap();
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn complete_extended_xmp_before_missing_eoi_preserves_lenient_completion() {
+    let base = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let guid = *b"0123456789abcdef0123456789abcdef";
+    let payload = b"complete Extended XMP followed by EOF";
+    let eoi = base.windows(2).rposition(|marker| marker == [0xFF, 0xD9]).unwrap();
+    for padding in [0, 64] {
+        let mut data = base[..eoi].to_vec();
+        data.resize(data.len() + padding, 0);
+        data.extend_from_slice(&app1_extended_xmp(&guid, payload));
+
+        let mut decoder = JpegDecoder::new(ZCursor::new(&data));
+        decoder.decode().unwrap();
+        let info = decoder.info().unwrap();
+        assert_eq!(info.extended_xmp.as_deref(), Some(payload.as_slice()));
+        assert_eq!(info.extended_xmp_guid.as_deref(), Some(guid.as_slice()));
+    }
+}
+
+#[test]
+fn complete_extended_xmp_before_eoi_rolls_back_on_incremental_eof() {
+    let base = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let guid = *b"0123456789abcdef0123456789abcdef";
+    let payload = b"complete Extended XMP retried before EOI";
+    let eoi = base.windows(2).rposition(|marker| marker == [0xFF, 0xD9]).unwrap();
+    let mut data = base[..eoi].to_vec();
+    data.extend_from_slice(&[0; 64]);
+    data.extend_from_slice(&app1_extended_xmp(&guid, payload));
+    let cutoff = data.len();
+    data.extend_from_slice(&base[eoi..]);
+
+    let limit = Rc::new(Cell::new(cutoff));
+    let cursor = GrowableCursor::new(&data, Rc::clone(&limit));
+    let mut decoder = JpegDecoder::new(cursor);
+    decoder.set_incremental_mode(true);
+    decoder.decode_headers().unwrap();
+    let mut output = vec![0; decoder.output_buffer_size().unwrap()];
+    let error = decoder.decode_into(&mut output).unwrap_err();
+    assert!(error.is_recoverable_eof(), "{error:?}");
+    assert!(decoder.info().unwrap().extended_xmp.is_none());
+
+    limit.set(data.len());
+    decoder.decode_into(&mut output).unwrap();
+    let info = decoder.info().unwrap();
+    assert_eq!(info.extended_xmp.as_deref(), Some(payload.as_slice()));
+    assert_eq!(info.extended_xmp_guid.as_deref(), Some(guid.as_slice()));
+}
+
+#[test]
+fn standalone_restart_after_trailing_comment_preserves_lenient_completion() {
+    let base = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let expected = decode_oneshot(base);
+    let eoi = base.windows(2).rposition(|marker| marker == [0xFF, 0xD9]).unwrap();
+    for padding in [0, 64] {
+        let mut data = base[..eoi].to_vec();
+        data.resize(data.len() + padding, 0);
+        data.extend_from_slice(&com_segment(b"complete trailing marker"));
+        data.extend_from_slice(&[0xFF, 0xD0]);
+        data.extend_from_slice(&base[eoi..]);
+
+        assert_eq!(decode_oneshot(&data), expected);
+        assert!(decode_with_mode(&data, false, true).is_err());
+        assert!(decode_with_mode(&data, true, false).is_err());
+    }
+}
+
+#[test]
+fn direct_extra_sos_after_interleaved_scan_preserves_lenient_completion() {
+    let base = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let expected = decode_oneshot(base);
+    let sos = base.windows(2).position(|marker| marker == [0xFF, 0xDA]).unwrap();
+    let sos_length = usize::from(u16::from_be_bytes([base[sos + 2], base[sos + 3]]));
+    let eoi = base.windows(2).rposition(|marker| marker == [0xFF, 0xD9]).unwrap();
+
+    let mut data = base[..eoi].to_vec();
+    data.extend_from_slice(&[0; 64]);
+    data.extend_from_slice(&base[sos..sos + 2 + sos_length]);
+    data.extend_from_slice(&[0xFF, 0xD0]);
+    data.extend_from_slice(&base[eoi..]);
+
+    let actual = decode_oneshot(&data);
+    assert_eq!(actual, expected);
+    assert!(decode_with_mode(&data, false, true).is_err());
+    assert!(decode_with_mode(&data, true, false).is_err());
+}
+
 /// Sanity check: give headers + partial scan, get EOF, then give
 /// full data and verify pixels match one-shot.
 #[test]
