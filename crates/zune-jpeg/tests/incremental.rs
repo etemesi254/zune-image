@@ -20,6 +20,8 @@ use zune_jpeg::{JpegDecoder, NeverCancel, RawDecodeSession, RawImcuRowStatus};
 use std::cell::{Cell, RefCell};
 use std::io::{BufRead, Cursor, Read, Seek, SeekFrom};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 /// A cursor over a byte slice with an adjustable visibility limit.
 ///
@@ -1687,6 +1689,45 @@ fn huffman_dnl_read_ahead_waits_for_declared_final_row() {
 }
 
 #[test]
+fn pending_dnl_retry_retains_pre_dnl_checkpoint() {
+    let base = include_bytes!("images/dnl_read_ahead.jpg");
+    let (data, dnl_end, _, _, height) = with_dnl_and_trailing_segments(base, &[]);
+    let dnl_start = dnl_end - 6;
+    let options = DecoderOptions::default()
+        .set_max_height(usize::from(height))
+        .jpeg_set_out_colorspace(ColorSpace::Luma);
+    let mut reference = JpegDecoder::new_with_options(ZCursor::new(base), options);
+    let expected = reference.decode().unwrap();
+
+    let limit = Rc::new(Cell::new(data.len()));
+    let seek_log = Rc::new(RefCell::new(Vec::new()));
+    let cursor = GrowableCursor::with_seek_log(&data, Rc::clone(&limit), Rc::clone(&seek_log));
+    let mut decoder = JpegDecoder::new_with_options(cursor, options);
+    decoder.set_incremental_mode(true);
+    decoder.decode_headers().unwrap();
+    decoder.set_cancel_interval(1);
+    let polls = Arc::new(AtomicUsize::new(0));
+    decoder.set_cancel({
+        let polls = Arc::clone(&polls);
+        move || polls.fetch_add(1, Ordering::Relaxed) >= 3
+    });
+    let mut output = vec![0xA5; decoder.output_buffer_size().unwrap()];
+    let error = decoder.decode_into(&mut output).unwrap_err();
+    assert!(matches!(error, DecodeErrors::Cancelled));
+    assert_eq!(decoder.info().unwrap().height, height, "DNL must be resolved before cancellation");
+
+    seek_log.borrow_mut().clear();
+    decoder.set_cancel(NeverCancel);
+    decoder.decode_into(&mut output).unwrap();
+    assert_pixels_match(&output, &expected, "pending DNL checkpoint retry", data.len());
+    let retry_position = *seek_log.borrow().first().expect("retry must seek");
+    assert!(
+        retry_position < dnl_start,
+        "retry checkpoint {retry_position} must precede consumed DNL at {dnl_start}"
+    );
+}
+
+#[test]
 fn pending_dnl_rejects_rows_beyond_buffered_entropy() {
     let base = include_bytes!("images/dnl_read_ahead.jpg");
     let (mut data, dnl_end, _, _, height) = with_dnl_and_trailing_segments(base, &[]);
@@ -2140,6 +2181,31 @@ fn trailing_extended_xmp_is_not_limited_to_64_markers() {
         assert_eq!(info.extended_xmp.as_deref(), Some(payload.as_slice()));
         assert_eq!(info.extended_xmp_guid.as_deref(), Some(guid.as_slice()));
     }
+}
+
+#[test]
+fn multi_sos_fallback_preserves_final_marker_semantics() {
+    let base = include_bytes!("../../../test-images/jpeg/tiny_non_interleaved_444.jpg");
+    let eoi = base.windows(2).rposition(|marker| marker == [0xFF, 0xD9]).unwrap();
+
+    let mut many_markers = base[..eoi].to_vec();
+    many_markers.extend_from_slice(&[0; 64]);
+    for _ in 0..66 {
+        many_markers.extend_from_slice(&marker_segment(0xE3, &[]));
+    }
+    many_markers.extend_from_slice(&base[eoi..]);
+    JpegDecoder::new(ZCursor::new(&many_markers)).decode().unwrap();
+
+    let guid = *b"0123456789abcdef0123456789abcdef";
+    let payload = b"multi-SOS fallback metadata before lenient EOF";
+    let mut missing_eoi = base[..eoi].to_vec();
+    missing_eoi.extend_from_slice(&[0; 64]);
+    missing_eoi.extend_from_slice(&app1_extended_xmp(&guid, payload));
+    let mut decoder = JpegDecoder::new(ZCursor::new(&missing_eoi));
+    decoder.decode().unwrap();
+    let info = decoder.info().unwrap();
+    assert_eq!(info.extended_xmp.as_deref(), Some(payload.as_slice()));
+    assert_eq!(info.extended_xmp_guid.as_deref(), Some(guid.as_slice()));
 }
 
 #[test]
