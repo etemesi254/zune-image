@@ -119,6 +119,9 @@ pub(crate) struct HuffmanBitstreamState {
     pub(crate) bits_left:      u8,
     pub(crate) marker:         Option<Marker>,
     pub(crate) overread_by:    usize,
+    pub(crate) zeros_past_end: usize,
+    pub(crate) exhausted:      bool,
+    pub(crate) stuffed_past_end: bool,
     pub(crate) seen_eoi:       bool,
     pub(crate) eob_run:        i32
 }
@@ -216,6 +219,17 @@ pub(crate) trait BitStream {
 
     fn overread_by(&self) -> usize;
 
+    /// Whether the decoder has consumed bits that were not part of the entropy-coded data.
+    ///
+    /// `overread_by()` turns positive when the reader's lookahead reaches the end of the data,
+    /// which it does while the bits of the last MCUs are still in the buffer, unconsumed. This
+    /// is true only once those buffered bits have been consumed past the end: until then every
+    /// bit the decoder took was in the data, and a scan whose data holds all of its MCUs is
+    /// decoded whole, with or without the `EOI` after it.
+    fn consumed_past_end(&self) -> bool {
+        self.overread_by() > 0
+    }
+
     /// True if we have seen end of image marker.
     /// Don't read anything after that.
     fn seen_eoi(&mut self) -> &mut bool;
@@ -274,6 +288,18 @@ pub(crate) struct BitStreamHuffman {
     spec_end:            u8,
     eob_run:             i32,/// Did we find a marker(RST/EOF) during decoding?
     overread_by:         usize,
+    /// Zero bits appended to the buffer after the data ended, which a scan read past its data
+    /// would consume, and which a scan whose data held all of its MCUs never consumes.
+    zeros_past_end:      usize,
+    /// Set once the decoder takes more bits than the buffer holds, which only a scan read past
+    /// its data does.
+    exhausted:           bool,
+    /// Set once a stuffing resolution — the byte read after an entropy `0xFF` — consumed a
+    /// byte past the end of the data. The resolution byte is not appended to the buffer, so
+    /// it reaches no counter of appended zeros, but it was still consumed: whether that
+    /// `0xFF` was data or the first half of a marker is exactly what the missing byte would
+    /// have said, so a row that reached it is not publishable.
+    stuffed_past_end:    bool,
     /// True if we have seen end of image marker.
     /// Don't read anything after that.
     seen_eoi:            bool,
@@ -333,7 +359,9 @@ impl BitStreamHuffman {
 
         self.aligned_buffer = self.aligned_buffer.rotate_left(u32::from(n_bits));
         let bits = (self.aligned_buffer & mask) as i32;
-        self.bits_left = self.bits_left.wrapping_sub(n_bits);
+        let (left, exhausted) = self.bits_left.overflowing_sub(n_bits);
+        self.bits_left = left;
+        self.exhausted |= exhausted;
         bits
     }
 
@@ -498,6 +526,9 @@ impl BitStream for BitStreamHuffman {
             spec_end:            0,
             eob_run:             0,
             overread_by:         0,
+            zeros_past_end:      0,
+            exhausted:           false,
+            stuffed_past_end:    false,
             seen_eoi:            false,
             strict:              false,
         }
@@ -518,6 +549,9 @@ impl BitStream for BitStreamHuffman {
             spec_end:            spec_end,
             eob_run:             0,
             overread_by:         0,
+            zeros_past_end:      0,
+            exhausted:           false,
+            stuffed_past_end:    false,
             seen_eoi:            false,
             strict:              false,
         }
@@ -530,6 +564,13 @@ impl BitStream for BitStreamHuffman {
     #[inline(always)]
     fn overread_by(&self) -> usize {
         self.overread_by
+    }
+    #[inline(always)]
+    fn consumed_past_end(&self) -> bool {
+        self.overread_by > 0
+            && (self.exhausted
+                || self.zeros_past_end > usize::from(self.bits_left)
+                || self.stuffed_past_end)
     }
     #[inline(always)]
     fn seen_eoi(&mut self) -> &mut bool {
@@ -565,7 +606,10 @@ impl BitStream for BitStreamHuffman {
             aligned_buffer: self.aligned_buffer,
             bits_left:      self.bits_left,
             marker:         self.marker,
-            overread_by:    self.overread_by,
+            overread_by:      self.overread_by,
+            zeros_past_end:   self.zeros_past_end,
+            exhausted:        self.exhausted,
+            stuffed_past_end: self.stuffed_past_end,
             seen_eoi:       self.seen_eoi,
             eob_run:        self.eob_run
         }
@@ -578,6 +622,9 @@ impl BitStream for BitStreamHuffman {
         self.bits_left = state.bits_left;
         self.marker = state.marker;
         self.overread_by = state.overread_by;
+        self.zeros_past_end = state.zeros_past_end;
+        self.exhausted = state.exhausted;
+        self.stuffed_past_end = state.stuffed_past_end;
         self.seen_eoi = state.seen_eoi;
         self.eob_run = state.eob_run;
     }
@@ -616,9 +663,12 @@ impl BitStream for BitStreamHuffman {
         /// to full refill
         macro_rules! refill {
             ($buffer:expr,$byte:expr,$bits_left:expr) => {
-                // read a byte from the stream
+                // read a byte from the stream; one read once the data has ended is a zero
+                // the data never held
+                let past_end = reader.eof()?;
                 $byte = u64::from(reader.read_u8());
                 self.overread_by += usize::from(reader.eof()?);
+                self.zeros_past_end += 8 * usize::from(past_end);
                 // append to the buffer
                 // JPEG is a MSB type buffer so that means we append this
                 // to the lower end (0..8) of the buffer and push the rest bits above..
@@ -627,13 +677,20 @@ impl BitStream for BitStreamHuffman {
                 $bits_left += 8;
                 // Check for special case  of OxFF, to see if it's a stream or a marker
                 if $byte == 0xff {
-                    // read next byte
+                    // read next byte; when the data has ended this read is a zero the data
+                    // never held, and resolving the stuffing against it consumed it: whether
+                    // the 0xFF was data or the first half of a marker is what the missing
+                    // byte would have said, and a row that reached it is not publishable
+                    let stuffed_past_end = reader.eof()?;
                     let mut next_byte = u64::from(reader.read_u8());
+                    self.stuffed_past_end |= stuffed_past_end;
                     // Byte snuffing, if we encounter byte snuff, we skip the byte
                     if next_byte != 0x00 {
                         // skip that byte we read
                         while next_byte == 0xFF {
+                            let more_past_end = reader.eof()?;
                             next_byte = u64::from(reader.read_u8());
+                            self.stuffed_past_end |= more_past_end;
                         }
                     }
                     // read_u8 gives 0 once the input runs out. That 0 is not a stuffed
@@ -683,6 +740,9 @@ impl BitStream for BitStreamHuffman {
                 // fill with zeroes
                 self.buffer <<= 32;
                 self.bits_left += 32;
+                if self.overread_by > 0 {
+                    self.zeros_past_end += 32;
+                }
                 self.aligned_buffer = self.buffer << (64 - self.bits_left);
                 return Ok(true);
             }
@@ -1127,6 +1187,8 @@ impl BitStream for BitStreamHuffman {
         self.buffer = 0;
         self.aligned_buffer = 0;
         self.eob_run = 0;
+        // the zeros went with the buffer
+        self.zeros_past_end = 0;
     }
 }
 

@@ -325,7 +325,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 if cancel.is_cancelled() {
                     return Err(DecodeErrors::Cancelled);
                 }
-                if stream.overread_by() > 0 {
+                if stream.consumed_past_end() {
                     if self.scan_eof_is_error() {
                         return Err(DecodeErrors::ExhaustedData);
                     }
@@ -355,6 +355,14 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     && !self.is_progressive
                     && B::supports_mcu_checkpoint()
                     && self.pending_dnl_height.is_none()
+                    // A checkpoint saved past the end of the visible input cannot be
+                    // resumed: restoring its bitstream state would go on claiming the
+                    // data ended at the saved cursor, which stops being true the
+                    // moment the caller grows the input. Rows decoded from bits that
+                    // were buffered when the input ended are not stable either
+                    // (`pixels_decoded` is not advanced for them below), so resuming
+                    // from the last clean row loses nothing.
+                    && stream.overread_by() == 0
                 {
                     let dc_predictions = core::array::from_fn(|idx| {
                         self.components
@@ -418,15 +426,24 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         if all_components_in_first_scan {
                             match output {
                                 McuDecodeOutput::Pixels(pixels) => {
-                                    self.post_process(
-                                        pixels,
-                                        i,
-                                        mcu_height,
-                                        width,
-                                        padded_width,
-                                        &mut pixels_written,
-                                        upsampler_scratch_space,
-                                    )?;
+                                    // A row that ran out of data mid-way and consumed
+                                    // the zero padding the reader appends past the end
+                                    // is not publishable even in part: which of its
+                                    // MCUs came from the data and which from padding
+                                    // is not recoverable, so the row and everything
+                                    // after it stay neutral, as a row that begins
+                                    // past the end does.
+                                    if !stream.consumed_past_end() {
+                                        self.post_process(
+                                            pixels,
+                                            i,
+                                            mcu_height,
+                                            width,
+                                            padded_width,
+                                            &mut pixels_written,
+                                            upsampler_scratch_space,
+                                        )?;
+                                    }
                                     self.pixels_decoded = pixels_written;
                                     if let Some(remaining) = pixels.get_mut(pixels_written..) {
                                         remaining.fill(128);
@@ -456,6 +473,29 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     } else {
                         mcu_height
                     };
+
+                // A row that began on bits the data held can finish on bits it did
+                // not: once the reader's lookahead crosses the end of the data, the
+                // zeros appended after it are synthesised, and a row whose last
+                // MCUs were decoded from them is not publishable — those MCUs carry
+                // values the data never stated. Strict and incremental callers
+                // return a recoverable EOF and resume from this row's checkpoint,
+                // which was saved while the row still started on real bits;
+                // lenient ones leave the row and everything after it neutral.
+                if stream.consumed_past_end() {
+                    if self.scan_eof_is_error() {
+                        return Err(DecodeErrors::ExhaustedData);
+                    }
+                    if all_components_in_first_scan {
+                        if let Some(remaining) =
+                            output.pixels_mut().and_then(|pixels| pixels.get_mut(pixels_written..))
+                        {
+                            remaining.fill(128);
+                        }
+                        return Ok(());
+                    }
+                    break 'sos;
+                }
 
                 // A pull request must not publish a row assembled after the
                 // entropy reader exhausted visible input.
