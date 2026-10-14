@@ -137,6 +137,8 @@ pub type IDCTPtr = fn(&mut [i32; 64], &mut [i16], usize);
 #[derive(Clone)]
 pub(crate) struct ScanDecodeState {
     pub(crate) scan_start_position:        usize,
+    pub(crate) scan_start_height:          u16,
+    pub(crate) scan_start_expects_dnl:     bool,
     pub(crate) append_snapshot:            HeaderAppendStateSnapshot,
     pub(crate) sos_snapshot:               SosParamsSnapshot,
     pub(crate) header_snapshot:            ScanHeaderStateSnapshot,
@@ -1224,6 +1226,8 @@ where
         let header_snapshot = self.capture_scan_header_state();
         self.scan_state = Some(Box::new(ScanDecodeState {
             scan_start_position,
+            scan_start_height: self.info.height,
+            scan_start_expects_dnl: self.expects_dnl,
             append_snapshot,
             sos_snapshot,
             header_snapshot,
@@ -1524,9 +1528,8 @@ where
             // (the configured max height), run decode_into normally — the MCU
             // loop will intercept the DNL marker and set info.height — then
             // truncate to the actual decoded size.
-            let max_size = self.options.max_height()
-                .checked_mul(usize::from(self.info.width))
-                .and_then(|v| v.checked_mul(self.options.jpeg_get_out_colorspace().num_components()))
+            let max_size = self
+                .output_buffer_size_for_height(self.options.max_height())
                 .ok_or(DecodeErrors::FormatStatic("DNL image dimensions overflow usize"))?;
             let mut out = vec![0u8; max_size];
             self.decode_into(&mut out)?;
@@ -1591,17 +1594,23 @@ where
     ///  - `Some(usize)`: Minimum size for a buffer needed to decode the image
     ///  - `None`: Indicates headers are unavailable or image dimensions overflow `usize`
     ///
+    /// DNL images return a buffer size based on the configured maximum height
+    /// until their actual height is known.
+    ///
     #[must_use]
     pub fn output_buffer_size(&self) -> Option<usize> {
-        return if self.headers_decoded {
-            Some(
-                usize::from(self.width())
-                    .checked_mul(usize::from(self.height()))?
-                    .checked_mul(self.options.jpeg_get_out_colorspace().num_components())?
-            )
-        } else {
-            None
-        };
+        let height =
+            if self.expects_dnl { self.options.max_height() } else { usize::from(self.height()) };
+        self.output_buffer_size_for_height(height)
+    }
+
+    fn output_buffer_size_for_height(&self, height: usize) -> Option<usize> {
+        if !self.headers_decoded {
+            return None;
+        }
+        usize::from(self.width())
+            .checked_mul(height)?
+            .checked_mul(self.options.jpeg_get_out_colorspace().num_components())
     }
 
     /// Return the number of output bytes known to be stable after the most
@@ -2642,6 +2651,8 @@ where
         // yet, `scan_plan` is `None` and we just run header decoding below.
         struct ScanPlan {
             scan_start_position:   usize,
+            scan_start_height:     u16,
+            scan_start_expects_dnl: bool,
             outer_append_snapshot: HeaderAppendStateSnapshot,
             outer_sos_snapshot:    SosParamsSnapshot,
             outer_header_snapshot: ScanHeaderStateSnapshot,
@@ -2680,6 +2691,8 @@ where
         }
         let scan_plan = self.scan_state.as_deref().map(|state| ScanPlan {
             scan_start_position:   state.scan_start_position,
+            scan_start_height:     state.scan_start_height,
+            scan_start_expects_dnl: state.scan_start_expects_dnl,
             outer_append_snapshot: state.append_snapshot,
             outer_sos_snapshot:    state.sos_snapshot,
             outer_header_snapshot: state.header_snapshot.clone(),
@@ -2717,6 +2730,8 @@ where
         if let Some(plan) = scan_plan {
             let ScanPlan {
                 scan_start_position,
+                scan_start_height,
+                scan_start_expects_dnl,
                 outer_append_snapshot,
                 outer_sos_snapshot,
                 outer_header_snapshot,
@@ -2724,6 +2739,8 @@ where
                 progressive_view,
                 progressive_fine_view
             } = plan;
+            self.info.set_height(scan_start_height);
+            self.expects_dnl = scan_start_expects_dnl;
             // Roll back inline metadata from a previous scan attempt.
             let resume_append_snapshot = progressive_fine_view.as_ref().map_or_else(
                 || {
@@ -2893,9 +2910,20 @@ where
 
     pub fn decode_into(&mut self, out: &mut [u8]) -> Result<(), DecodeErrors> {
         self.abort_raw_pull_sequence();
+        let resolved_dnl_height = self.scan_state.as_deref().and_then(|state| {
+            (state.scan_start_expects_dnl && !self.expects_dnl && self.info.height != 0)
+                .then_some(usize::from(self.info.height))
+        });
         self.prepare_for_scan_decode()?;
 
-        let expected_size = self.output_buffer_size().unwrap();
+        let expected_size = if self.expects_dnl {
+            self.output_buffer_size_for_height(
+                resolved_dnl_height.unwrap_or_else(|| self.options.max_height()),
+            )
+            .ok_or(DecodeErrors::FormatStatic("DNL image dimensions overflow usize"))?
+        } else {
+            self.output_buffer_size().unwrap()
+        };
 
         if out.len() < expected_size {
             // too small of a size
