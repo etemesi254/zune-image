@@ -260,6 +260,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         // Every scan walks the whole image, so bound the number of scans as the
         // progressive decoder does (jpeg_get_max_scans).
         let mut scans_seen = 0_usize;
+        let mut all_required_components_seen = self.baseline_components_complete();
         'sos: loop {
             scans_seen += 1;
             if scans_seen > self.options.jpeg_get_max_scans() {
@@ -271,6 +272,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             // Later scans may use Huffman tables defined by inter-scan DHT markers.
             self.check_tables::<B>()?;
 
+            let scan_components = self.z_order;
+            let scan_component_count = usize::from(self.num_scans);
             let scan_mcu_height = if all_components_in_first_scan {
                 mcu_height
             } else {
@@ -431,6 +434,19 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     return Err(DecodeErrors::ExhaustedData);
                 }
 
+                if i + 1 == scan_mcu_height
+                    || matches!(
+                        &terminate,
+                        McuContinuation::AnotherSos
+                            | McuContinuation::InterScanMarker(_)
+                            | McuContinuation::DnlFound
+                    )
+                {
+                    all_required_components_seen = self.mark_baseline_scan_components_complete(
+                        &scan_components[..scan_component_count],
+                    );
+                }
+
                 // process that width up until it's impossible. This is faster than allocation the
                 // full components, which we skipped earlier.
                 if all_components_in_first_scan {
@@ -515,7 +531,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         if self.advance_to_next_sos(
                             marker,
                             &mut stream,
-                            all_components_in_first_scan,
+                            all_required_components_seen,
                         )? {
                             if all_components_in_first_scan {
                                 if self.scan_eof_is_error() {
@@ -607,12 +623,17 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         // refiller reads ahead opportunistically, so we use get_marker() which
         // handles both the latched-marker case and raw-stream scanning.
         if self.expects_dnl {
+            let scan_components = self.z_order;
+            let scan_component_count = usize::from(self.num_scans);
             match get_marker(&mut self.stream, &mut stream) {
                 Ok(Marker::DNL) => {
                     let _length = self.stream.get_u16_be_err()?;
                     let height = self.stream.get_u16_be_err()?;
                     self.info.set_height(height);
                     self.expects_dnl = false;
+                    all_required_components_seen = self.mark_baseline_scan_components_complete(
+                        &scan_components[..scan_component_count],
+                    );
                     trace!("DNL marker: actual image height = {height}");
                 }
                 Ok(other) => {
@@ -656,7 +677,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     | Marker::COM
                     | Marker::APP(_)),
                 ) => {
-                    if self.advance_to_next_sos(marker, &mut stream, true)? {
+                    if self.advance_to_next_sos(
+                        marker,
+                        &mut stream,
+                        all_required_components_seen,
+                    )? {
                         warn!("More than one SOS despite already having all components");
                     }
                 }
@@ -1226,12 +1251,24 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         stream.reset();
         B::reset_arith_tables(&mut self.entropy_tables);
 
-        for _ in 0..MAX_INTER_SCAN_MARKERS {
+        let mut markers_seen = 0;
+        loop {
+            if !final_scan && markers_seen >= MAX_INTER_SCAN_MARKERS {
+                return Err(DecodeErrors::FormatStatic(
+                    "Too many markers between scans (exceeded limit of 64)",
+                ));
+            }
+            markers_seen += 1;
             restore_inter_scan_on_suspend!(self.check_cancelled());
             let marker = restore_inter_scan_on_suspend!(get_marker(&mut self.stream, stream));
 
             match marker {
                 Marker::SOS => {
+                    if markers_seen > MAX_INTER_SCAN_MARKERS {
+                        return Err(DecodeErrors::FormatStatic(
+                            "Too many markers between scans (exceeded limit of 64)",
+                        ));
+                    }
                     restore_inter_scan_on_suspend!(self.parse_marker_inner(Marker::SOS));
                     self.reassemble_extended_xmp();
                     self.invalidate_scan_checkpoint();
@@ -1289,14 +1326,6 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 }
             }
         }
-
-        if final_scan && !self.scan_eof_is_error() {
-            self.reassemble_extended_xmp();
-            return Ok(false);
-        }
-        Err(DecodeErrors::FormatStatic(
-            "Too many markers between scans (exceeded limit of 64)",
-        ))
     }
 
     // handle RST markers.

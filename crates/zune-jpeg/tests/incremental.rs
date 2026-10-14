@@ -1381,6 +1381,124 @@ fn complete_extended_xmp_before_eoi_rolls_back_on_incremental_eof() {
     assert_eq!(info.extended_xmp_guid.as_deref(), Some(guid.as_slice()));
 }
 
+fn check_complete_extended_xmp_before_missing_eoi(base: &[u8]) {
+    let guid = *b"0123456789abcdef0123456789abcdef";
+    let payload = b"complete multipart Extended XMP before a missing EOI";
+    let split = 23;
+    let parts = [
+        app1_extended_xmp_part(
+            &guid,
+            payload.len() as u32,
+            split as u32,
+            &payload[split..]
+        ),
+        app1_extended_xmp_part(&guid, payload.len() as u32, 0, &payload[..split]),
+    ];
+    let eoi = base.windows(2).rposition(|marker| marker == [0xFF, 0xD9]).unwrap();
+    let without_eoi = inject_segments_at(&base[..eoi], eoi, &parts);
+
+    let mut lenient = JpegDecoder::new(ZCursor::new(&without_eoi));
+    lenient.decode().unwrap();
+    let info = lenient.info().unwrap();
+    assert_eq!(info.extended_xmp.as_deref(), Some(payload.as_slice()));
+    assert_eq!(info.extended_xmp_guid.as_deref(), Some(guid.as_slice()));
+
+    let strict_options = DecoderOptions::default().set_strict_mode(true);
+    let mut strict =
+        JpegDecoder::new_with_options(ZCursor::new(&without_eoi), strict_options);
+    assert!(strict.decode().unwrap_err().is_recoverable_eof());
+    assert!(strict.info().unwrap().extended_xmp.is_none());
+
+    let mut complete = without_eoi.clone();
+    complete.extend_from_slice(&base[eoi..]);
+    let limit = Rc::new(Cell::new(without_eoi.len()));
+    let cursor = GrowableCursor::new(&complete, Rc::clone(&limit));
+    let mut incremental = JpegDecoder::new(cursor);
+    incremental.set_incremental_mode(true);
+    incremental.decode_headers().unwrap();
+    let mut output = vec![0; incremental.output_buffer_size().unwrap()];
+    let error = incremental.decode_into(&mut output).unwrap_err();
+    assert!(error.is_recoverable_eof(), "{error:?}");
+    assert!(incremental.info().unwrap().extended_xmp.is_none());
+
+    limit.set(complete.len());
+    incremental.decode_into(&mut output).unwrap();
+    let info = incremental.info().unwrap();
+    assert_eq!(info.extended_xmp.as_deref(), Some(payload.as_slice()));
+    assert_eq!(info.extended_xmp_guid.as_deref(), Some(guid.as_slice()));
+}
+
+#[test]
+fn complete_extended_xmp_before_missing_eoi_in_baseline_multi_sos() {
+    check_complete_extended_xmp_before_missing_eoi(include_bytes!(
+        "../../../test-images/jpeg/tiny_non_interleaved_444.jpg"
+    ));
+}
+
+#[test]
+fn complete_extended_xmp_before_missing_eoi_in_progressive_huffman() {
+    check_complete_extended_xmp_before_missing_eoi(include_bytes!(
+        "../../../test-images/jpeg/progressive_restart_420.jpg"
+    ));
+}
+
+#[test]
+#[cfg(feature = "arith")]
+fn complete_extended_xmp_before_missing_eoi_in_progressive_arithmetic() {
+    check_complete_extended_xmp_before_missing_eoi(include_bytes!(
+        "../../../test-images/jpeg/arith/prog.jpg"
+    ));
+}
+
+#[test]
+fn trailing_extended_xmp_is_not_limited_to_64_markers() {
+    let base = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let guid = *b"0123456789abcdef0123456789abcdef";
+    let payload: Vec<u8> = (0..66).collect();
+    let parts: Vec<Vec<u8>> = payload
+        .iter()
+        .enumerate()
+        .map(|(offset, byte)| {
+            app1_extended_xmp_part(
+                &guid,
+                payload.len() as u32,
+                offset as u32,
+                core::slice::from_ref(byte)
+            )
+        })
+        .collect();
+    let eoi = base.windows(2).rposition(|marker| marker == [0xFF, 0xD9]).unwrap();
+    let data = inject_segments_at(base, eoi, &parts);
+
+    for (incremental, strict) in [(false, false), (false, true), (true, false)] {
+        let options = DecoderOptions::default().set_strict_mode(strict);
+        let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&data), options);
+        decoder.set_incremental_mode(incremental);
+        decoder.decode().unwrap();
+        let info = decoder.info().unwrap();
+        assert_eq!(info.extended_xmp.as_deref(), Some(payload.as_slice()));
+        assert_eq!(info.extended_xmp_guid.as_deref(), Some(guid.as_slice()));
+    }
+}
+
+#[test]
+fn more_than_64_markers_before_an_additional_sos_is_rejected() {
+    let base = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let eoi = base.windows(2).rposition(|marker| marker == [0xFF, 0xD9]).unwrap();
+    let mut data = base[..eoi].to_vec();
+    for _ in 0..66 {
+        data.extend_from_slice(&marker_segment(0xE3, &[]));
+    }
+    data.extend([0xFF, 0xDA, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3F, 0x00]);
+    data.extend([0x12, 0x34, 0x56, 0x78, 0xFF, 0xD9]);
+
+    let error = JpegDecoder::new(ZCursor::new(&data)).decode().unwrap_err();
+    assert!(
+        matches!(&error, DecodeErrors::FormatStatic(message) if message.contains("Too many markers")),
+        "unexpected error: {error:?}"
+    );
+}
+
 #[test]
 fn standalone_restart_after_trailing_comment_preserves_lenient_completion() {
     let base = include_bytes!("../../../test-images/jpeg/2029.jpg");

@@ -417,6 +417,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             return Err(error);
         }
         error!("{error}");
+        self.reassemble_extended_xmp();
         self.finish_progressive_decoding(block, output)
     }
 

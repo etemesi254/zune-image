@@ -142,7 +142,8 @@ pub(crate) struct ScanDecodeState {
     pub(crate) header_snapshot:            ScanHeaderStateSnapshot,
     pub(crate) scan_checkpoint:            Option<Box<ScanCheckpoint>>,
     pub(crate) progressive_checkpoint:     Option<Box<ProgressiveScanCheckpoint>>,
-    pub(crate) progressive_fine_checkpoint: Option<Box<ProgressiveFineCheckpoint>>
+    pub(crate) progressive_fine_checkpoint: Option<Box<ProgressiveFineCheckpoint>>,
+    pub(crate) baseline_components_seen:   [bool; MAX_COMPONENTS]
 }
 
 /// Saved state at the start of a progressive scan.
@@ -1228,9 +1229,31 @@ where
             header_snapshot,
             scan_checkpoint: None,
             progressive_checkpoint: None,
-            progressive_fine_checkpoint: None
+            progressive_fine_checkpoint: None,
+            baseline_components_seen: [false; MAX_COMPONENTS]
         }));
         Ok(())
+    }
+
+    pub(crate) fn mark_baseline_scan_components_complete(
+        &mut self, scan_components: &[usize],
+    ) -> bool {
+        let component_count = self.components.len();
+        let Some(state) = self.scan_state.as_deref_mut() else {
+            return false;
+        };
+        for &component in scan_components {
+            if component < MAX_COMPONENTS {
+                state.baseline_components_seen[component] = true;
+            }
+        }
+        state.baseline_components_seen[..component_count].iter().all(|seen| *seen)
+    }
+
+    pub(crate) fn baseline_components_complete(&self) -> bool {
+        self.scan_state.as_deref().is_some_and(|state| {
+            state.baseline_components_seen[..self.components.len()].iter().all(|seen| *seen)
+        })
     }
 
     pub(crate) fn scan_checkpoint(&self) -> Option<&ScanCheckpoint> {
@@ -2795,6 +2818,11 @@ where
                 for comp in &mut self.components {
                     comp.dc_pred = 0;
                     comp.dc_diff = 0;
+                }
+                if !self.is_progressive {
+                    if let Some(state) = self.scan_state.as_deref_mut() {
+                        state.baseline_components_seen = [false; MAX_COMPONENTS];
+                    }
                 }
             }
             // Components take their quantization tables once, from the tables in
