@@ -152,6 +152,24 @@ fn unsupported_lumaa_output_is_an_error_for_vertically_subsampled_images() {
 }
 
 #[test]
+fn unsupported_lumaa_output_is_an_error_for_horizontally_sampled_components() {
+    // Interleaved, sampling 1x1, 2x1, 1x2: the 2x1 component is up-sampled horizontally while
+    // another one is sampled vertically. Its row carry-over used to run although LumaA leaves
+    // it undecoded, and panicked on the empty buffer.
+    let data = include_bytes!("../../../test-images/jpeg/lumaa_h_sampled_unused_component.jpg");
+    let options = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::LumaA);
+    let err = JpegDecoder::new_with_options(ZCursor::new(data.as_slice()), options)
+        .decode()
+        .expect_err("LumaA output from YCbCr is not implemented");
+    match err {
+        DecodeErrors::Format(msg) => {
+            assert_eq!(msg, "Unimplemented colorspace mapping from YCbCr to LumaA")
+        }
+        other => panic!("expected DecodeErrors::Format, got {other:?}")
+    }
+}
+
+#[test]
 fn generic_upsampling_preserves_delayed_boundary_rows() {
     let data = include_bytes!("../../../test-images/jpeg/issue_482_mixed_sampling.jpg");
     let reference = include_bytes!("../../../test-images/jpeg/issue_482_mixed_sampling.rgb");

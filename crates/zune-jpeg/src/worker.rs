@@ -427,6 +427,11 @@ pub(crate) fn upsample(
     component: &mut Components, mcu_height: usize, i: usize, upsampler_scratch_space: &mut [i16],
     has_vertical_sample: bool
 ) -> Result<(), DecodeErrors> {
+    // Components the output colorspace does not use are not decoded (their raw_coeff stays
+    // empty), so they have nothing to up-sample or carry over.
+    if !component.needed {
+        return Ok(());
+    }
     match component.sample_ratio {
         SampleRatios::V | SampleRatios::HV => {
             /*
