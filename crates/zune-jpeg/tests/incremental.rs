@@ -1068,6 +1068,65 @@ fn scan_after_complete_scan_is_ignored_in_lenient_mode_on_2029() {
     }
 }
 
+/// A non-interleaved image (one scan per component) whose EOI is replaced by `segment`.
+/// Its scans are only rendered after the last one, so stopping at an extra SOS must still
+/// render them.
+fn multi_sos_then(segment: &[u8]) -> Vec<u8> {
+    let base = include_bytes!("../../../test-images/jpeg/tiny_non_interleaved_444.jpg");
+    let eoi = base
+        .windows(2)
+        .rposition(|marker| marker == [0xFF, 0xD9])
+        .unwrap();
+    let mut data = base[..eoi].to_vec();
+    data.extend_from_slice(segment);
+    data
+}
+
+/// Decodes into a buffer prefilled with a value the image never produces in full, so an
+/// untouched buffer is caught.
+fn decode_into_prefilled(data: &[u8], incremental: bool) -> Result<Vec<u8>, DecodeErrors> {
+    let mut decoder = JpegDecoder::new(ZCursor::new(data));
+    decoder.set_incremental_mode(incremental);
+    decoder.decode_headers()?;
+    let mut out = vec![0x5A; decoder.output_buffer_size().unwrap()];
+    decoder.decode_into(&mut out)?;
+    Ok(out)
+}
+
+#[test]
+fn scan_after_complete_multi_sos_image_is_rendered_in_lenient_mode() {
+    let expected = decode_oneshot(include_bytes!(
+        "../../../test-images/jpeg/tiny_non_interleaved_444.jpg"
+    ));
+    for (path, data) in [
+        // COM containing "x", then only an SOS marker (reported on #468)
+        (
+            "after COM",
+            multi_sos_then(&[0xFF, 0xFE, 0x00, 0x03, 0x78, 0xFF, 0xDA])
+        ),
+        (
+            "after COM, with header",
+            multi_sos_then(&{
+                let mut segment = com_segment(b"x");
+                segment.extend_from_slice(&EXTRA_SOS);
+                segment.extend_from_slice(&[0xFF, 0xD9]);
+                segment
+            })
+        )
+    ] {
+        for incremental in [false, true] {
+            let pixels = decode_into_prefilled(&data, incremental)
+                .unwrap_or_else(|e| panic!("{path}, incremental={incremental}: {e:?}"));
+            assert_pixels_match(
+                &pixels,
+                &expected,
+                &format!("{path}, incremental={incremental}"),
+                data.len()
+            );
+        }
+    }
+}
+
 #[test]
 fn input_cut_around_scan_after_complete_scan_resumes_correctly() {
     // First call with the input cut at `cutoff`, then a retry with the whole input,

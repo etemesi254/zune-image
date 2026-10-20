@@ -275,6 +275,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let mut scans_seen = self.baseline_scans_seen();
         let mut resuming_current_scan = resuming && scans_seen != 0;
         let mut all_required_components_seen = self.baseline_components_complete();
+        // Set when the scan loop stopped at an SOS that follows a complete image; that SOS
+        // was not parsed, so there is no EOI to look for after it.
+        let mut stopped_at_extra_sos = false;
         let mut last_scan_rows_decoded: usize;
         'sos: loop {
             last_scan_rows_decoded = 0;
@@ -605,6 +608,12 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                                 // The extra SOS was not parsed, so the committed SOS and
                                 // checkpoint state still describe the scan that was decoded.
                                 warn!("More than one SOS despite already having all components");
+                                if !all_components_in_first_scan {
+                                    // Multi-SOS: the component scans are only rendered by
+                                    // finish_baseline_decoding after the loop.
+                                    stopped_at_extra_sos = true;
+                                    break 'sos;
+                                }
                                 if let McuDecodeOutput::RawPlanes(raw_planes) = output {
                                     self.copy_raw_planes_for_mcu_stripe(i, raw_planes)?;
                                     self.invalidate_scan_checkpoint();
@@ -738,7 +747,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         // SOI markers, it may happen that we do not reach this image end of image
         // So this ensures we reach it
         // Ensure we read EOI
-        if !*stream.seen_eoi() {
+        if !*stream.seen_eoi() && !stopped_at_extra_sos {
             let marker = get_marker(&mut self.stream, &mut stream);
             match marker {
                 Ok(Marker::EOI) => {
