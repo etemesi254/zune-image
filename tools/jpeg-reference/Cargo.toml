@@ -1,0 +1,13 @@
+[package]
+name = "jpeg-reference"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+publish = false
+
+[workspace]
+resolver = "2"
+
+[dependencies]
+zune-jpeg = { path = "../../crates/zune-jpeg" }
+turbojpeg = { version = "=1.5.1", default-features = false, features = ["cmake", "require-simd"] }

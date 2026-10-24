@@ -1,0 +1,41 @@
+name: JPEG reference
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Report differences, or fail on any exact sample mismatch
+        type: choice
+        options: [report, check]
+        default: report
+
+permissions:
+  contents: read
+
+jobs:
+  reference:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tools/jpeg-reference
+    env:
+      TURBOJPEG_SOURCE: vendor
+      TURBOJPEG_STATIC: "1"
+      REFERENCE_MODE: ${{ inputs.mode }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install native reference build tools
+        run: sudo apt-get update && sudo apt-get install -y cmake nasm
+      - name: Test the comparison tool
+        run: cargo test --locked
+      - name: Compare raw samples
+        run: |
+          set -o pipefail
+          cargo run --release --locked -- "${REFERENCE_MODE}" 2>&1 | tee reference-report.txt
+      - name: Upload comparison report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jpeg-reference-report
+          path: tools/jpeg-reference/reference-report.txt
