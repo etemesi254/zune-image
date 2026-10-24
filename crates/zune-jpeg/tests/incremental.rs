@@ -952,6 +952,322 @@ fn resume_after_sof_eventually_succeeds() {
     assert!(info.width > 0 && info.height > 0, "dimensions must be valid");
 }
 
+/// A baseline image whose first scan carries all three components, then DAC
+/// (FF CC at 6947, length 4) and a stray one-component refinement scan (FF DA at
+/// 6953, Ss1 Se63 Ah2 Al1), then EOI at 8871.
+const SCAN_AFTER_COMPLETE: &[u8] =
+    include_bytes!("../../../test-images/jpeg/scan_after_complete_scan.jpg");
+const SCAN_AFTER_COMPLETE_DAC: usize = 6947;
+const SCAN_AFTER_COMPLETE_SOS: usize = 6953;
+
+/// The image as it should decode: the same file cut at the inter-scan DAC and
+/// closed with EOI, so the extra scan never appears. Independent of how the
+/// decoder treats the extra scan.
+fn first_scan_oracle() -> Vec<u8> {
+    assert_eq!(
+        SCAN_AFTER_COMPLETE[SCAN_AFTER_COMPLETE_DAC..SCAN_AFTER_COMPLETE_DAC + 2],
+        [0xFF, 0xCC]
+    );
+    assert_eq!(
+        SCAN_AFTER_COMPLETE[SCAN_AFTER_COMPLETE_SOS..SCAN_AFTER_COMPLETE_SOS + 2],
+        [0xFF, 0xDA]
+    );
+    let mut first_scan_only = SCAN_AFTER_COMPLETE[..SCAN_AFTER_COMPLETE_DAC].to_vec();
+    first_scan_only.extend_from_slice(&[0xFF, 0xD9]);
+    decode_oneshot(&first_scan_only)
+}
+
+/// The image with `segment` between the first scan and EOI, in place of DAC and
+/// the extra scan.
+fn first_scan_then(segment: &[u8]) -> Vec<u8> {
+    let mut data = SCAN_AFTER_COMPLETE[..SCAN_AFTER_COMPLETE_DAC].to_vec();
+    data.extend_from_slice(segment);
+    data.extend_from_slice(&[0xFF, 0xD9]);
+    data
+}
+
+#[test]
+fn scan_after_complete_scan_is_ignored_in_lenient_mode() {
+    let expected = first_scan_oracle();
+    let pixels = decode_with_mode(SCAN_AFTER_COMPLETE, false, false)
+        .expect("lenient decode keeps the complete first scan");
+    assert_pixels_match(
+        &pixels,
+        &expected,
+        "lenient one-shot",
+        SCAN_AFTER_COMPLETE.len()
+    );
+    let pixels = decode_with_mode(SCAN_AFTER_COMPLETE, true, false)
+        .expect("lenient incremental decode keeps the complete first scan");
+    assert_pixels_match(
+        &pixels,
+        &expected,
+        "lenient incremental",
+        SCAN_AFTER_COMPLETE.len()
+    );
+}
+
+/// 2029.jpg (one interleaved baseline scan, valid in strict mode) with `segment` between the
+/// scan and EOI.
+fn complete_scan_then(segment: &[u8]) -> Vec<u8> {
+    let base = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let eoi = base
+        .windows(2)
+        .rposition(|marker| marker == [0xFF, 0xD9])
+        .unwrap();
+    let mut data = base[..eoi].to_vec();
+    data.extend_from_slice(segment);
+    data.extend_from_slice(&base[eoi..]);
+    data
+}
+
+/// A one-component SOS header (component 1, tables 0/0, Ss 0, Se 63, Ah/Al 0) and a few
+/// bytes of scan data.
+const EXTRA_SOS: [u8; 14] = [
+    0xFF, 0xDA, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3F, 0x00, 0x12, 0x34, 0x56, 0x78
+];
+
+#[test]
+fn scan_after_complete_scan_is_rejected_in_strict_mode() {
+    // The scan of SCAN_AFTER_COMPLETE itself has AC runs that strict mode rejects, so the
+    // strict cases use 2029.jpg: directly after the scan, and after an inter-scan COM.
+    let mut after_com = com_segment(b"between scans");
+    after_com.extend_from_slice(&EXTRA_SOS);
+    for (path, data) in [
+        ("direct", complete_scan_then(&EXTRA_SOS)),
+        ("after COM", complete_scan_then(&after_com))
+    ] {
+        for incremental in [false, true] {
+            match decode_with_mode(&data, incremental, true) {
+                Err(DecodeErrors::FormatStatic(msg)) => assert_eq!(
+                    msg, "SOS after a baseline scan that already had all components",
+                    "{path}, incremental={incremental}"
+                ),
+                other => panic!(
+                    "{path}, incremental={incremental}: expected the extra-SOS error, got {other:?}"
+                )
+            }
+        }
+    }
+}
+
+#[test]
+fn scan_after_complete_scan_is_ignored_in_lenient_mode_on_2029() {
+    let expected = decode_oneshot(include_bytes!("../../../test-images/jpeg/2029.jpg"));
+    let mut after_com = com_segment(b"between scans");
+    after_com.extend_from_slice(&EXTRA_SOS);
+    for (path, data) in [
+        ("direct", complete_scan_then(&EXTRA_SOS)),
+        ("after COM", complete_scan_then(&after_com))
+    ] {
+        for incremental in [false, true] {
+            let pixels = decode_with_mode(&data, incremental, false)
+                .unwrap_or_else(|e| panic!("{path}, incremental={incremental}: {e:?}"));
+            assert_eq!(pixels, expected, "{path}, incremental={incremental}");
+        }
+    }
+}
+
+/// A non-interleaved image (one scan per component) whose EOI is replaced by `segment`.
+/// Its scans are only rendered after the last one, so stopping at an extra SOS must still
+/// render them.
+fn multi_sos_then(segment: &[u8]) -> Vec<u8> {
+    let base = include_bytes!("../../../test-images/jpeg/tiny_non_interleaved_444.jpg");
+    let eoi = base
+        .windows(2)
+        .rposition(|marker| marker == [0xFF, 0xD9])
+        .unwrap();
+    let mut data = base[..eoi].to_vec();
+    data.extend_from_slice(segment);
+    data
+}
+
+/// Decodes into a buffer prefilled with a value the image never produces in full, so an
+/// untouched buffer is caught.
+fn decode_into_prefilled(data: &[u8], incremental: bool) -> Result<Vec<u8>, DecodeErrors> {
+    let mut decoder = JpegDecoder::new(ZCursor::new(data));
+    decoder.set_incremental_mode(incremental);
+    decoder.decode_headers()?;
+    let mut out = vec![0x5A; decoder.output_buffer_size().unwrap()];
+    decoder.decode_into(&mut out)?;
+    Ok(out)
+}
+
+#[test]
+fn scan_after_complete_multi_sos_image_is_rendered_in_lenient_mode() {
+    let expected = decode_oneshot(include_bytes!(
+        "../../../test-images/jpeg/tiny_non_interleaved_444.jpg"
+    ));
+    for (path, data) in [
+        // COM containing "x", then only an SOS marker (reported on #468)
+        (
+            "after COM",
+            multi_sos_then(&[0xFF, 0xFE, 0x00, 0x03, 0x78, 0xFF, 0xDA])
+        ),
+        (
+            "after COM, with header",
+            multi_sos_then(&{
+                let mut segment = com_segment(b"x");
+                segment.extend_from_slice(&EXTRA_SOS);
+                segment.extend_from_slice(&[0xFF, 0xD9]);
+                segment
+            })
+        )
+    ] {
+        for incremental in [false, true] {
+            let pixels = decode_into_prefilled(&data, incremental)
+                .unwrap_or_else(|e| panic!("{path}, incremental={incremental}: {e:?}"));
+            assert_pixels_match(
+                &pixels,
+                &expected,
+                &format!("{path}, incremental={incremental}"),
+                data.len()
+            );
+        }
+    }
+}
+
+#[test]
+fn input_cut_around_scan_after_complete_scan_resumes_correctly() {
+    // First call with the input cut at `cutoff`, then a retry with the whole input,
+    // on the same decoder. Cuts inside DAC (marker, length, payload) and inside the
+    // extra SOS header come before the decoder can know an SOS follows, so the first
+    // call must suspend with a recoverable EOF. From the end of the extra SOS header
+    // on, the decoder has seen the SOS and must finish with the first scan.
+    let expected = first_scan_oracle();
+    let sos_header_end = SCAN_AFTER_COMPLETE_SOS + 2 + 8;
+    let cutoffs = [
+        SCAN_AFTER_COMPLETE_DAC + 1,
+        SCAN_AFTER_COMPLETE_DAC + 3,
+        SCAN_AFTER_COMPLETE_DAC + 5,
+        SCAN_AFTER_COMPLETE_SOS + 1,
+        sos_header_end,
+        7500,
+        8000,
+        SCAN_AFTER_COMPLETE.len() - 1
+    ];
+    for cutoff in cutoffs {
+        let limit = Rc::new(Cell::new(SCAN_AFTER_COMPLETE.len()));
+        let cursor = GrowableCursor::new(SCAN_AFTER_COMPLETE, Rc::clone(&limit));
+        let mut decoder = JpegDecoder::new(cursor);
+        decoder.set_incremental_mode(true);
+        decoder
+            .decode_headers()
+            .expect("headers are before the cutoff");
+        let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+        limit.set(cutoff);
+        let first = decoder.decode_into(&mut out);
+        if cutoff <= SCAN_AFTER_COMPLETE_SOS + 1 {
+            let err = first.expect_err("the next SOS is not visible yet");
+            assert!(
+                err.is_recoverable_eof(),
+                "cutoff {cutoff}: expected recoverable EOF, got {err:?}"
+            );
+            limit.set(SCAN_AFTER_COMPLETE.len());
+            decoder
+                .decode_into(&mut out)
+                .expect("full input should complete the decode");
+        } else {
+            first.expect("the extra SOS is visible, so the decode is complete");
+        }
+        assert_pixels_match(&out, &expected, "scan_after_complete_scan", cutoff);
+    }
+}
+
+#[test]
+fn icc_after_complete_scan_is_parsed() {
+    // Legal APP2 ICC between a complete interleaved scan and EOI.
+    let payload = b"ICC-AFTER-COMPLETE-SCAN";
+    let data = first_scan_then(&icc_app2_chunk(payload));
+    let expected = first_scan_oracle();
+    for incremental in [false, true] {
+        let mut decoder = JpegDecoder::new(ZCursor::new(&data[..]));
+        decoder.set_incremental_mode(incremental);
+        let pixels = decoder.decode().expect("APP2 before EOI is valid");
+        assert_pixels_match(&pixels, &expected, "icc after scan", data.len());
+        assert_eq!(
+            decoder.icc_profile().as_deref(),
+            Some(&payload[..]),
+            "incremental={incremental}"
+        );
+    }
+}
+
+#[test]
+fn com_after_complete_scan_cut_inside_resumes() {
+    // Legal COM between a complete scan and EOI, input cut inside its length and
+    // inside its payload: suspend, then finish on retry.
+    let com = com_segment(b"a comment after the scan");
+    let data = first_scan_then(&com);
+    let expected = first_scan_oracle();
+    for cutoff in [SCAN_AFTER_COMPLETE_DAC + 3, SCAN_AFTER_COMPLETE_DAC + 10] {
+        let limit = Rc::new(Cell::new(data.len()));
+        let cursor = GrowableCursor::new(&data, Rc::clone(&limit));
+        let mut decoder = JpegDecoder::new(cursor);
+        decoder.set_incremental_mode(true);
+        decoder
+            .decode_headers()
+            .expect("headers are before the cutoff");
+        let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+        limit.set(cutoff);
+        let err = decoder
+            .decode_into(&mut out)
+            .expect_err("EOI is not visible yet");
+        assert!(
+            err.is_recoverable_eof(),
+            "cutoff {cutoff}: expected recoverable EOF, got {err:?}"
+        );
+        limit.set(data.len());
+        decoder
+            .decode_into(&mut out)
+            .expect("full input should complete the decode");
+        assert_pixels_match(&out, &expected, "com after scan", cutoff);
+    }
+}
+
+#[test]
+fn direct_sos_after_complete_scan_is_decided_before_parsing_its_header() {
+    // 2029.jpg: its scan is valid in strict mode, so both modes reach the extra SOS.
+    let base = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let scan_end = base
+        .windows(2)
+        .rposition(|marker| marker == [0xFF, 0xD9])
+        .unwrap();
+    let data = complete_scan_then(&EXTRA_SOS);
+    let expected = decode_oneshot(base);
+
+    for strict in [false, true] {
+        let limit = Rc::new(Cell::new(data.len()));
+        let cursor = GrowableCursor::new(&data, Rc::clone(&limit));
+        let options = DecoderOptions::default().set_strict_mode(strict);
+        let mut decoder = JpegDecoder::new_with_options(cursor, options);
+        decoder.set_incremental_mode(true);
+        decoder
+            .decode_headers()
+            .expect("headers are before the extra SOS");
+        let mut out = vec![0; decoder.output_buffer_size().unwrap()];
+
+        // Make the complete SOS marker visible, but not its length or header.
+        limit.set(scan_end + 2);
+        if strict {
+            match decoder.decode_into(&mut out) {
+                Err(DecodeErrors::FormatStatic(msg)) => {
+                    assert_eq!(
+                        msg,
+                        "SOS after a baseline scan that already had all components"
+                    );
+                }
+                other => panic!("expected the extra-SOS error, got {other:?}")
+            }
+        } else {
+            decoder
+                .decode_into(&mut out)
+                .expect("lenient decode should stop before parsing the extra SOS");
+            assert_pixels_match(&out, &expected, "direct SOS", data.len());
+        }
+    }
+}
+
 /// Build a synthetic APP2 ICC chunk with a single payload segment.
 fn icc_app2_chunk(payload: &[u8]) -> Vec<u8> {
     let body_len = 2 + 12 + 1 + 1 + payload.len();
@@ -2261,7 +2577,9 @@ fn direct_extra_sos_after_interleaved_scan_preserves_lenient_completion() {
     let actual = decode_oneshot(&data);
     assert_eq!(actual, expected);
     assert!(decode_with_mode(&data, false, true).is_err());
-    assert!(decode_with_mode(&data, true, false).is_err());
+    // Lenient incremental decoding keeps the completed image too: incremental mode
+    // doesn't imply strict validation.
+    assert_eq!(decode_with_mode(&data, true, false).unwrap(), expected);
 }
 
 /// Sanity check: give headers + partial scan, get EOF, then give

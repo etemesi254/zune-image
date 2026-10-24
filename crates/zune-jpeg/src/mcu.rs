@@ -275,6 +275,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let mut scans_seen = self.baseline_scans_seen();
         let mut resuming_current_scan = resuming && scans_seen != 0;
         let mut all_required_components_seen = self.baseline_components_complete();
+        // Set when the scan loop stopped at an SOS that follows a complete image; that SOS
+        // was not parsed, so there is no EOI to look for after it.
+        let mut stopped_at_extra_sos = false;
         let mut last_scan_rows_decoded: usize;
         'sos: loop {
             last_scan_rows_decoded = 0;
@@ -617,11 +620,12 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         ));
                     }
                     McuContinuation::AnotherSos if all_components_in_first_scan => {
-                        if self.scan_eof_is_error() {
-                            return Err(DecodeErrors::FormatStatic(
-                                "Unexpected SOS after completed scan"
-                            ));
+                        // Decided before parsing the SOS header, so the committed SOS
+                        // and checkpoint state still describe the scan that was decoded.
+                        if self.options.strict_mode() {
+                            return Err(DecodeErrors::FormatStatic(SOS_AFTER_COMPLETE_SCAN));
                         }
+                        stream.marker().take();
                         warn!("More than one SOS despite already having all components");
                         if let McuDecodeOutput::RawPlanes(raw_planes) = output {
                             self.copy_raw_planes_for_mcu_stripe(i, raw_planes)?;
@@ -629,37 +633,62 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         }
                         return Ok(());
                     }
-                    McuContinuation::AnotherSos => continue 'sos,
+                    McuContinuation::AnotherSos => {
+                        match self.parse_marker_inner(Marker::SOS) {
+                            Ok(()) => {}
+                            // Same handling as input ending inside the scan data above
+                            // (this header used to be parsed during the row decode).
+                            Err(e) if e.is_recoverable_eof() && !self.scan_eof_is_error() => {
+                                error!("{e}");
+                                if let Some(pixels) = output.pixels_mut() {
+                                    pixels.fill(128);
+                                }
+                                return Ok(());
+                            }
+                            Err(e) => return Err(e)
+                        }
+                        self.invalidate_scan_checkpoint();
+                        stream.marker().take();
+                        stream.reset();
+                        B::reset_arith_tables(&mut self.entropy_tables);
+                        trace!("Found SOS marker");
+                        continue 'sos;
+                    }
                     McuContinuation::InterScanMarker(marker) => {
                         // Handle inter-scan markers (DHT/DQT/etc) uniformly here.
                         // This keeps all marker handling in the outer loop.
-                        if self.advance_to_next_sos(
+                        match self.advance_to_next_sos(
                             marker,
                             &mut stream,
                             all_required_components_seen,
                         )? {
-                            if self.dnl_image {
-                                return Err(DecodeErrors::FormatStatic(
-                                    "JPEG with DNL cannot contain multiple scans",
-                                ));
-                            }
-                            if all_components_in_first_scan {
-                                if self.scan_eof_is_error() {
+                            InterScanEnd::Sos => {
+                                if self.dnl_image {
                                     return Err(DecodeErrors::FormatStatic(
-                                        "Unexpected SOS after completed scan"
+                                        "JPEG with DNL cannot contain multiple scans"
                                     ));
                                 }
+                                continue 'sos;
+                            }
+                            InterScanEnd::SosAfterCompleteScan => {
+                                // The extra SOS was not parsed, so the committed SOS and
+                                // checkpoint state still describe the scan that was decoded.
                                 warn!("More than one SOS despite already having all components");
+                                if !all_components_in_first_scan {
+                                    // Multi-SOS: the component scans are only rendered by
+                                    // finish_baseline_decoding after the loop.
+                                    stopped_at_extra_sos = true;
+                                    break 'sos;
+                                }
                                 if let McuDecodeOutput::RawPlanes(raw_planes) = output {
                                     self.copy_raw_planes_for_mcu_stripe(i, raw_planes)?;
                                     self.invalidate_scan_checkpoint();
                                 }
                                 return Ok(());
                             }
-                            continue 'sos;
+                            // Hit EOI
+                            InterScanEnd::Eoi => break
                         }
-                        // Hit EOI
-                        break;
                     }
                     McuContinuation::Terminate(_) => {
                         warn!("Got terminate signal, will not process further");
@@ -698,16 +727,14 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         B::reset_arith_tables(&mut self.entropy_tables);
                         continue 'sos;
                     }
-                    Ok(marker) => {
-                        if self.advance_to_next_sos(
-                            marker,
-                            &mut stream,
-                            all_required_components_seen,
-                        )? {
-                            continue 'sos;
-                        }
-                        break;
-                    }
+                    Ok(marker) => match self.advance_to_next_sos(
+                        marker,
+                        &mut stream,
+                        all_required_components_seen
+                    )? {
+                        InterScanEnd::Sos => continue 'sos,
+                        InterScanEnd::Eoi | InterScanEnd::SosAfterCompleteScan => break
+                    },
                     Err(e) if e.is_recoverable_eof() => {
                         if self.scan_eof_is_error() {
                             return Err(e);
@@ -789,7 +816,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         // SOI markers, it may happen that we do not reach this image end of image
         // So this ensures we reach it
         // Ensure we read EOI
-        if !*stream.seen_eoi() {
+        if !*stream.seen_eoi() && !stopped_at_extra_sos {
             let marker = get_marker(&mut self.stream, &mut stream);
             match marker {
                 Ok(Marker::EOI) => {
@@ -806,23 +833,36 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     | Marker::APP(_)
                     | Marker::DNL),
                 ) => {
-                    if self.advance_to_next_sos(
+                    match self.advance_to_next_sos(
                         marker,
                         &mut stream,
                         all_required_components_seen,
                     )? {
-                        if self.dnl_image {
-                            return Err(DecodeErrors::FormatStatic(
-                                "JPEG with DNL cannot contain multiple scans",
-                            ));
+                        InterScanEnd::Sos => {
+                            if self.dnl_image {
+                                return Err(DecodeErrors::FormatStatic(
+                                    "JPEG with DNL cannot contain multiple scans"
+                                ));
+                            }
+                            warn!("More than one SOS despite already having all components");
                         }
-                        warn!("More than one SOS despite already having all components");
+                        InterScanEnd::SosAfterCompleteScan => {
+                            warn!("More than one SOS despite already having all components");
+                        }
+                        InterScanEnd::Eoi => {}
                     }
                 }
                 Ok(Marker::SOS) if self.dnl_image => {
                     return Err(DecodeErrors::FormatStatic(
                         "JPEG with DNL cannot contain multiple scans",
                     ));
+                }
+                // Decided before parsing the SOS header, as in the scan loop above.
+                Ok(Marker::SOS) if all_required_components_seen => {
+                    if self.options.strict_mode() {
+                        return Err(DecodeErrors::FormatStatic(SOS_AFTER_COMPLETE_SCAN));
+                    }
+                    warn!("More than one SOS despite already having all components");
                 }
                 Ok(marker) => {
                     if self.scan_eof_is_error() {
@@ -1385,12 +1425,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 // A latched RST means the entropy segment is already exhausted.
                 self.handle_rst(stream)?;
             } else if let Marker::SOS = m {
-                self.parse_marker_inner(Marker::SOS)?;
-                self.invalidate_scan_checkpoint();
-                stream.marker().take();
-                stream.reset();
-                B::reset_arith_tables(&mut self.entropy_tables);
-                trace!("Found SOS marker");
+                // Left latched and unparsed: the caller decides whether another
+                // scan is valid before parsing its header.
                 return Ok(McuContinuation::AnotherSos);
             } else if matches!(
                 m,
@@ -1452,15 +1488,20 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     /// # Arguments
     /// * `first_marker` - The first marker that was already detected (not yet parsed)
     /// * `stream` - The bitstream state
-    /// * `final_scan` - Preserve lenient completion when no further scan is expected
+    /// * `final_scan` - Every component has been decoded, so no further scan is
+    ///   expected: lenient completion is preserved, and a following SOS is not
+    ///   baseline data
     ///
     /// # Returns
-    /// * `Ok(true)` - Found SOS, ready to continue decoding
-    /// * `Ok(false)` - Found EOI, decoding complete
-    /// * `Err(_)` - Error (too many markers, unexpected marker in strict mode, etc.)
+    /// * `Ok(InterScanEnd::Sos)` - Found SOS, ready to continue decoding
+    /// * `Ok(InterScanEnd::Eoi)` - Found EOI (or stopped leniently), decoding complete
+    /// * `Ok(InterScanEnd::SosAfterCompleteScan)` - Found SOS when `final_scan`
+    ///   (lenient mode); the SOS is left unparsed
+    /// * `Err(_)` - Error (too many markers, unexpected marker in strict mode, an SOS
+    ///   after a complete scan in strict mode, etc.)
     fn advance_to_next_sos<B: BitStream>(
         &mut self, first_marker: Marker, stream: &mut B, final_scan: bool,
-    ) -> Result<bool, DecodeErrors> {
+    ) -> Result<InterScanEnd, DecodeErrors> {
         // Limit iterations to prevent DoS from malicious files.
         const MAX_INTER_SCAN_MARKERS: usize = 64;
 
@@ -1483,7 +1524,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     Err(e) => {
                         if final_scan && e.is_recoverable_eof() && !self.scan_eof_is_error() {
                             self.reassemble_extended_xmp();
-                            return Ok(false);
+                            return Ok(InterScanEnd::Eoi);
                         }
                         if e.is_recoverable_eof() || matches!(e, DecodeErrors::Cancelled) {
                             if let Some((append_snapshot, header_snapshot)) = &inter_scan_snapshot {
@@ -1514,6 +1555,25 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             let marker = restore_inter_scan_on_suspend!(get_marker(&mut self.stream, stream));
 
             match marker {
+                // Decided before parsing the SOS header: the image is already complete.
+                // The marker limit and the DNL rule still apply first.
+                Marker::SOS if final_scan => {
+                    if markers_seen > MAX_INTER_SCAN_MARKERS {
+                        return Err(DecodeErrors::FormatStatic(
+                            "Too many markers between scans (exceeded limit of 64)"
+                        ));
+                    }
+                    if self.dnl_image {
+                        return Err(DecodeErrors::FormatStatic(
+                            "JPEG with DNL cannot contain multiple scans"
+                        ));
+                    }
+                    if self.options.strict_mode() {
+                        return Err(DecodeErrors::FormatStatic(SOS_AFTER_COMPLETE_SCAN));
+                    }
+                    self.reassemble_extended_xmp();
+                    return Ok(InterScanEnd::SosAfterCompleteScan);
+                }
                 Marker::SOS => {
                     if markers_seen > MAX_INTER_SCAN_MARKERS {
                         return Err(DecodeErrors::FormatStatic(
@@ -1526,13 +1586,13 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     stream.reset();
                     B::reset_arith_tables(&mut self.entropy_tables);
                     trace!("Found SOS marker, continuing decode");
-                    return Ok(true);
+                    return Ok(InterScanEnd::Sos);
                 }
                 Marker::EOI => {
                     self.reassemble_extended_xmp();
                     *stream.seen_eoi() = true;
                     trace!("Found EOI marker");
-                    return Ok(false);
+                    return Ok(InterScanEnd::Eoi);
                 }
                 Marker::DAC
                 | Marker::DHT
@@ -1552,7 +1612,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         if !self.scan_eof_is_error() {
                             warn!("Stopping after unexpected final marker {other:?}");
                             self.reassemble_extended_xmp();
-                            return Ok(false);
+                            return Ok(InterScanEnd::Eoi);
                         }
                         if let Some((append_snapshot, header_snapshot)) = &inter_scan_snapshot {
                             append_snapshot.rollback(self);
@@ -1807,8 +1867,23 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     }
 }
 
+const SOS_AFTER_COMPLETE_SCAN: &str = "SOS after a baseline scan that already had all components";
+
+/// Where [`JpegDecoder::advance_to_next_sos`] stopped.
+enum InterScanEnd {
+    /// An SOS was parsed; decode the next scan.
+    Sos,
+    /// EOI was reached, or decoding stopped leniently with the image complete.
+    Eoi,
+    /// An SOS follows a scan that already had every component. It was not
+    /// parsed (lenient mode only; strict mode returns an error).
+    SosAfterCompleteScan
+}
+
 enum McuContinuation {
     Ok,
+    /// An SOS marker follows the entropy-coded data. It is still latched in the
+    /// bitstream and its header has not been parsed.
     AnotherSos,
     /// Found an inter-scan marker (DHT/DQT/DRI/COM/APP) that needs handling.
     /// The caller should parse it and scan for the next SOS.
