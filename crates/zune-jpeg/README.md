@@ -27,6 +27,41 @@ fn main()->Result<(),DecoderErrors> {
 The decoder supports more manipulations via `DecoderOptions`,
 see additional documentation in the library.
 
+### Reduced-IDCT output
+
+Select `JpegScale::Half`, `JpegScale::Quarter`, or `JpegScale::Eighth` before
+starting pixel, raw-plane, or scanline decoding:
+
+```Rust
+use zune_core::bytestream::ZCursor;
+use zune_jpeg::{JpegDecoder, JpegScale};
+
+let decoder = JpegDecoder::new(ZCursor::new(&jpeg_bytes));
+let mut scaled = decoder.into_scaled(JpegScale::Half)?;
+let (width, height) = scaled.dimensions();
+let mut pixels = vec![0; scaled.output_buffer_size().unwrap()];
+scaled.decode_into(&mut pixels)?;
+```
+
+The owning `ScaledJpegDecoder` reconstructs genuine reduced-IDCT samples, not
+resized full-size pixels. Dimensions are ceil-rounded, and each component uses
+the IDCT size appropriate for its sampling factors. Only 1/2, 1/4, and 1/8 are
+supported. Read coded metadata from `JpegDecoder` before calling `into_scaled`;
+existing full-size, raw-plane, and scanline APIs keep their original geometry.
+
+Scaled output is frame-buffered, not a bounded-memory scanline API. For growing
+input, call `scaled.set_incremental_mode(true)` before decoding and keep the
+same scaled decoder across recoverable EOF. Reduced planes and entropy
+checkpoints survive retries; no converted pixels are published on recoverable
+scan EOF. A too-small output slice is rejected before decoding, and bytes
+beyond the required output length are left untouched.
+
+The `scaled_decode` example writes packed RGB bytes to stdout:
+
+```sh
+cargo run -p zune-jpeg --example scaled_decode -- image.jpg 2 > image.rgb
+```
+
 ### Incremental input
 
 `JpegDecoder` can be retried on the same decoder when the underlying reader can

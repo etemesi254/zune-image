@@ -15,7 +15,7 @@ use zune_core::bytestream::{ZByteReaderTrait, ZCursor};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::DecoderOptions;
 use zune_jpeg::errors::DecodeErrors;
-use zune_jpeg::{JpegDecoder, NeverCancel, RawDecodeSession, RawImcuRowStatus};
+use zune_jpeg::{JpegDecoder, JpegScale, NeverCancel, RawDecodeSession, RawImcuRowStatus};
 
 use std::cell::{Cell, RefCell};
 use std::io::{BufRead, Cursor, Read, Seek, SeekFrom};
@@ -33,6 +33,36 @@ struct GrowableCursor<'a> {
     position: usize,
     limit:    Rc<Cell<usize>>,
     seek_log: Option<Rc<RefCell<Vec<usize>>>>
+}
+
+#[test]
+fn scaled_output_retries_without_publishing_partial_pixels() {
+    let fixtures: [&[u8]; 3] = [
+        include_bytes!("../../../test-images/jpeg/non_interleaved_444_64x64.jpg"),
+        include_bytes!("../../../test-images/jpeg/non_interleaved_420_64x64.jpg"),
+        include_bytes!("../../../test-images/jpeg/progressive_restart_420.jpg"),
+    ];
+    for data in fixtures {
+        for scale in [JpegScale::Half, JpegScale::Quarter, JpegScale::Eighth] {
+            let limit = Rc::new(Cell::new(data.len()));
+            let source = GrowableCursor::new(data, Rc::clone(&limit));
+            let mut decoder = JpegDecoder::new(source).into_scaled(scale).unwrap();
+            decoder.set_incremental_mode(true);
+            let length = decoder.output_buffer_size().unwrap();
+            let mut output = vec![0xa5; length];
+            limit.set(data.len() / 2);
+            let error = decoder.decode_into(&mut output).unwrap_err();
+            assert!(error.is_recoverable_eof(), "{error:?}");
+            assert!(output.iter().all(|&byte| byte == 0xa5));
+            limit.set(data.len());
+            decoder.decode_into(&mut output).unwrap();
+
+            let mut reference = JpegDecoder::new(ZCursor::new(data)).into_scaled(scale).unwrap();
+            let mut expected = vec![0; length];
+            reference.decode_into(&mut expected).unwrap();
+            assert_eq!(output, expected);
+        }
+    }
 }
 
 impl<'a> GrowableCursor<'a> {
