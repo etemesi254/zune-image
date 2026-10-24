@@ -36,7 +36,6 @@ fn native_rgb(y: i16, cb: i16, cr: i16) -> (u8, u8, u8) {
     )
 }
 
-
 /// Convert YCbCr to RGB/BGR
 ///
 /// Converts to RGB if const BGRA is false
