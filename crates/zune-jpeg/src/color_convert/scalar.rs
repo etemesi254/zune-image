@@ -28,6 +28,20 @@ fn clamp(a: i32) -> u8 {
     a.clamp(0, 255) as u8
 }
 
+// Restore the low two coefficient bits and exact half-up rounding that the
+// SIMD-friendly 14-bit base constants omit.
+fn native_rgb(y: i16, cb: i16, cr: i16) -> (u8, u8, u8) {
+    let y = i32::from(y) * i32::from(Y_CF) + i32::from(YUV_RND);
+    let cb = i32::from(cb) - 128;
+    let cr = i32::from(cr) - 128;
+    (
+        clamp(((y + i32::from(CR_CF) * cr) * 4 + cr + 4) >> (YUV_PREC + 2)),
+        clamp(((y + i32::from(C_G_CR_COEF_1) * cr + i32::from(C_G_CB_COEF_2) * cb)
+            * 4 - 2 * (cr + cb) + 4) >> (YUV_PREC + 2)),
+        clamp(((y + i32::from(CB_CF) * cb) * 4 + 2 * cb + 4) >> (YUV_PREC + 2)),
+    )
+}
+
 
 /// Convert YCbCr to RGB/BGR
 ///
@@ -50,27 +64,17 @@ pub fn ycbcr_to_rgba_inner_16_scalar<const BGRA: bool>(
         .zip(cb.iter().zip(cr.iter()))
         .zip(opt.chunks_exact_mut(4))
     {
-        let cr = cr - 128;
-        let cb = cb - 128;
-
-        let y0 = i32::from(y) * i32::from(Y_CF) + i32::from(YUV_RND);
-
-        let r = (y0 + i32::from(cr) * i32::from(CR_CF)) >> YUV_PREC;
-        let g = (y0
-            + i32::from(cr) * i32::from(C_G_CR_COEF_1)
-            + i32::from(cb) * i32::from(C_G_CB_COEF_2))
-            >> YUV_PREC;
-        let b = (y0 + i32::from(cb) * i32::from(CB_CF)) >> YUV_PREC;
+        let (r, g, b) = native_rgb(y, *cb, *cr);
 
         if BGRA {
-            out[0] = clamp(b);
-            out[1] = clamp(g);
-            out[2] = clamp(r);
+            out[0] = b;
+            out[1] = g;
+            out[2] = r;
             out[3] = 255;
         } else {
-            out[0] = clamp(r);
-            out[1] = clamp(g);
-            out[2] = clamp(b);
+            out[0] = r;
+            out[1] = g;
+            out[2] = b;
             out[3] = 255;
         }
     }
@@ -99,26 +103,16 @@ pub fn ycbcr_to_rgb_inner_16_scalar<const BGRA: bool>(
         .zip(cb.iter().zip(cr.iter()))
         .zip(opt.chunks_exact_mut(3))
     {
-        let cr = cr - 128;
-        let cb = cb - 128;
-
-        let y0 = i32::from(y) * i32::from(Y_CF) + i32::from(YUV_RND);
-
-        let r = (y0 + i32::from(cr) * i32::from(CR_CF)) >> YUV_PREC;
-        let g = (y0
-            + i32::from(cr) * i32::from(C_G_CR_COEF_1)
-            + i32::from(cb) * i32::from(C_G_CB_COEF_2))
-            >> YUV_PREC;
-        let b = (y0 + i32::from(cb) * i32::from(CB_CF)) >> YUV_PREC;
+        let (r, g, b) = native_rgb(y, *cb, *cr);
 
         if BGRA {
-            out[0] = clamp(b);
-            out[1] = clamp(g);
-            out[2] = clamp(r);
+            out[0] = b;
+            out[1] = g;
+            out[2] = r;
         } else {
-            out[0] = clamp(r);
-            out[1] = clamp(g);
-            out[2] = clamp(b);
+            out[0] = r;
+            out[1] = g;
+            out[2] = b;
         }
     }
 
