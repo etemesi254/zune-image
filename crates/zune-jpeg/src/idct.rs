@@ -117,17 +117,12 @@ pub fn choose_idct_1x1_func(_: &DecoderOptions) -> IDCTPtr {
 mod tests {
     use super::*;
 
-    fn check_scaled_idct(
-        input: [i32; 64],
-        half: [i16; 16],
-        quarter: [i16; 4],
-        eighth: i16,
-    ) {
+    fn check_scaled_idct(input: [i32; 64], half: [i16; 16], quarter: [i16; 4], eighth: i16) {
         const STRIDE: usize = 7;
         let cases: [(usize, IDCTPtr, &[i16]); 3] = [
             (4, scalar::idct_scaled_4x4, &half),
             (2, scalar::idct_scaled_2x2, &quarter),
-            (1, scalar::idct_scaled_1x1, core::slice::from_ref(&eighth)),
+            (1, scalar::idct_scaled_1x1, core::slice::from_ref(&eighth))
         ];
         for (side, transform, expected) in cases {
             let mut coefficients = input;
@@ -148,14 +143,16 @@ mod tests {
         // Golden samples were produced by libjpeg-turbo's reduced IDCTs with
         // unit quantization, not by resizing its full-size output.
         let mut input = [0; 64];
-        for (index, coefficient) in input.iter_mut().enumerate() {
-            *coefficient = ((index * 29) % 107) as i32 - 53;
+        for (coefficient, index) in input.iter_mut().zip(0_i32..) {
+            *coefficient = ((index * 29) % 107) - 53;
         }
         check_scaled_idct(
             input,
-            [122, 116, 112, 114, 115, 84, 157, 132, 115, 124, 126, 112, 122, 129, 123, 138],
+            [
+                122, 116, 112, 114, 115, 84, 157, 132, 115, 124, 126, 112, 122, 129, 123, 138
+            ],
             [109, 129, 123, 125],
-            121,
+            121
         );
         input.fill(0);
         input[0] = 700;
@@ -164,9 +161,11 @@ mod tests {
         input[9] = 200;
         check_scaled_idct(
             input,
-            [255, 215, 88, 0, 255, 242, 135, 60, 255, 255, 203, 147, 255, 255, 250, 208],
+            [
+                255, 215, 88, 0, 255, 242, 135, 60, 255, 255, 203, 147, 255, 255, 250, 208
+            ],
             [255, 70, 255, 202],
-            216,
+            216
         );
     }
 
@@ -181,9 +180,11 @@ mod tests {
         input[7] = 19;
         check_scaled_idct(
             input,
-            [130, 142, 114, 126, 130, 142, 114, 126, 130, 142, 114, 126, 130, 142, 114, 126],
+            [
+                130, 142, 114, 126, 130, 142, 114, 126, 130, 142, 114, 126, 130, 142, 114, 126
+            ],
             [136, 120, 136, 120],
-            128,
+            128
         );
         input.fill(0);
         input[8] = -101;
@@ -191,9 +192,11 @@ mod tests {
         input[56] = -49;
         check_scaled_idct(
             input,
-            [115, 115, 115, 115, 117, 117, 117, 117, 139, 139, 139, 139, 141, 141, 141, 141],
+            [
+                115, 115, 115, 115, 117, 117, 117, 117, 139, 139, 139, 139, 141, 141, 141, 141
+            ],
             [116, 116, 140, 140],
-            128,
+            128
         );
     }
 
