@@ -155,10 +155,10 @@ mod tests {
                             let cb = i32::from(cb) - 128;
                             let cr = i32::from(cr) - 128;
                             let y = i32::from(y[index]);
-                            let red = (y + ((91881 * cr + 32768) >> 16)).clamp(0, 255) as u8;
-                            let green = (y + ((-46802 * cr - 22554 * cb + 32768) >> 16))
+                            let red = (y + ((91_881 * cr + 32_768) >> 16)).clamp(0, 255) as u8;
+                            let green = (y + ((-46_802 * cr - 22_554 * cb + 32_768) >> 16))
                                 .clamp(0, 255) as u8;
-                            let blue = (y + ((116130 * cb + 32768) >> 16)).clamp(0, 255) as u8;
+                            let blue = (y + ((116_130 * cb + 32_768) >> 16)).clamp(0, 255) as u8;
                             let expected = if matches!(format, ColorSpace::BGR | ColorSpace::BGRA) {
                                 [blue, green, red, 255]
                             } else {
