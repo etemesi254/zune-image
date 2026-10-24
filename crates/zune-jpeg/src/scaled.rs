@@ -32,6 +32,7 @@ pub enum JpegScale {
 
 impl JpegScale {
     /// The denominator of the output ratio (2, 4, or 8).
+    #[must_use]
     pub const fn denominator(self) -> usize {
         match self {
             Self::Half => 2,
@@ -237,8 +238,16 @@ impl ScaledOutput {
                 return Err(DecodeErrors::Cancelled);
             }
             for (plane, samples) in self.planes.iter().zip(rows.iter_mut()) {
-                for (x, sample) in samples[..self.width].iter_mut().enumerate() {
-                    *sample = plane.sample(x, y);
+                if plane.horizontal_expand == 1 && plane.vertical_expand == 1 {
+                    let start = y.min(plane.height - 1) * plane.stride;
+                    let width = self.width.min(plane.width);
+                    samples[..width].copy_from_slice(&plane.samples[start..start + width]);
+                    let edge = samples[width - 1];
+                    samples[width..self.width].fill(edge);
+                } else {
+                    for (x, sample) in samples[..self.width].iter_mut().enumerate() {
+                        *sample = plane.sample(x, y);
+                    }
                 }
                 let edge = samples[self.width - 1];
                 samples[self.width..].fill(edge);

@@ -47,21 +47,17 @@ const HALF_WEIGHTS: [[i32; 8]; 4] = [
     [16384, 20995, 15137, 7373, 0, -4926, -6270, -4176],
     [16384, 8697, -15137, -17799, 0, 11893, 6270, -1730],
     [16384, -8697, -15137, 17799, 0, -11893, 6270, 1730],
-    [16384, -20995, 15137, -7373, 0, 4926, -6270, 4176],
+    [16384, -20995, 15137, -7373, 0, 4926, -6270, 4176]
 ];
 
 const QUARTER_WEIGHTS: [[i32; 8]; 2] = [
     [32768, 29692, 0, -10426, 0, 6967, 0, -5906],
-    [32768, -29692, 0, 10426, 0, -6967, 0, 5906],
+    [32768, -29692, 0, 10426, 0, -6967, 0, 5906]
 ];
 
 fn reduced_idct<const SIDE: usize>(
-    coefficients: &[i32; 64],
-    output: &mut [i16],
-    stride: usize,
-    weights: &[[i32; 8]; SIDE],
-    column_shift: u32,
-    row_shift: u32,
+    coefficients: &[i32; 64], output: &mut [i16], stride: usize, weights: &[[i32; 8]; SIDE],
+    column_shift: u32, row_shift: u32
 ) {
     assert!(stride >= SIDE && output.len() >= (SIDE - 1) * stride + SIDE);
     let mut workspace = [[0_i32; 8]; SIDE];
@@ -69,7 +65,13 @@ fn reduced_idct<const SIDE: usize>(
         for column in 0..8 {
             let mut sum = 0_i32;
             for frequency in 0..8 {
-                sum = wa(sum, wm(coefficients[frequency * 8 + column], weights[row][frequency]));
+                sum = wa(
+                    sum,
+                    wm(
+                        coefficients[frequency * 8 + column],
+                        weights[row][frequency]
+                    )
+                );
             }
             workspace[row][column] = wa(sum, 1 << (column_shift - 1)) >> column_shift;
         }
@@ -78,7 +80,10 @@ fn reduced_idct<const SIDE: usize>(
         for column in 0..SIDE {
             let mut sum = 0_i32;
             for frequency in 0..8 {
-                sum = wa(sum, wm(workspace[row][frequency], weights[column][frequency]));
+                sum = wa(
+                    sum,
+                    wm(workspace[row][frequency], weights[column][frequency])
+                );
             }
             let sample = wa(sum, 1 << (row_shift - 1)) >> row_shift;
             output[row * stride + column] = clamp(wa(sample, 128));

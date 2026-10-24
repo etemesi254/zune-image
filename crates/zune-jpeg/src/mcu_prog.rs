@@ -1404,7 +1404,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         }
                         if let McuDecodeOutput::Scaled(scaled) = output {
                             scaled.write_block(
-                                position, j, i * component.vertical_sample + k, &mut tmp,
+                                position, j, i * component.vertical_sample + k, &tmp,
                             )?;
                             continue;
                         }
@@ -2307,7 +2307,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "std")]
     #[cfg(feature = "std")]
     fn progressive_smoothing_retry_does_not_commit_estimates_or_precision() {
         let data = smoothing_jpeg(true);
