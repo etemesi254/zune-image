@@ -1,3 +1,12 @@
+## Unreleased
+- Add explicit final-input handling for raw decoding while preserving resumable
+  streams and strict truncation errors.
+- Match accurate IDCT constants and rounding in scalar, AVX2, and NEON output.
+- Smooth incomplete progressive coefficients during reconstruction without
+  modifying stored coefficients or retry checkpoints.
+- Reject raw publication before every component has DC data while preserving
+  existing packed and scanline best-effort decoding.
+
 ## Version 0.5.7
 - Move scalar idct to wrapping maths.
 - Simd upsampling (mhils)
