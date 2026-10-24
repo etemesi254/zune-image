@@ -1,8 +1,8 @@
 [
   {
     "name": "incomplete_image.jpg",
-    "hash": 72474579475258543443741422974923660674,
-    "comment": "The image isn't full"
+    "hash": 68661873485518884521477706306294613983,
+    "comment": "Truncated input: completed rows plus neutral filler after EOF recovery"
   },
   {
     "name": "weird_components.jpg",
