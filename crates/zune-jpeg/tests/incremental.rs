@@ -11,17 +11,17 @@
 //! Verifies that `is_recoverable_eof()` is reported on truncated input
 //! and that retrying with more data produces correct output.
 
-use zune_core::bytestream::{ZByteReaderTrait, ZCursor};
-use zune_core::colorspace::ColorSpace;
-use zune_core::options::DecoderOptions;
-use zune_jpeg::errors::DecodeErrors;
-use zune_jpeg::{JpegDecoder, JpegScale, NeverCancel, RawDecodeSession, RawImcuRowStatus};
-
 use std::cell::{Cell, RefCell};
 use std::io::{BufRead, Cursor, Read, Seek, SeekFrom};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+
+use zune_core::bytestream::{ZByteReaderTrait, ZCursor};
+use zune_core::colorspace::ColorSpace;
+use zune_core::options::DecoderOptions;
+use zune_jpeg::errors::DecodeErrors;
+use zune_jpeg::{JpegDecoder, JpegScale, NeverCancel, RawDecodeSession, RawImcuRowStatus};
 
 /// A cursor over a byte slice with an adjustable visibility limit.
 ///
@@ -40,7 +40,7 @@ fn scaled_output_retries_without_publishing_partial_pixels() {
     let fixtures: [&[u8]; 3] = [
         include_bytes!("../../../test-images/jpeg/non_interleaved_444_64x64.jpg"),
         include_bytes!("../../../test-images/jpeg/non_interleaved_420_64x64.jpg"),
-        include_bytes!("../../../test-images/jpeg/progressive_restart_420.jpg"),
+        include_bytes!("../../../test-images/jpeg/progressive_restart_420.jpg")
     ];
     for data in fixtures {
         for scale in [JpegScale::Half, JpegScale::Quarter, JpegScale::Eighth] {
@@ -57,7 +57,9 @@ fn scaled_output_retries_without_publishing_partial_pixels() {
             limit.set(data.len());
             decoder.decode_into(&mut output).unwrap();
 
-            let mut reference = JpegDecoder::new(ZCursor::new(data)).into_scaled(scale).unwrap();
+            let mut reference = JpegDecoder::new(ZCursor::new(data))
+                .into_scaled(scale)
+                .unwrap();
             let mut expected = vec![0; length];
             reference.decode_into(&mut expected).unwrap();
             assert_eq!(output, expected);
