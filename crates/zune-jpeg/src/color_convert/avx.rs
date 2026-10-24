@@ -227,6 +227,38 @@ unsafe fn ycbcr_to_rgb_baseline_no_clamp(
     let mut b_lo = _mm256_madd_epi16(u_v_lo, cb_coeff);
     let mut b_hi = _mm256_madd_epi16(u_v_hi, cb_coeff);
 
+    // Recover native 16-bit coefficients while retaining signed 16-bit
+    // multiply-adds. The 14-bit red, blue, green coefficients need respective
+    // corrections Cr, 2*Cb, and -2*(Cr+Cb); rounding needs four more units.
+    let native_round = _mm256_set1_epi32(4);
+    y_lo = _mm256_add_epi32(_mm256_slli_epi32::<2>(y_lo), native_round);
+    y_hi = _mm256_add_epi32(_mm256_slli_epi32::<2>(y_hi), native_round);
+    r_lo = _mm256_add_epi32(
+        _mm256_slli_epi32::<2>(r_lo),
+        _mm256_madd_epi16(u_v_lo, _mm256_set1_epi32(1)),
+    );
+    r_hi = _mm256_add_epi32(
+        _mm256_slli_epi32::<2>(r_hi),
+        _mm256_madd_epi16(u_v_hi, _mm256_set1_epi32(1)),
+    );
+    b_lo = _mm256_add_epi32(
+        _mm256_slli_epi32::<2>(b_lo),
+        _mm256_madd_epi16(u_v_lo, _mm256_set1_epi32(2 << 16)),
+    );
+    b_hi = _mm256_add_epi32(
+        _mm256_slli_epi32::<2>(b_hi),
+        _mm256_madd_epi16(u_v_hi, _mm256_set1_epi32(2 << 16)),
+    );
+    let green_correction = _mm256_set1_epi32(-65538); // packed (-2, -2)
+    g_lo = _mm256_add_epi32(
+        _mm256_slli_epi32::<2>(g_lo),
+        _mm256_madd_epi16(u_v_lo, green_correction),
+    );
+    g_hi = _mm256_add_epi32(
+        _mm256_slli_epi32::<2>(g_hi),
+        _mm256_madd_epi16(u_v_hi, green_correction),
+    );
+
     r_lo = _mm256_add_epi32(r_lo, y_lo);
     r_hi = _mm256_add_epi32(r_hi, y_hi);
 
@@ -236,14 +268,14 @@ unsafe fn ycbcr_to_rgb_baseline_no_clamp(
     b_lo = _mm256_add_epi32(b_lo, y_lo);
     b_hi = _mm256_add_epi32(b_hi, y_hi);
 
-    r_lo = _mm256_srai_epi32::<14>(r_lo);
-    r_hi = _mm256_srai_epi32::<14>(r_hi);
+    r_lo = _mm256_srai_epi32::<16>(r_lo);
+    r_hi = _mm256_srai_epi32::<16>(r_hi);
 
-    g_lo = _mm256_srai_epi32::<14>(g_lo);
-    g_hi = _mm256_srai_epi32::<14>(g_hi);
+    g_lo = _mm256_srai_epi32::<16>(g_lo);
+    g_hi = _mm256_srai_epi32::<16>(g_hi);
 
-    b_lo = _mm256_srai_epi32::<14>(b_lo);
-    b_hi = _mm256_srai_epi32::<14>(b_hi);
+    b_lo = _mm256_srai_epi32::<16>(b_lo);
+    b_hi = _mm256_srai_epi32::<16>(b_hi);
 
     let r = _mm256_packus_epi32(r_lo, r_hi);
     let g = _mm256_packus_epi32(g_lo, g_hi);
