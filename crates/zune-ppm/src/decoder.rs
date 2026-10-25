@@ -593,11 +593,13 @@ where
                 };
 
                 // pfm uses bottom-top orientation, so let's fix it
-                let length = result.len() / 2;
+                let single_stride = self.width * self.colorspace.num_components();
+                // split at a row boundary, an odd height leaves the middle row in place
+                let length = (self.height / 2) * single_stride;
 
                 let (in_img_top, in_img_bottom) = result.split_at_mut(length);
+                let in_img_bottom = &mut in_img_bottom[(self.height % 2) * single_stride..];
 
-                let single_stride = self.width * self.colorspace.num_components();
                 let mut stride = vec![0.; single_stride];
 
                 for (in_dim, out_dim) in in_img_top
