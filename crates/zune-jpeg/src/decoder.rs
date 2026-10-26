@@ -397,15 +397,12 @@ pub struct JpegDecoder<T> {
     /// Number of output bytes known to be stable after the most recent
     /// `decode_into` attempt.
     pub(crate) pixels_decoded:              usize,
-    /// Persistent coefficient buffers for multi-SOS baseline decoding.
-    ///
-    /// Owned by the decoder so contents survive a recoverable EOF and the
-    /// next `decode_into` retry can resume from where it stopped without
-    /// copying anything. Progressive decoding also uses these as the committed
-    /// coefficient buffers for completed scans. The inner `Vec`s are reused
-    /// across `decode_into` calls; capacity is reclaimed only when the decoder
-    /// is dropped.
+    /// Committed quantized coefficients for completed progressive scans.
     pub(crate) progressive_mcus_buffer: [Vec<i16>; MAX_COMPONENTS],
+    /// Persistent dequantized coefficients for multi-SOS sequential decoding.
+    /// Repeated scans update existing blocks, including across suspended input.
+    pub(crate) baseline_coefficients: [Vec<i32>; MAX_COMPONENTS],
+    pub(crate) baseline_seen_components: [bool; MAX_COMPONENTS],
     /// Active progressive scan scratch buffers.
     ///
     /// Storage is retained across EOF or cancellation so retries can reuse its
@@ -2176,6 +2173,8 @@ where
             incremental_mode:            false,
             scan_decode_attempted:       false,
             progressive_mcus_buffer:     core::array::from_fn(|_| Vec::new()),
+            baseline_coefficients:       core::array::from_fn(|_| Vec::new()),
+            baseline_seen_components:    [false; MAX_COMPONENTS],
             progressive_scan_buffer: core::array::from_fn(|_| Vec::new()),
             upsampler_scratch: Vec::new(),
             progressive_completed_scans: 0,
@@ -2490,7 +2489,10 @@ where
                     .get(index)
                     .map_or(0, |component| component.raw_coeff.capacity())
             }),
-            core::array::from_fn(|index| self.progressive_mcus_buffer[index].capacity())
+            core::array::from_fn(|index| {
+                self.progressive_mcus_buffer[index].capacity()
+                    + self.baseline_coefficients[index].capacity()
+            })
         )
     }
 
@@ -4419,6 +4421,10 @@ mod planar_layout_helpers {
 
         assert!(decoder
             .progressive_mcus_buffer
+            .iter()
+            .all(|buffer| buffer.capacity() == 0));
+        assert!(decoder
+            .baseline_coefficients
             .iter()
             .all(|buffer| buffer.capacity() == 0));
         assert!(decoder.scanline_state.staging.capacity() <= row_bytes * 36);
