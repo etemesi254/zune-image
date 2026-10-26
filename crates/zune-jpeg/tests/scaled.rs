@@ -139,6 +139,39 @@ fn scaled_non_interleaved_native_parity() {
 }
 
 #[test]
+fn scaled_interleaved_scalar_chroma_matches_dispatched() {
+    // Half-scale 4:2:0 uses full-size chroma IDCTs. Scalar transforms must
+    // not overwrite the entropy decoder's reusable sparse coefficients.
+    let data = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    for scale in [JpegScale::Half, JpegScale::Quarter, JpegScale::Eighth] {
+        let decode = |use_simd| {
+            let options = DecoderOptions::default().set_use_unsafe(use_simd);
+            let mut decoder = JpegDecoder::new_with_options(ZCursor::new(data.as_slice()), options)
+                .into_scaled(scale)
+                .unwrap();
+            assert_eq!(
+                decoder.dimensions(),
+                (
+                    388_usize.div_ceil(scale.denominator()),
+                    477_usize.div_ceil(scale.denominator())
+                )
+            );
+            let mut pixels = vec![0; decoder.output_buffer_size().unwrap()];
+            decoder.decode_into(&mut pixels).unwrap();
+            pixels
+        };
+        let scalar = decode(false);
+        let dispatched = decode(true);
+        assert_eq!(scalar.len(), dispatched.len());
+        assert_eq!(
+            scalar.iter().zip(&dispatched).position(|(a, b)| a != b),
+            None,
+            "scalar/dispatched chroma mismatch at {scale:?}"
+        );
+    }
+}
+
+#[test]
 fn scaled_progressive_restart_native_parity() {
     check_native_output(
         include_bytes!("../../../test-images/jpeg/progressive_restart_420.jpg"),
