@@ -2966,11 +2966,13 @@ fn baseline_scan_eof_respects_lenient_and_incremental_modes() {
         lenient.iter().any(|byte| *byte != 0),
         "lenient truncated decode should produce best-effort pixels"
     );
-    // Completed rows use accurate IDCT reconstruction. The row that consumed
+// Completed rows use accurate IDCT and native fancy-filter reconstruction.
+    // Restoring only the old filters reproduces the prior 0x64ae_c14a_eaa3_e181.
+    // The row that consumed
     // padding past the end of the input, and every later row, stay neutral.
     assert_eq!(
         fnv1a(&lenient),
-        0x64ae_c14a_eaa3_e181,
+        0x3e64_e016_c32e_6859,
         "lenient output should match accurate-IDCT completed rows plus neutral filler"
     );
 
@@ -2996,6 +2998,30 @@ fn baseline_multi_sos_lenient_eof_preserves_neutral_output() {
             "cutoff {cutoff}: incomplete component scans should produce neutral output"
         );
     }
+}
+
+#[test]
+fn dnl_preserves_visible_chroma_edges_before_height_is_known() {
+    let base = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let expected = decode_oneshot(base);
+    let sof = list_jpeg_markers(base)
+        .into_iter()
+        .find(|(_, marker, _)| *marker == 0xC0)
+        .expect("fixture has sequential Huffman SOF")
+        .0;
+    let height = u16::from_be_bytes([base[sof + 5], base[sof + 6]]);
+    let eoi = base
+        .windows(2)
+        .rposition(|marker| marker == [0xFF, 0xD9])
+        .unwrap();
+    let mut data = base.to_vec();
+    data[sof + 5..sof + 7].fill(0);
+    data.splice(
+        eoi..eoi,
+        [0xFF, 0xDC, 0, 4, (height >> 8) as u8, height as u8]
+    );
+    let actual = decode_oneshot(&data);
+    assert_pixels_match(&actual, &expected, "DNL chroma edges", data.len());
 }
 
 #[test]
