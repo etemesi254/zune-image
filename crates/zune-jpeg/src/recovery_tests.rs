@@ -111,6 +111,27 @@ fn bad_huffman_code_consumes_seventeen_bits_only_in_lenient_mode() {
 }
 
 #[test]
+fn buffered_publication_tracks_eoi_after_trailing_metadata() {
+    for eoi in [false, true] {
+        let mut data = frame(8, 8, &[(1, 0x11), (2, 0x11), (3, 0x11)]);
+        for component in 1..=3 {
+            scan(&mut data, &[component], &[(0, false)]);
+        }
+        data.extend_from_slice(&[0xFF, 0xE3, 0, 2, 0xFF, 0xFE, 0, 6, b't', b'e', b's', b't']);
+        if eoi {
+            data.extend_from_slice(&[0xFF, 0xD9]);
+        }
+        let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&data), options(false));
+        assert_eq!(decoder.buffered_output_rows(), None);
+        assert_eq!(decoder.decode().unwrap(), [128; 8 * 8 * 3]);
+        assert_eq!(
+            decoder.buffered_output_rows(),
+            Some(if eoi { 8 } else { 0 })
+        );
+    }
+}
+
+#[test]
 fn invalid_ac_run_does_not_wrap_and_overwrite_dc() {
     let mut data = frame(8, 8, &[(1, 0x11), (2, 0x11), (3, 0x11)]);
     *data.last_mut().unwrap() = 0xF1;
@@ -121,6 +142,7 @@ fn invalid_ac_run_does_not_wrap_and_overwrite_dc() {
     decoder.decode().unwrap();
     assert_eq!(decoder.baseline_coefficients[0][0], 0);
     assert_eq!(decoder.baseline_coefficients[0][63], 8);
+    assert_eq!(decoder.buffered_output_rows(), Some(8));
     let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&data), options(true));
     assert!(decoder.decode().is_err());
 }
@@ -199,6 +221,48 @@ fn repeated_sequential_scan_after_complete_image_keeps_committed_coefficients() 
 }
 
 #[test]
+fn buffered_sequential_publication_tracks_native_input_completion() {
+    for case in [
+        "clean",
+        "incomplete",
+        "bad_huffman",
+        "discarded_entropy",
+        "discarded_before_eoi"
+    ] {
+        let mut data = frame(8, 8, &[(1, 0x11), (2, 0x11), (3, 0x11)]);
+        if case == "bad_huffman" {
+            data.extend_from_slice(&[0xFF, 0xDA, 0, 8, 1, 1, 0, 0, 63, 0, 0xFF, 0, 0xFF, 0, 0x9F]);
+        } else {
+            scan(&mut data, &[1], &[(0, false)]);
+        }
+        if case == "discarded_entropy" {
+            data.extend_from_slice(&[0x12; 12]);
+        }
+        scan(&mut data, &[2, 3], &[(0, false); 2]);
+        if case == "discarded_before_eoi" {
+            data.extend_from_slice(&[0x12; 12]);
+        }
+        if case != "incomplete" {
+            data.extend_from_slice(&[0xFF, 0xD9]);
+        }
+        let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&data), options(false));
+        assert_eq!(decoder.decode().unwrap(), [128; 8 * 8 * 3], "{case}");
+        assert_eq!(
+            decoder.buffered_output_rows(),
+            Some(if matches!(case, "clean" | "discarded_before_eoi") { 8 } else { 0 }),
+            "{case}"
+        );
+    }
+
+    let mut data = frame(8, 8, &[(1, 0x11), (2, 0x11), (3, 0x11)]);
+    scan(&mut data, &[1, 2, 3], &[(0, false); 3]);
+    data.extend_from_slice(&[0xFF, 0xD9]);
+    let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&data), options(false));
+    decoder.decode().unwrap();
+    assert_eq!(decoder.buffered_output_rows(), None);
+}
+
+#[test]
 fn premature_scan_marker_is_recoverable_only_in_lenient_mode() {
     let mut data = frame(16, 16, &[(1, 0x11)]);
     scan(&mut data, &[1], &[(0, false)]);
@@ -207,6 +271,32 @@ fn premature_scan_marker_is_recoverable_only_in_lenient_mode() {
     assert!(strict.decode().is_err());
     let mut lenient = JpegDecoder::new_with_options(ZCursor::new(&data), options(false));
     assert_eq!(lenient.decode().unwrap().len(), 16 * 16 * 3);
+}
+
+#[test]
+fn buffered_fast_huffman_recovery_preserves_publication() {
+    for bad_last in [false, true] {
+        let mut data = frame(8, 8, &[(1, 0x11), (2, 0x11), (3, 0x11)]);
+        if bad_last {
+            scan(&mut data, &[1], &[(0, false)]);
+            scan(&mut data, &[2], &[(0, false)]);
+        }
+        let component = if bad_last { 3 } else { 1 };
+        data.extend_from_slice(&[
+            0xff, 0xda, 0, 8, 1, component, 0, 0, 63, 0, 0xff, 0, 0xff, 0, 0x9f
+        ]);
+        if !bad_last {
+            scan(&mut data, &[2, 3], &[(0, false); 2]);
+        }
+        data.extend_from_slice(&[0; 2048]);
+        data.extend_from_slice(&[0xff, 0xd9]);
+        let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&data), options(false));
+        assert_eq!(decoder.decode().unwrap(), [128; 8 * 8 * 3]);
+        assert_eq!(
+            decoder.buffered_output_rows(),
+            Some(if bad_last { 8 } else { 0 })
+        );
+    }
 }
 
 #[test]

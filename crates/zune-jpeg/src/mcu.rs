@@ -20,7 +20,7 @@ use crate::components::SampleRatios;
 use crate::decoder::{HeaderAppendStateSnapshot, McuDecodeOutput, MAX_COMPONENTS};
 use crate::errors::DecodeErrors;
 use crate::marker::Marker;
-use crate::mcu_prog::get_marker;
+use crate::mcu_prog::get_marker_with_discarded;
 use crate::misc::{calculate_padded_width, setup_component_params};
 use crate::worker::{color_convert, upsample};
 use crate::JpegDecoder;
@@ -68,7 +68,39 @@ fn prepare_baseline_coefficients(
 mod coefficient_buffer_tests {
     use alloc::vec;
 
-    use super::{baseline_coefficient_count, prepare_baseline_coefficients, DCT_BLOCK};
+    use zune_core::bytestream::ZCursor;
+
+    use super::{
+        baseline_coefficient_count, prepare_baseline_coefficients, JpegDecoder, DCT_BLOCK
+    };
+
+    #[test]
+    fn native_fast_input_window_requires_its_budget_and_no_marker() {
+        let mut stuffed = vec![0; 512];
+        stuffed[0] = 0xff;
+        let mut marker = stuffed.clone();
+        marker[1] = 0xd9;
+        let mut trailing_prefix = vec![0; 512];
+        trailing_prefix[511] = 0xff;
+        for (data, blocks, expected) in [
+            (vec![0; 511], 1, false),
+            (vec![0; 512], 1, true),
+            (vec![0; 512], 2, false),
+            (vec![0; 1024], 2, true),
+            (stuffed, 1, true),
+            (marker, 1, false),
+            (trailing_prefix, 1, false)
+        ] {
+            let mut decoder = JpegDecoder::new(ZCursor::new(&data));
+            assert_eq!(
+                decoder.native_fast_huffman_window(blocks).unwrap(),
+                expected
+            );
+            assert_eq!(decoder.stream.position().unwrap(), 0);
+        }
+        let mut decoder = JpegDecoder::new(ZCursor::new(&[]));
+        assert!(decoder.native_fast_huffman_window(usize::MAX).is_err());
+    }
 
     #[test]
     fn checked_geometry_counts_all_sampling_factors() {
@@ -286,6 +318,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let raw_mode = output.is_raw();
         if !resuming {
             self.baseline_seen_components.fill(false);
+            self.baseline_eoi_seen = false;
+            self.baseline_corrupt = false;
         }
 
         for (pos, comp) in self.components.iter_mut().enumerate() {
@@ -515,6 +549,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         Vec::new()
                     };
                 let seen_components = self.baseline_seen_components;
+                let baseline_corrupt = self.baseline_corrupt;
 
                 // decode a whole MCU width,
                 // this takes into account interleaved components.
@@ -570,6 +605,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             .copy_from_slice(coefficients);
                     }
                     self.baseline_seen_components = seen_components;
+                    self.baseline_corrupt = baseline_corrupt;
                 }
 
                 let terminate = match terminate_result {
@@ -876,7 +912,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             // did not discover that marker while decoding coefficients, look
             // for it before treating the image as complete.
             if !all_components_in_first_scan && !*stream.seen_eoi() {
-                match get_marker(&mut self.stream, &mut stream) {
+                match self.get_baseline_marker(&mut stream) {
                     Ok(Marker::EOI) => {
                         *stream.seen_eoi() = true;
                         break;
@@ -931,7 +967,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         if self.expects_dnl {
             let scan_components = self.z_order;
             let scan_component_count = usize::from(self.num_scans);
-            match get_marker(&mut self.stream, &mut stream) {
+            match self.get_baseline_marker(&mut stream) {
                 Ok(Marker::DNL) => {
                     let length = self.stream.get_u16_be_err()?;
                     if length != 4 {
@@ -978,7 +1014,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         // So this ensures we reach it
         // Ensure we read EOI
         if !*stream.seen_eoi() && !stopped_at_extra_sos {
-            let marker = get_marker(&mut self.stream, &mut stream);
+            let marker = self.get_baseline_marker(&mut stream);
             match marker {
                 Ok(Marker::EOI) => {
                     self.reassemble_extended_xmp();
@@ -1063,9 +1099,44 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
         trace!("Finished decoding image");
 
+        self.baseline_corrupt |= stream.has_corrupt_data();
+        self.baseline_eoi_seen |= *stream.seen_eoi();
         output.mark_source_complete();
 
         Ok(())
+    }
+
+    fn get_baseline_marker<B: BitStream>(
+        &mut self, stream: &mut B
+    ) -> Result<Marker, DecodeErrors> {
+        self.baseline_corrupt |= stream.has_corrupt_data();
+        let (marker, discarded) = get_marker_with_discarded(&mut self.stream, stream)?;
+        if discarded != 0 {
+            // A warning raised while reaching EOI does not halt native output.
+            if marker != Marker::EOI {
+                self.baseline_corrupt = true;
+            }
+            warn!("Discarded {discarded} bytes before JPEG scan marker");
+        }
+        Ok(marker)
+    }
+
+    fn native_fast_huffman_window(&mut self, blocks: usize) -> Result<bool, DecodeErrors> {
+        let length = blocks
+            .checked_mul(DCT_BLOCK * 8)
+            .ok_or(DecodeErrors::FormatStatic(
+                "Huffman MCU input budget overflow"
+            ))?;
+        let bytes = match self.stream.peek_at(0, length) {
+            Ok(bytes) => bytes,
+            Err(error) if error.is_recoverable_eof() => return Ok(false),
+            Err(error) => return Err(error.into())
+        };
+        // Native's fast MCU decoder does not warn for recovered Huffman codes.
+        // Its 512-byte-per-block guard and an uninterrupted entropy window
+        // guarantee that it does not fall back to the warning-producing path.
+        Ok(bytes.last() != Some(&0xff)
+            && !bytes.windows(2).any(|pair| pair[0] == 0xff && pair[1] != 0))
     }
 
     /// Process all MCUs when baseline decoding has been processing them component-after-component.
@@ -1244,6 +1315,17 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
         let z_order = self.z_order;
         let z_scans = &z_order[..usize::from(self.num_scans)];
+        let blocks_in_mcu = z_scans
+            .iter()
+            .map(|&index| {
+                if SAMPLED {
+                    self.components[index].horizontal_sample
+                        * self.components[index].vertical_sample
+                } else {
+                    1
+                }
+            })
+            .sum();
 
         // How much of the head of `tmp` was written by the last MCU decoding? We only check for
         // two different cases and not all possible outcomes as this is only used to optimize the
@@ -1264,6 +1346,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         };
 
         for j in start_col..scan_du_width {
+            let native_fast_window = PROGRESSIVE && !self.baseline_corrupt
+                && self.restart_interval == 0 && stream.marker().is_none()
+                && self.native_fast_huffman_window(blocks_in_mcu)?;
             stream.begin_mcu();
             // iterate over components
             for &k in z_scans {
@@ -1384,6 +1469,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             if self.stream.eof()? {
                                 return Err(DecodeErrors::ExhaustedData);
                             }
+                            self.baseline_corrupt = true;
                             return if self.options.strict_mode() {
                                 Err(err)
                             } else {
@@ -1458,6 +1544,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 }
             }
 
+            if native_fast_window && stream.marker().is_none() {
+                stream.clear_huffman_code_warning();
+            }
+            self.baseline_corrupt |= stream.has_corrupt_data();
             self.todo = self.todo.wrapping_sub(1);
 
             if self.todo == 0 {
@@ -1756,7 +1846,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             }
             markers_seen += 1;
             restore_inter_scan_on_suspend!(self.check_cancelled());
-            let marker = restore_inter_scan_on_suspend!(get_marker(&mut self.stream, stream));
+            let marker = restore_inter_scan_on_suspend!(self.get_baseline_marker(stream));
 
             match marker {
                 // Decided before parsing the SOS header: the image is already complete.

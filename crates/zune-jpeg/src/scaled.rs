@@ -91,6 +91,15 @@ impl<T: ZByteReaderTrait> ScaledJpegDecoder<T> {
         (self.output.width, self.output.height)
     }
 
+    /// Buffered publication bound in coded-pixel rows, not reduced rows.
+    ///
+    /// Forward [`JpegDecoder::buffered_output_rows`] without changing geometry.
+    /// Consumers must apply the selected scale denominator.
+    #[must_use]
+    pub fn buffered_output_rows(&self) -> Option<usize> {
+        self.decoder.buffered_output_rows()
+    }
+
     /// Required packed output bytes, or `None` if the size overflows.
     pub fn output_buffer_size(&self) -> Option<usize> {
         self.output

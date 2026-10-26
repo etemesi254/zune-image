@@ -403,6 +403,9 @@ pub struct JpegDecoder<T> {
     /// Repeated scans update existing blocks, including across suspended input.
     pub(crate) baseline_coefficients:            [Vec<i32>; MAX_COMPONENTS],
     pub(crate) baseline_seen_components:         [bool; MAX_COMPONENTS],
+    pub(crate) baseline_eoi_seen:                bool,
+    /// Corruption halting buffered input before EOI; full recovery is unchanged.
+    pub(crate) baseline_corrupt:                 bool,
     /// Active progressive scan scratch buffers.
     ///
     /// Storage is retained across EOF or cancellation so retries can reuse its
@@ -417,6 +420,10 @@ pub struct JpegDecoder<T> {
     pub(crate) progressive_last_good_row:        usize,
     /// Pending row position; discarded scans must not change smoothing precision.
     pub(crate) progressive_scan_last_good_row:   usize,
+    /// Complete input iMCU rows in the current progressive scan.
+    pub(crate) progressive_input_rows:           usize,
+    /// Whether the progressive input contained an actual EOI marker.
+    pub(crate) progressive_eoi_seen:             bool,
     /// The first progressive scan has no previous precision to fall back to.
     pub(crate) progressive_smoothing_first_scan: bool,
     /// Number of committed progressive scans currently rendered as preview
@@ -2179,11 +2186,15 @@ where
             progressive_mcus_buffer:          core::array::from_fn(|_| Vec::new()),
             baseline_coefficients:            core::array::from_fn(|_| Vec::new()),
             baseline_seen_components:         [false; MAX_COMPONENTS],
+            baseline_eoi_seen:                false,
+            baseline_corrupt:                 false,
             progressive_scan_buffer:          core::array::from_fn(|_| Vec::new()),
             upsampler_scratch:                Vec::new(),
             progressive_completed_scans:      0,
             progressive_last_good_row:        0,
             progressive_scan_last_good_row:   0,
+            progressive_input_rows:           0,
+            progressive_eoi_seen:             false,
             progressive_smoothing_first_scan: true,
             progressive_displayed_scans:      0,
             progressive_render_incomplete:    false,
@@ -2350,6 +2361,52 @@ where
             return None;
         }
         Some(self.progressive_completed_scans)
+    }
+
+    /// Return the coded-pixel row prefix available from buffered scan decoding.
+    ///
+    /// After a successful buffered decode, incremental consumers can publish this
+    /// prefix instead of displaying the previous completed scan's full-frame preview.
+    /// Every progressive DC component must be present before publication.
+    /// DC smoothing requires two future iMCU rows until a real EOI is seen.
+    /// Buffered sequential images cannot publish before EOI or after corruption
+    /// halted input before EOI.
+    /// Full-frame best-effort decoding and raw output are unchanged.
+    /// Returns `None` before headers, for ordinary stripe-based sequential output,
+    /// or for legacy best-effort merged DC/AC scans without progressive row bounds.
+    #[must_use]
+    pub fn buffered_output_rows(&self) -> Option<usize> {
+        if !self.headers_decoded {
+            return None;
+        }
+        let height = usize::from(self.height());
+        if !self.is_progressive {
+            return self
+                .baseline_coefficients
+                .iter()
+                .any(|buffer| !buffer.is_empty())
+                .then_some(if self.baseline_eoi_seen && !self.baseline_corrupt {
+                    height
+                } else {
+                    0
+                });
+        }
+        if self.spec_start == 0 && self.spec_end != 0 {
+            return None;
+        }
+        if self
+            .components
+            .iter()
+            .any(|component| component.progressive_bits[0] < 0)
+        {
+            return Some(0);
+        }
+        if self.progressive_eoi_seen {
+            return Some(height);
+        }
+        let lookahead =
+            if self.spec_start == 0 && self.progressive_smoothing_enabled() { 2 } else { 0 };
+        Some((self.progressive_input_rows.saturating_sub(lookahead) * self.v_max * 8).min(height))
     }
 
     /// Return the number of output bytes currently holding a progressive
