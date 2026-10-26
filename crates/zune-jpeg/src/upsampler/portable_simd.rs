@@ -6,7 +6,7 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-use std::simd::prelude::*;
+use core::simd::prelude::*;
 
 const LANES: usize = 16;
 type V = Simd<i16, LANES>;
