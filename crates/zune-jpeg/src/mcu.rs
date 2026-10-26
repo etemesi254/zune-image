@@ -1730,6 +1730,49 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         }
 
         let mut px = *pixels_written;
+        if self.h_max == 0 || self.v_max == 0 {
+            return Err(DecodeErrors::FormatStatic("Invalid component sampling"));
+        }
+        for component in &mut self.components {
+            if component.raw_coeff.is_empty() {
+                continue;
+            }
+            let visible_width = (width * component.horizontal_sample).div_ceil(self.h_max);
+            let visible_height =
+                (usize::from(self.info.height) * component.vertical_sample).div_ceil(self.v_max);
+            let stride = component.width_stride;
+            if visible_width == 0
+                || visible_width > stride
+                || component.raw_coeff.len() % stride != 0
+            {
+                return Err(DecodeErrors::FormatStatic(
+                    "Invalid component reconstruction dimensions"
+                ));
+            }
+            let rows = component.raw_coeff.len() / stride;
+            // DNL leaves the height unknown, but horizontal edges are already known.
+            let valid_rows = if self.expects_dnl {
+                rows
+            } else {
+                visible_height.saturating_sub(i * rows).min(rows)
+            };
+            if valid_rows == 0 {
+                continue;
+            }
+            for row in component
+                .raw_coeff
+                .chunks_exact_mut(stride)
+                .take(valid_rows)
+            {
+                let edge = row[visible_width - 1];
+                row[visible_width..].fill(edge);
+            }
+            for row in valid_rows..rows {
+                component
+                    .raw_coeff
+                    .copy_within((valid_rows - 1) * stride..valid_rows * stride, row * stride);
+            }
+        }
         // indicates whether image is vertically up-sampled
         let is_vertically_sampled = self
             .components
