@@ -11,17 +11,17 @@
 //! Verifies that `is_recoverable_eof()` is reported on truncated input
 //! and that retrying with more data produces correct output.
 
-use zune_core::bytestream::{ZByteReaderTrait, ZCursor};
-use zune_core::colorspace::ColorSpace;
-use zune_core::options::DecoderOptions;
-use zune_jpeg::errors::DecodeErrors;
-use zune_jpeg::{JpegDecoder, NeverCancel, RawDecodeSession, RawImcuRowStatus};
-
 use std::cell::{Cell, RefCell};
 use std::io::{BufRead, Cursor, Read, Seek, SeekFrom};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+
+use zune_core::bytestream::{ZByteReaderTrait, ZCursor};
+use zune_core::colorspace::ColorSpace;
+use zune_core::options::DecoderOptions;
+use zune_jpeg::errors::DecodeErrors;
+use zune_jpeg::{JpegDecoder, JpegScale, NeverCancel, RawDecodeSession, RawImcuRowStatus};
 
 /// A cursor over a byte slice with an adjustable visibility limit.
 ///
@@ -33,6 +33,38 @@ struct GrowableCursor<'a> {
     position: usize,
     limit:    Rc<Cell<usize>>,
     seek_log: Option<Rc<RefCell<Vec<usize>>>>
+}
+
+#[test]
+fn scaled_output_retries_without_publishing_partial_pixels() {
+    let fixtures: [&[u8]; 3] = [
+        include_bytes!("../../../test-images/jpeg/non_interleaved_444_64x64.jpg"),
+        include_bytes!("../../../test-images/jpeg/non_interleaved_420_64x64.jpg"),
+        include_bytes!("../../../test-images/jpeg/progressive_restart_420.jpg")
+    ];
+    for data in fixtures {
+        for scale in [JpegScale::Half, JpegScale::Quarter, JpegScale::Eighth] {
+            let limit = Rc::new(Cell::new(data.len()));
+            let source = GrowableCursor::new(data, Rc::clone(&limit));
+            let mut decoder = JpegDecoder::new(source).into_scaled(scale).unwrap();
+            decoder.set_incremental_mode(true);
+            let length = decoder.output_buffer_size().unwrap();
+            let mut output = vec![0xa5; length];
+            limit.set(data.len() / 2);
+            let error = decoder.decode_into(&mut output).unwrap_err();
+            assert!(error.is_recoverable_eof(), "{error:?}");
+            assert!(output.iter().all(|&byte| byte == 0xa5));
+            limit.set(data.len());
+            decoder.decode_into(&mut output).unwrap();
+
+            let mut reference = JpegDecoder::new(ZCursor::new(data))
+                .into_scaled(scale)
+                .unwrap();
+            let mut expected = vec![0; length];
+            reference.decode_into(&mut expected).unwrap();
+            assert_eq!(output, expected);
+        }
+    }
 }
 
 impl<'a> GrowableCursor<'a> {
@@ -2577,16 +2609,12 @@ fn baseline_scan_eof_respects_lenient_and_incremental_modes() {
         lenient.iter().any(|byte| *byte != 0),
         "lenient truncated decode should produce best-effort pixels"
     );
-    // The digest changed from `0x1eab_e750_2dcb_ddc3` (the legacy pixels) when a
-    // row that consumed the zero padding appended past the end of the data
-    // stopped being published even in part: every completed row before it is
-    // the same best-effort content as before, and the row that ran out of
-    // data — whose last block carried values decoded from padding — and
-    // everything after it are the neutral filler instead.
+    // Completed rows use accurate IDCT reconstruction. The row that consumed
+    // padding past the end of the input, and every later row, stay neutral.
     assert_eq!(
         fnv1a(&lenient),
-        0x4297eaaf2b39cae4,
-        "lenient output should match the completed rows plus the neutral filler"
+        0x64ae_c14a_eaa3_e181,
+        "lenient output should match accurate-IDCT completed rows plus neutral filler"
     );
 
     let strict_error = decode_with_mode(truncated, false, true)
@@ -2599,16 +2627,23 @@ fn baseline_scan_eof_respects_lenient_and_incremental_modes() {
 }
 
 #[test]
-fn baseline_multi_sos_lenient_eof_preserves_neutral_output() {
+fn baseline_multi_sos_lenient_eof_recovers_available_data() {
     let data = include_bytes!("../../../test-images/jpeg/tiny_non_interleaved_444.jpg");
     let cutoffs = [sos_data_start(data, 0) + 4, sos_data_start(data, 2) + 3];
 
-    for cutoff in cutoffs {
+    for (cutoff, expected) in cutoffs
+        .into_iter()
+        .zip([fnv1a(&vec![128; 16 * 16 * 3]), 0x4dc1_f675_3e30_f1f5])
+    {
         let pixels = decode_with_mode(&data[..cutoff], false, false)
             .expect("non-strict one-shot decode should accept a truncated component scan");
-        assert!(
-            pixels.iter().all(|byte| *byte == 128),
-            "cutoff {cutoff}: incomplete component scans should produce neutral output"
+        assert_eq!(pixels.len(), 16 * 16 * 3);
+        // Missing components retain the neutral placeholder; completed component
+        // data before final EOF matches the production libjpeg-turbo reference.
+        assert_eq!(
+            fnv1a(&pixels),
+            expected,
+            "cutoff {cutoff}: preserve neutral or recoverable component data"
         );
     }
 }

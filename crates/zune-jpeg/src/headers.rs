@@ -604,6 +604,8 @@ pub(crate) fn parse_sos<T: ZByteReaderTrait>(
             let component = &mut image.components[j];
             component.dc_huff_table = usize::from((y >> 4) & 0xF);
             component.ac_huff_table = usize::from(y & 0xF);
+            component.dc_pred = 0;
+            component.dc_diff = 0;
             trace!(
                 "Assigned huffman tables {}/{} to component {j}, id={}",
                 component.dc_huff_table,
@@ -615,6 +617,11 @@ pub(crate) fn parse_sos<T: ZByteReaderTrait>(
         image.spec_end = spec_end;
         image.succ_high = succ_high;
         image.succ_low = succ_low;
+        image.todo = if image.restart_interval == 0 {
+            0x7fff_ffff
+        } else {
+            image.restart_interval
+        };
 
         trace!("Ss={spec_start}, Se={spec_end} Ah={succ_high} Al={succ_low}");
 
