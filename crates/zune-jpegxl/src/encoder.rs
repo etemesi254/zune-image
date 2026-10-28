@@ -569,15 +569,15 @@ where
                 .put_bits(code.lz77_cache_nbits[count], code.lz77_cache_bits[count]);
         } else {
             encode_hybrid_uint_lz77(count as u32, &mut token, &mut nbits, &mut bits);
-            let mut wbits = bits;
+            let mut wbits = u64::from(bits);
             let token_s = token as usize;
 
-            wbits = (wbits << code.lz77_nbits[token_s]) | u32::from(code.lz77_bits[token_s]);
-            wbits = (wbits << code.raw_nbits[0]) | u32::from(code.raw_bits[0]);
+            wbits = (wbits << code.lz77_nbits[token_s]) | u64::from(code.lz77_bits[token_s]);
+            wbits = (wbits << code.raw_nbits[0]) | u64::from(code.raw_bits[0]);
 
             let nbit_w = code.lz77_nbits[token_s] + (nbits & 0xFF) as u8 + code.raw_nbits[0];
 
-            self.output.put_bits(nbit_w, u64::from(wbits))
+            self.output.put_bits(nbit_w, wbits)
         }
     }
     fn chunk(&mut self, run: usize, residuals: &[T::Upixel], skip: usize, n: usize) {
