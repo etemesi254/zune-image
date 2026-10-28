@@ -247,6 +247,18 @@ fn assert_incremental_decode_matrix(cases: &[(&str, &[u8], usize)]) {
     }
 }
 
+#[test]
+fn baseline_restart_cross_row_bytewise_retries_match_native() {
+    let data = include_bytes!("../../../test-images/jpeg/restart_cross_row_128x128.jpg");
+    // Independent native RGB digest for issue #509's exact 48/208 stripe.
+    assert_eq!(fnv1a(&decode_oneshot(data)), 0xf502_ffa2_2304_2325);
+    let name = "restart interval crossing MCU rows";
+    assert_incremental_decode_matches_oneshot(name, data, 1);
+    assert_incremental_raw_decode_matches_oneshot(name, data, 1);
+    assert_incremental_raw_strided_decode_matches_oneshot(name, data, 1);
+    assert_incremental_raw_pull_matches_oneshot(name, data, 1);
+}
+
 fn assert_decode_into_replay_matches_oneshot(name: &str, data: &[u8]) {
     let expected = decode_oneshot(data);
 

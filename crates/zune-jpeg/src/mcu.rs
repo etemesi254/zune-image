@@ -1361,7 +1361,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     }
 
     fn check_stream_marker_after_mcu_width<B: BitStream>(
-        &mut self, stream: &mut B, is_last_row: bool, mcu_row: usize,
+        &mut self, stream: &mut B, is_last_row: bool, mcu_row: usize
     ) -> Result<McuContinuation, DecodeErrors> {
         // After all interleaved components, that's an MCU
         // handle stream markers
@@ -1422,8 +1422,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 // https://github.com/google/libultrahdr
                 *stream.seen_eoi() = true;
             } else if let Marker::RST(_) = m {
-                // A latched RST means the entropy segment is already exhausted.
-                self.handle_rst(stream)?;
+                // Read-ahead can latch RST while buffered MCUs still belong to
+                // this interval. Only reset the stream when the interval is due.
+                if self.todo == 0 {
+                    self.handle_rst(stream)?;
+                }
             } else if let Marker::SOS = m {
                 // Left latched and unparsed: the caller decides whether another
                 // scan is valid before parsing its header.

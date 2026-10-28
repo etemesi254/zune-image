@@ -1,3 +1,6 @@
+## Unreleased
+- Preserve buffered entropy and DC predictors when restart intervals cross MCU-row boundaries.
+
 ## Version 0.5.7
 - Move scalar idct to wrapping maths.
 - Simd upsampling (mhils)
