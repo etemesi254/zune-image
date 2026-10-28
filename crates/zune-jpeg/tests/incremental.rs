@@ -248,6 +248,33 @@ fn assert_incremental_decode_matrix(cases: &[(&str, &[u8], usize)]) {
 }
 
 #[test]
+fn restart_read_ahead_preserves_pending_mcus() {
+    // Issue #509: 16 MCUs per row, DRI=10, quantization 16 and DC +/-40.
+    let data = include_bytes!("../../../test-images/jpeg/restart_cross_row_128x128.jpg");
+    assert_eq!(data.len(), 326);
+    for strict in [true, false] {
+        for simd in [false, true] {
+            for format in [ColorSpace::Luma, ColorSpace::RGB] {
+                let options = DecoderOptions::default()
+                    .set_strict_mode(strict)
+                    .set_use_unsafe(simd)
+                    .jpeg_set_out_colorspace(format);
+                let mut decoder = JpegDecoder::new_with_options(ZCursor::new(data), options);
+                let output = decoder.decode().unwrap();
+                assert_eq!(decoder.dimensions(), Some((128, 128)));
+                let channels = format.num_components();
+                let mut expected_row = vec![48_u8; 128 * channels];
+                expected_row[48 * channels..80 * channels].fill(208);
+                assert_eq!(output.len(), 128 * expected_row.len());
+                for (index, row) in output.chunks_exact(expected_row.len()).enumerate() {
+                    assert_eq!(row, expected_row, "native pixels in row {index}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn baseline_restart_cross_row_bytewise_retries_match_native() {
     let data = include_bytes!("../../../test-images/jpeg/restart_cross_row_128x128.jpg");
     // Independent native RGB digest for issue #509's exact 48/208 stripe.
