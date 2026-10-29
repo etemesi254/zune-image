@@ -344,9 +344,12 @@ where
                     trace!("Color used : {color_used}");
                     trace!("Important Colors: {important_colors}");
 
-                    self.rgb_bitfields[0] = self.bytes.get_u32_le_err()?;
-                    self.rgb_bitfields[1] = self.bytes.get_u32_le_err()?;
-                    self.rgb_bitfields[2] = self.bytes.get_u32_le_err()?;
+                    // after a 40 byte BITMAPINFOHEADER, masks are only present for BI_BITFIELDS
+                    if ihsize > 40 || compression == BmpCompression::BITFIELDS {
+                        self.rgb_bitfields[0] = self.bytes.get_u32_le_err()?;
+                        self.rgb_bitfields[1] = self.bytes.get_u32_le_err()?;
+                        self.rgb_bitfields[2] = self.bytes.get_u32_le_err()?;
+                    }
 
                     let mut colorspace_type = 0;
 
