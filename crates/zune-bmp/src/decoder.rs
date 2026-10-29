@@ -1184,9 +1184,14 @@ where
                         // move to the next line
                         line -= 1;
                         if line < 0 {
-                            return Err(BmpDecoderErrors::Generic(format!(
-                                "Line less than 0 {line}"
-                            )));
+                            return if self.bytes.get_u16_be_err()? == 1 {
+                                // end of picture
+                                Ok(pixels)
+                            } else {
+                                Err(BmpDecoderErrors::Generic(format!(
+                                    "Line less than 0 {line}"
+                                )))
+                            };
                         }
                         // move to the next line
                         output = &mut pixels
