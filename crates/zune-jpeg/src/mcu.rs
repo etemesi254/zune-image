@@ -114,7 +114,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
         if self.is_interleaved {
             // set upsampling functions
-            self.set_upsampling();
+            self.set_upsampling(output.is_raw());
 
             mcu_width = self.mcu_x;
             mcu_height = self.mcu_y;

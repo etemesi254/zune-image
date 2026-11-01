@@ -3821,7 +3821,10 @@ where
     }
 
     /// Set up-sampling routines in case an image is down sampled
-    pub(crate) fn set_upsampling(&mut self) {
+    ///
+    /// Raw output never upsamples, so `raw` leaves the upsampler's row
+    /// buffers unallocated.
+    pub(crate) fn set_upsampling(&mut self, raw: bool) {
         // no sampling, return early
         // check if horizontal max ==1
         if self.h_max == self.v_max && self.h_max == 1 {
@@ -3854,7 +3857,9 @@ where
                     generic_sampler()
                 }
             };
-            comp.setup_upsample_scanline();
+            if !raw {
+                comp.setup_upsample_scanline();
+            }
             comp.up_sampler = samp_factor;
         }
     }
@@ -4158,6 +4163,39 @@ mod planar_layout_helpers {
                 choose_ycbcr_to_rgb_convert_func(colorspace, &replacement).unwrap() as usize
             );
         }
+    }
+
+    #[test]
+    fn raw_output_allocates_no_upsampler_buffers() {
+        let data = include_bytes!("../../../test-images/jpeg/progressive_restart_420.jpg");
+        let mut decoder = JpegDecoder::new(ZCursor::new(data));
+        decoder.decode_headers().unwrap();
+        let mut raw = decoder.raw_output();
+        let layout = raw.layout().unwrap();
+        let count = raw.num_components().unwrap();
+        let strides: Vec<usize> = layout[..count].iter().map(|plane| plane.width).collect();
+        let mut buffers: Vec<Vec<u8>> = layout[..count]
+            .iter()
+            .map(|plane| vec![0; plane.stride * plane.height])
+            .collect();
+        let mut planes: Vec<&mut [u8]> = buffers.iter_mut().map(Vec::as_mut_slice).collect();
+        assert!(matches!(
+            raw.decode_next_imcu_row(&mut planes, &strides).unwrap(),
+            RawImcuRowStatus::RowReady { .. }
+        ));
+        drop(raw);
+        assert!(decoder.upsampler_scratch.is_empty());
+        for component in &decoder.components {
+            assert!(component.upsample_dest.is_empty());
+            assert!(component.first_row_upsample_dest.is_empty());
+        }
+
+        let mut decoder = JpegDecoder::new(ZCursor::new(data));
+        decoder.decode().unwrap();
+        assert!(decoder
+            .components
+            .iter()
+            .any(|component| !component.upsample_dest.is_empty()));
     }
 
     #[test]
