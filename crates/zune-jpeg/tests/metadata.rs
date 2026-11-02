@@ -109,8 +109,8 @@ fn lossless_huffman_headers_expose_dimensions() {
 }
 
 #[test]
-fn lossless_huffman_pixel_decode_remains_unsupported() {
-    let data = lossless_header(8, 0x11, 0);
+fn high_precision_lossless_huffman_pixel_decode_remains_unsupported() {
+    let data = lossless_header(16, 0x11, 0);
     let mut decoder = JpegDecoder::new(ZCursor::new(&data));
     decoder.decode_headers().unwrap();
     let mut output = vec![0xA5; decoder.output_buffer_size().unwrap()];

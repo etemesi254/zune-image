@@ -156,7 +156,7 @@ impl Debug for UnsupportedSchemes {
                 write!(f, "The library cannot yet decode images encoded using Extended Sequential Huffman  encoding scheme yet.")
             }
             Self::LosslessHuffman => {
-                write!(f, "The library cannot yet decode images encoded with Lossless Huffman encoding scheme")
+                write!(f, "Unsupported lossless Huffman JPEG configuration: only 8-bit, single-component SOF3 decoding is supported")
             }
             Self::ExtendedSequentialDctArithmetic => {
                 write!(f,"The library cannot yet decode Images Encoded with Extended Sequential DCT Arithmetic scheme")
