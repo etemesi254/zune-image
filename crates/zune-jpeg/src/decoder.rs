@@ -3310,7 +3310,10 @@ where
 
     fn ensure_supported_encoding(&self) -> Result<(), DecodeErrors> {
         let unsupported = match self.info.sof {
-            SOFMarkers::LosslessHuffman => Some(UnsupportedSchemes::LosslessHuffman),
+            SOFMarkers::LosslessHuffman => {
+                self.validate_lossless_encoding()?;
+                None
+            }
             SOFMarkers::LosslessArithmetic => Some(UnsupportedSchemes::LosslessArithmetic),
             _ => None
         };
@@ -3687,6 +3690,16 @@ where
     fn decode_mcu_output(
         &mut self, output: &mut McuDecodeOutput<'_, '_>
     ) -> Result<(), DecodeErrors> {
+        if self.info.sof == SOFMarkers::LosslessHuffman {
+            return match output {
+                McuDecodeOutput::Pixels(pixels) => self.decode_lossless(pixels),
+                McuDecodeOutput::RawPlanes(_) | McuDecodeOutput::Scanlines(_) => {
+                    Err(DecodeErrors::FormatStatic(
+                        "Lossless JPEG supports decode and decode_into, not raw or scanline output"
+                    ))
+                }
+            };
+        }
         if self.is_arithmetic {
             #[cfg(feature = "arith")]
             {

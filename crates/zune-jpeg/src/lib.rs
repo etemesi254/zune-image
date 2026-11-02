@@ -340,6 +340,7 @@ mod huffman;
 mod idct;
 #[cfg(fuzzing)]
 pub mod idct;
+mod lossless;
 mod marker;
 mod mcu;
 mod mcu_prog;
