@@ -12,25 +12,32 @@ use zune_core::options::DecoderOptions;
 use zune_jpeg::errors::DecodeErrors;
 use zune_jpeg::{JpegDecoder, JpegScale};
 
-fn check_native_output(data: &[u8], expected: [u64; 3]) {
+const SCALES: [JpegScale; 7] = [
+    JpegScale::Half,
+    JpegScale::Quarter,
+    JpegScale::Eighth,
+    JpegScale::ThreeEighths,
+    JpegScale::FiveEighths,
+    JpegScale::ThreeQuarters,
+    JpegScale::SevenEighths
+];
+
+fn check_native_output(data: &[u8], expected: [u64; 7]) {
     for use_simd in [false, true] {
         let options = DecoderOptions::default().set_use_unsafe(use_simd);
         check_native_output_with_options(data, expected, options);
     }
 }
 
-fn check_native_output_with_options(data: &[u8], expected: [u64; 3], options: DecoderOptions) {
-    for (scale, digest) in [JpegScale::Half, JpegScale::Quarter, JpegScale::Eighth]
-        .into_iter()
-        .zip(expected)
-    {
+fn check_native_output_with_options(data: &[u8], expected: [u64; 7], options: DecoderOptions) {
+    for (scale, digest) in SCALES.into_iter().zip(expected) {
         let mut decoder = JpegDecoder::new_with_options(ZCursor::new(data), options);
         decoder.decode_headers().unwrap();
         let info = decoder.info().unwrap();
         let input_colorspace = decoder.input_colorspace().unwrap();
         let dimensions = (
-            usize::from(info.width).div_ceil(scale.denominator()),
-            usize::from(info.height).div_ceil(scale.denominator())
+            (usize::from(info.width) * scale.numerator()).div_ceil(scale.denominator()),
+            (usize::from(info.height) * scale.numerator()).div_ceil(scale.denominator())
         );
         let mut decoder = decoder.into_scaled(scale).unwrap();
         assert_eq!(decoder.dimensions(), dimensions);
@@ -122,19 +129,51 @@ fn scaled_non_interleaved_native_parity() {
     // Digests are from native JDCT_ISLOW decoding, not resized full-size pixels.
     check_native_output(
         include_bytes!("../../../test-images/jpeg/non_interleaved_444_64x64.jpg"),
-        [0x284b2e337892e025, 0xbd32a3785fdb3385, 0xff130fe90a5d7dfd]
+        [
+            0x284b2e337892e025,
+            0xbd32a3785fdb3385,
+            0xff130fe90a5d7dfd,
+            0x9dc7a457ff19e63d,
+            0x82075bd236e4caed,
+            0xc8dd4e9ed42c61d5,
+            0x1f1a6f5c9390b3bd
+        ]
     );
     check_native_output(
         include_bytes!("../../../test-images/jpeg/non_interleaved_420_64x64.jpg"),
-        [0x6ef571d11f2bf9c5, 0x890590b48c9f1ea5, 0x317f1eb000afaf75]
+        [
+            0x6ef571d11f2bf9c5,
+            0x890590b48c9f1ea5,
+            0x317f1eb000afaf75,
+            0x4aaf3f79b73321fd,
+            0xef22f61bced45c15,
+            0x1ad781120a196935,
+            0xd0d50e5969fb42f5
+        ]
     );
     check_native_output(
         include_bytes!("../../../test-images/jpeg/non_interleaved_422_64x64.jpg"),
-        [0x284b2e337892e025, 0xbd32a3785fdb3385, 0xff130fe90a5d7dfd]
+        [
+            0x284b2e337892e025,
+            0xbd32a3785fdb3385,
+            0xff130fe90a5d7dfd,
+            0x9dc7a457ff19e63d,
+            0x82075bd236e4caed,
+            0xc8dd4e9ed42c61d5,
+            0x1f1a6f5c9390b3bd
+        ]
     );
     check_native_output(
         include_bytes!("../../../test-images/jpeg/non_interleaved_440_64x64.jpg"),
-        [0xbef955b26594fd25, 0xcce22cb770e95bc5, 0x3b439a302cad73c5]
+        [
+            0xbef955b26594fd25,
+            0xcce22cb770e95bc5,
+            0x3b439a302cad73c5,
+            0xe623396d704da475,
+            0x8e15a5a513096205,
+            0xfc1de57ae12b66a5,
+            0x0acdc771aebe93cd
+        ]
     );
 }
 
@@ -143,7 +182,7 @@ fn scaled_interleaved_scalar_chroma_matches_dispatched() {
     // Half-scale 4:2:0 uses full-size chroma IDCTs. Scalar transforms must
     // not overwrite the entropy decoder's reusable sparse coefficients.
     let data = include_bytes!("../../../test-images/jpeg/2029.jpg");
-    for scale in [JpegScale::Half, JpegScale::Quarter, JpegScale::Eighth] {
+    for scale in SCALES {
         let decode = |use_simd| {
             let options = DecoderOptions::default().set_use_unsafe(use_simd);
             let mut decoder = JpegDecoder::new_with_options(ZCursor::new(data.as_slice()), options)
@@ -152,8 +191,8 @@ fn scaled_interleaved_scalar_chroma_matches_dispatched() {
             assert_eq!(
                 decoder.dimensions(),
                 (
-                    388_usize.div_ceil(scale.denominator()),
-                    477_usize.div_ceil(scale.denominator())
+                    (388 * scale.numerator()).div_ceil(scale.denominator()),
+                    (477 * scale.numerator()).div_ceil(scale.denominator())
                 )
             );
             let mut pixels = vec![0; decoder.output_buffer_size().unwrap()];
@@ -175,7 +214,15 @@ fn scaled_interleaved_scalar_chroma_matches_dispatched() {
 fn scaled_progressive_restart_native_parity() {
     check_native_output(
         include_bytes!("../../../test-images/jpeg/progressive_restart_420.jpg"),
-        [0xbd24891575162344, 0x7bc0dcf5e6f205c9, 0x9465979da1ca8b5a]
+        [
+            0xbd24891575162344,
+            0x7bc0dcf5e6f205c9,
+            0x9465979da1ca8b5a,
+            0x0dad861cc9c8159f,
+            0x672156c2890f6319,
+            0x5baef2d28fb38110,
+            0x0ceacba608666f57
+        ]
     );
 }
 
@@ -183,6 +230,14 @@ fn scaled_progressive_restart_native_parity() {
 fn scaled_odd_dimensions_and_grayscale_sampling_native_parity() {
     check_native_output(
         include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg"),
-        [0x399b2ae253ccfb2e, 0x813a956887962950, 0xf19f6c5e6f45d8f4]
+        [
+            0x399b2ae253ccfb2e,
+            0x813a956887962950,
+            0xf19f6c5e6f45d8f4,
+            0x4c9ff31cfb30ecec,
+            0xd48b8104691446cc,
+            0xb73a9cbd3c246ddd,
+            0xfc97a1afdb3f367d
+        ]
     );
 }
