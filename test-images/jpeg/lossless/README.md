@@ -58,3 +58,23 @@ The encoder command was `cjpeg-static -lossless P,Pt [-restart 2] source.pgm`.
 Every raw byte matched. Another 34 authored test streams (including 16-bit
 Huffman codes, category-16 differences and non-unit frame sampling factors)
 were independently decoded by the same native reference.
+
+
+## Huffman color extension
+
+The additional CC0 Chromium interleaved/split-scan color fixtures are pinned
+to 5d20b94f5b20c0e3afaa5d7a3e5c913b7c46e37a. The interleaved frame has
+IDs 1/2/3, 1x1 sampling, DC tables 0/1/2, predictor 1, Pt=0 and no DRI.
+Known source planes and independent pre-presentation decoded components match.
+The .yuv oracle reduces samples to declared precision; the .rgb oracle uses
+the existing explicit 14-bit conversion contract, not reversible RGB.
+The independent reference's byte PNM output clamps 48 chroma values of 256
+and is not used as the component oracle.
+
+Generated CC0 controls retain source planes and exercise reordered components,
+distinct tables, predictors, transforms, odd/narrow dimensions and restarts.
+Their hashes are in generated/SHA256SUMS. The full-JPEG reference at
+702114c8130ae818ccd2354cc03e879dac69e579 verifies residuals and Pt=0
+reconstruction. Libjpeg-turbo afad69dafa6193d838ed075dc34652e646bf745e
+also verifies component samples and point transforms using its component API,
+with canonical SOF order for its stricter scan-order requirements.

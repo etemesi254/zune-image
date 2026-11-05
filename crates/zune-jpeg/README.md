@@ -29,22 +29,20 @@ see additional documentation in the library.
 
 ### Lossless JPEG
 
-`decode()` and `decode_into()` support original predictive, Huffman-coded JPEG
-(SOF3) with one component and 8-bit precision. This is not JPEG-LS or JPEG 2000.
-All seven predictors, point transforms 0 through 7, entropy byte stuffing and
-row-aligned restart intervals are supported. Samples are reconstructed directly,
-without quantization or an IDCT. Configure `ColorSpace::Luma` for one byte per
-pixel; packed RGB/BGR and grayscale/RGB formats with opaque alpha also work.
+`decode()` and `decode_into()` support 8-bit predictive Huffman JPEG (SOF3):
+grayscale and three-component, full-resolution interleaved YCbCr. Each component
+has independent prediction history; SOS order and DC table selectors are honored.
+Color requires 1x1 sampling and a single scan containing all components.
 
-Multicomponent lossless frames, other precisions, lossless arithmetic coding,
-DNL height discovery, raw planar output and scanline output remain unsupported
-and return errors. Header-only inspection of these encodings is unchanged.
+All seven predictors, Pt=0..7, byte stuffing and row-aligned restarts are supported.
+Configure `ColorSpace::YCbCr` for packed component samples or Luma for Y.
+RGB/BGR and opaque-alpha variants retain the existing conversion contract.
+No IDCT or minification is performed.
 
-Missing lossless entropy is an error, not synthesized pixel data, including in
-non-strict mode. Recoverable physical EOF can be retried on the same decoder and
-buffer; decoding replays from scan start and reports only complete rows as
-stable output. A complete sample scan without EOI is accepted in non-strict,
-non-incremental mode, as for the existing decoder.
+Other precisions, sampled/split-scan color, lossless RGB/CMYK/YCCK, arithmetic
+lossless, DNL and lossless raw/scanline interfaces remain explicit errors.
+Physical entropy EOF is an error; growing input can retry by replaying from
+scan start, reporting only complete rows as stable output.
 
 ### Incremental input
 
