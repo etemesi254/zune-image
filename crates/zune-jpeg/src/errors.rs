@@ -72,7 +72,7 @@ impl DecodeErrors {
         match self {
             DecodeErrors::ExhaustedData => true,
             DecodeErrors::IoErrors(io) => io.is_recoverable_eof(),
-            _ => false,
+            _ => false
         }
     }
 }
@@ -156,7 +156,7 @@ impl Debug for UnsupportedSchemes {
                 write!(f, "The library cannot yet decode images encoded using Extended Sequential Huffman  encoding scheme yet.")
             }
             Self::LosslessHuffman => {
-                write!(f, "Unsupported lossless Huffman JPEG configuration: only 8-bit, single-component SOF3 decoding is supported")
+                write!(f, "Unsupported lossless Huffman JPEG configuration: only 8-bit grayscale or full-resolution interleaved YCbCr is supported")
             }
             Self::ExtendedSequentialDctArithmetic => {
                 write!(f,"The library cannot yet decode Images Encoded with Extended Sequential DCT Arithmetic scheme")

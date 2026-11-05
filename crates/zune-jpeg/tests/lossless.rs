@@ -302,9 +302,9 @@ fn unsupported_lossless_combinations_stay_explicit() {
         Err(DecodeErrors::Unsupported(_))
     ));
     let mut multiple = valid.clone();
-    multiple[5] += 6;
-    multiple[11] = 3;
-    multiple.splice(15..15, [2, 0x11, 0, 3, 0x11, 0]);
+    multiple[5] += 9;
+    multiple[11] = 4;
+    multiple.splice(15..15, [2, 0x11, 0, 3, 0x11, 0, 4, 0x11, 0]);
     assert!(matches!(
         decode(&multiple, true),
         Err(DecodeErrors::Unsupported(_))
