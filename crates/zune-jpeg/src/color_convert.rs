@@ -25,6 +25,8 @@
 //!
 //! - `YCbCr` to `RGB,RGBA,GRAYSCALE,RGBX`.
 //!
+//! Packed conversion preserves 16-bit coefficient precision and half-up
+//! rounding on scalar and SIMD paths.
 //!
 //! Hey there, if your reading this it means you probably need something, so let me help you.
 //!
@@ -115,6 +117,68 @@ mod tests {
     use crate::color_convert::scalar::{
         ycbcr_to_rgb_inner_16_scalar, ycbcr_to_rgba_inner_16_scalar
     };
+
+    #[test]
+    fn precise_recovery_color_vectors() {
+        let vectors = [
+            (114, 107, 52),
+            (0, 0, 0),
+            (255, 255, 255),
+            (128, 128, 128),
+            (0, 255, 0),
+            (255, 0, 255),
+            (1, 127, 129),
+            (254, 129, 127),
+            (16, 16, 240),
+            (235, 240, 16)
+        ];
+        for format in [
+            ColorSpace::RGB,
+            ColorSpace::RGBA,
+            ColorSpace::BGR,
+            ColorSpace::BGRA
+        ] {
+            let scalar: ColorConvert16Ptr = match format {
+                ColorSpace::RGB => ycbcr_to_rgb_inner_16_scalar::<false>,
+                ColorSpace::RGBA => ycbcr_to_rgba_inner_16_scalar::<false>,
+                ColorSpace::BGR => ycbcr_to_rgb_inner_16_scalar::<true>,
+                ColorSpace::BGRA => ycbcr_to_rgba_inner_16_scalar::<true>,
+                _ => unreachable!()
+            };
+            let dispatched =
+                choose_ycbcr_to_rgb_convert_func(format, &DecoderOptions::default()).unwrap();
+            let channels = format.num_components();
+            for (y, cb, cr) in vectors {
+                let u = i32::from(cb) - 128;
+                let v = i32::from(cr) - 128;
+                let red = (i32::from(y) + ((91_881 * v + 32_768) >> 16)).clamp(0, 255) as u8;
+                let green = (i32::from(y) + ((-46_802 * v - 22_554 * u + 32_768) >> 16))
+                    .clamp(0, 255) as u8;
+                let blue = (i32::from(y) + ((116_130 * u + 32_768) >> 16)).clamp(0, 255) as u8;
+                if (y, cb, cr) == (114, 107, 52) {
+                    assert_eq!((red, green, blue), (7, 176, 77));
+                }
+                let expected = if matches!(format, ColorSpace::BGR | ColorSpace::BGRA) {
+                    [blue, green, red, 255]
+                } else {
+                    [red, green, blue, 255]
+                };
+                for convert in [scalar, dispatched] {
+                    let mut output = [0xa5; 80];
+                    let mut offset = 7;
+                    convert(&[y; 16], &[cb; 16], &[cr; 16], &mut output, &mut offset);
+                    assert_eq!(offset, 7 + 16 * channels);
+                    assert!(output[..7]
+                        .iter()
+                        .chain(&output[offset..])
+                        .all(|&b| b == 0xa5));
+                    for pixel in output[7..offset].chunks_exact(channels) {
+                        assert_eq!(pixel, &expected[..channels], "{format:?}, {y}/{cb}/{cr}");
+                    }
+                }
+            }
+        }
+    }
 
     fn input_vectors() -> Vec<([i16; 16], [i16; 16], [i16; 16])> {
         let mut vectors = vec![

@@ -47,6 +47,10 @@ interpretation of damaged entropy. Physical EOF on growing input remains
 retryable and is distinct from a final EOI. Progressive Huffman error policy,
 restart handling and DNL barriers remain separate.
 
+Packed RGB/BGR and alpha variants retain native 16-bit YCbCr coefficient
+precision and half-up rounding across scalar and SIMD paths. Chroma
+interpolation, edge handling and output scaling are unchanged.
+
 ### Incremental input
 
 `JpegDecoder` can be retried on the same decoder when the underlying reader can
