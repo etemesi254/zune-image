@@ -3202,7 +3202,15 @@ where
                 self.validate_lossless_encoding()?;
                 None
             }
-            SOFMarkers::LosslessArithmetic => Some(UnsupportedSchemes::LosslessArithmetic),
+            SOFMarkers::LosslessArithmetic => {
+                #[cfg(feature = "arith")]
+                {
+                    self.validate_lossless_encoding()?;
+                    None
+                }
+                #[cfg(not(feature = "arith"))]
+                Some(UnsupportedSchemes::LosslessArithmetic)
+            }
             _ => None
         };
         if let Some(unsupported) = unsupported {
@@ -3578,7 +3586,7 @@ where
     fn decode_mcu_output(
         &mut self, output: &mut McuDecodeOutput<'_, '_>
     ) -> Result<(), DecodeErrors> {
-        if self.info.sof == SOFMarkers::LosslessHuffman {
+        if self.info.sof.is_lossless() {
             return match output {
                 McuDecodeOutput::Pixels(pixels) => self.decode_lossless(pixels),
                 McuDecodeOutput::RawPlanes(_) | McuDecodeOutput::Scanlines(_) => {

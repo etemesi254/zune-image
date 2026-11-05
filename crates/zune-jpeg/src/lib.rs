@@ -341,6 +341,8 @@ mod idct;
 #[cfg(fuzzing)]
 pub mod idct;
 mod lossless;
+#[cfg(feature = "arith")]
+mod lossless_arith;
 mod marker;
 mod mcu;
 mod mcu_prog;
