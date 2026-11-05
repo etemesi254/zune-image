@@ -142,7 +142,9 @@ fn lossless_arithmetic_headers_expose_dimensions() {
         assert_eq!(info.components, component_count);
         assert!(info.sof.is_lossless());
 
-        let error = decoder.decode().unwrap_err();
+        let mut unsupported = data.clone();
+        unsupported[6] = 12;
+        let error = JpegDecoder::new(ZCursor::new(&unsupported)).decode().unwrap_err();
         assert!(matches!(
             error,
             DecodeErrors::Unsupported(UnsupportedSchemes::LosslessArithmetic)

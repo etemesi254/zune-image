@@ -72,7 +72,7 @@ impl DecodeErrors {
         match self {
             DecodeErrors::ExhaustedData => true,
             DecodeErrors::IoErrors(io) => io.is_recoverable_eof(),
-            _ => false
+            _ => false,
         }
     }
 }
@@ -165,7 +165,7 @@ impl Debug for UnsupportedSchemes {
                 write!(f,"The library cannot yet decode images encoded with Progressive DCT Arithmetic scheme")
             }
             Self::LosslessArithmetic => {
-                write!(f,"The library cannot yet decode images encoded with Lossless Arithmetic encoding scheme")
+                write!(f,"Lossless arithmetic JPEG requires the arith feature and 8-bit grayscale or full-resolution interleaved YCbCr")
             }
         }
     }
