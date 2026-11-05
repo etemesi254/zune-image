@@ -8,6 +8,8 @@
 
 //! Predictive Huffman decoding for 8-bit grayscale and interleaved YCbCr SOF3 frames.
 
+#[cfg(feature = "arith")]
+use alloc::boxed::Box;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
@@ -15,7 +17,7 @@ use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::warn;
 
-use crate::decoder::JpegDecoder;
+use crate::decoder::{EntropyTables, JpegDecoder};
 use crate::errors::{DecodeErrors, UnsupportedSchemes};
 use crate::huffman::HuffmanTable;
 use crate::marker::Marker;
@@ -27,17 +29,81 @@ struct LosslessBits {
 }
 
 struct History {
-    previous: Vec<u16>,
-    current:  Vec<u16>
+    previous:    Vec<u16>,
+    current:     Vec<u16>,
+    differences: Vec<i32>
 }
 
-fn row(width: usize) -> Result<Vec<u16>, DecodeErrors> {
+enum Entropy {
+    Huffman(LosslessBits),
+    #[cfg(feature = "arith")]
+    Arithmetic(Box<crate::lossless_arith::LosslessArithmetic>)
+}
+
+impl Entropy {
+    fn marker<T: ZByteReaderTrait>(
+        &mut self, reader: &mut ZReader<T>
+    ) -> Result<Marker, DecodeErrors> {
+        match self {
+            Self::Huffman(bits) => bits.marker(reader),
+            #[cfg(feature = "arith")]
+            Self::Arithmetic(bits) => bits.marker(reader)
+        }
+    }
+
+    fn restart(&mut self) {
+        match self {
+            Self::Huffman(_) => {}
+            #[cfg(feature = "arith")]
+            Self::Arithmetic(bits) => bits.restart()
+        }
+    }
+
+    fn difference<T: ZByteReaderTrait>(
+        &mut self, reader: &mut ZReader<T>, tables: &EntropyTables, selector: usize, left: i32,
+        above: i32
+    ) -> Result<i32, DecodeErrors> {
+        match self {
+            Self::Huffman(bits) => {
+                let table = tables
+                    .dc_huffman
+                    .get(selector)
+                    .and_then(Option::as_ref)
+                    .ok_or(DecodeErrors::FormatStatic(
+                        "Missing lossless JPEG Huffman table"
+                    ))?;
+                let _ = (left, above);
+                bits.difference(reader, table)
+            }
+            #[cfg(feature = "arith")]
+            Self::Arithmetic(bits) => {
+                let table =
+                    tables
+                        .dc_arithmetic
+                        .get(selector)
+                        .ok_or(DecodeErrors::FormatStatic(
+                            "Invalid lossless arithmetic conditioning selector"
+                        ))?;
+                bits.difference(reader, selector, table, left, above)
+            }
+        }
+    }
+}
+
+fn row<T: Clone + Default>(width: usize) -> Result<Vec<T>, DecodeErrors> {
     let mut samples = Vec::new();
     samples.try_reserve_exact(width).map_err(|_| {
         DecodeErrors::FormatStatic("Could not allocate lossless JPEG prediction row")
     })?;
-    samples.resize(width, 0);
+    samples.resize(width, T::default());
     Ok(samples)
+}
+
+#[cfg(test)]
+#[test]
+fn prediction_allocation_overflow_is_an_error() {
+    assert!(row::<u16>(usize::MAX).is_err());
+    assert!(row::<i32>(usize::MAX).is_err());
 }
 
 fn predict(history: &History, x: usize, first_row: bool, initial: i32, selector: u8) -> i32 {
@@ -142,9 +208,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         .iter()
                         .any(|c| c.horizontal_sample != 1 || c.vertical_sample != 1)))
         {
-            return Err(DecodeErrors::Unsupported(
+            return Err(DecodeErrors::Unsupported(if self.is_arithmetic {
+                UnsupportedSchemes::LosslessArithmetic
+            } else {
                 UnsupportedSchemes::LosslessHuffman
-            ));
+            }));
         }
         if self.info.height == 0 || self.dnl_image {
             return Err(DecodeErrors::FormatStatic(
@@ -157,12 +225,13 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     "Lossless JPEG requires zero quantization and AC table selectors"
                 ));
             }
-            if self
-                .entropy_tables
-                .dc_huffman
-                .get(component.dc_huff_table)
-                .and_then(Option::as_ref)
-                .is_none()
+            if component.dc_huff_table >= 4 {
+                return Err(DecodeErrors::FormatStatic(
+                    "Invalid lossless entropy table selector"
+                ));
+            }
+            if !self.is_arithmetic
+                && self.entropy_tables.dc_huffman[component.dc_huff_table].is_none()
             {
                 return Err(DecodeErrors::FormatStatic(
                     "Missing lossless JPEG Huffman table"
@@ -174,8 +243,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 "Lossless JPEG restart interval must contain whole rows"
             ));
         }
-        if !(count == 3 && self.options.jpeg_get_out_colorspace() == ColorSpace::YCbCr)
-            && !matches!(
+        if !((count == 3 && self.options.jpeg_get_out_colorspace() == ColorSpace::YCbCr)
+            || matches!(
                 self.options.jpeg_get_out_colorspace(),
                 ColorSpace::Luma
                     | ColorSpace::LumaA
@@ -183,7 +252,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     | ColorSpace::BGR
                     | ColorSpace::RGBA
                     | ColorSpace::BGRA
-            )
+            ))
         {
             return Err(DecodeErrors::FormatStatic(
                 "Unsupported lossless JPEG output colorspace"
@@ -248,16 +317,23 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             .components
             .iter()
             .map(|_| {
+                let differences = if self.is_arithmetic { row(width)? } else { Vec::new() };
                 Ok(History {
                     previous: row(width)?,
-                    current:  row(width)?
+                    current: row(width)?,
+                    differences
                 })
             })
             .collect::<Result<Vec<_>, DecodeErrors>>()?;
-        let mut bits = LosslessBits {
+        let mut bits = Entropy::Huffman(LosslessBits {
             byte:      0,
             remaining: 0
-        };
+        });
+        #[cfg(feature = "arith")]
+        if self.is_arithmetic {
+            bits = Entropy::Arithmetic(Box::new(crate::lossless_arith::LosslessArithmetic::new()));
+        }
+
         let mut next_restart = 0;
         let mut interval_start = 0;
         let initial = 1 << (7 - self.succ_low);
@@ -278,19 +354,29 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 }
                 next_restart = (next_restart + 1) & 7;
                 interval_start = y;
+                bits.restart();
+                for history in &mut histories {
+                    history.differences.fill(0);
+                }
             }
+            let mut left = [0; 3];
             for x in 0..width {
                 for &component in &self.z_order[..self.components.len()] {
                     let history = &mut histories[component];
                     let prediction =
                         predict(history, x, y == interval_start, initial, self.spec_start);
-                    let table = self.entropy_tables.dc_huffman
-                        [self.components[component].dc_huff_table]
-                        .as_ref()
-                        .ok_or(DecodeErrors::FormatStatic(
-                            "Missing lossless JPEG Huffman table"
-                        ))?;
-                    let difference = bits.difference(&mut self.stream, table)?;
+                    let above = if self.is_arithmetic { history.differences[x] } else { 0 };
+                    let difference = bits.difference(
+                        &mut self.stream,
+                        &self.entropy_tables,
+                        self.components[component].dc_huff_table,
+                        left[component],
+                        above
+                    )?;
+                    if self.is_arithmetic {
+                        history.differences[x] = difference;
+                    }
+                    left[component] = difference;
                     // T.81 H.2 reconstructs modulo 2^16, before the point transform.
                     history.current[x] = ((prediction + difference) & 0xffff) as u16;
                 }

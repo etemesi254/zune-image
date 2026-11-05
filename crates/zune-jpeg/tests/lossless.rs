@@ -297,6 +297,7 @@ fn unsupported_lossless_combinations_stay_explicit() {
     }
     let mut arithmetic = valid.clone();
     arithmetic[3] = 0xcb;
+    arithmetic[6] = 16;
     assert!(matches!(
         decode(&arithmetic, true),
         Err(DecodeErrors::Unsupported(_))
@@ -409,13 +410,40 @@ fn cancellation_reports_only_stable_rows_and_can_replay() {
 #[cfg(feature = "std")]
 #[test]
 fn byte_by_byte_input_replays_without_publishing_incomplete_rows() {
+    assert_byte_by_byte(CHROMIUM, ColorSpace::Luma, REFERENCE);
+    let color = include_bytes!("../../../test-images/jpeg/lossless/32x32x8_ycbcr_interleaved.yuv");
+    assert_byte_by_byte(
+        include_bytes!("../../../test-images/jpeg/lossless/32x32x8_ycbcr_interleaved.jpg"),
+        ColorSpace::YCbCr,
+        color
+    );
+    #[cfg(feature = "arith")]
+    {
+        assert_byte_by_byte(
+            include_bytes!("../../../test-images/jpeg/lossless/arith/32x32x8_grayscale.jpg"),
+            ColorSpace::Luma,
+            REFERENCE
+        );
+        assert_byte_by_byte(
+            include_bytes!(
+                "../../../test-images/jpeg/lossless/arith/32x32x8_ycbcr_interleaved.jpg"
+            ),
+            ColorSpace::YCbCr,
+            color
+        );
+    }
+}
+
+#[cfg(feature = "std")]
+fn assert_byte_by_byte(data: &'static [u8], color: ColorSpace, expected: &[u8]) {
     use std::cell::Cell;
     use std::io::{self, BufRead, Read, Seek, SeekFrom};
     use std::rc::Rc;
 
     struct Growing {
         visible:  Rc<Cell<usize>>,
-        position: usize
+        position: usize,
+        data:     &'static [u8]
     }
 
     impl Read for Growing {
@@ -430,8 +458,8 @@ fn byte_by_byte_input_replays_without_publishing_incomplete_rows() {
 
     impl BufRead for Growing {
         fn fill_buf(&mut self) -> io::Result<&[u8]> {
-            let visible = self.visible.get().min(CHROMIUM.len());
-            Ok(&CHROMIUM[self.position.min(visible)..visible])
+            let visible = self.visible.get().min(self.data.len());
+            Ok(&self.data[self.position.min(visible)..visible])
         }
 
         fn consume(&mut self, count: usize) {
@@ -454,25 +482,26 @@ fn byte_by_byte_input_replays_without_publishing_incomplete_rows() {
 
     let visible = Rc::new(Cell::new(0));
     let input = Growing {
-        visible:  Rc::clone(&visible),
-        position: 0
+        visible: Rc::clone(&visible),
+        position: 0,
+        data
     };
-    let options = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::Luma);
+    let options = DecoderOptions::default().jpeg_set_out_colorspace(color);
     let mut decoder = JpegDecoder::new_with_options(input, options);
     decoder.set_incremental_mode(true);
-    let mut output = [0xa5; 1024];
-    for end in 0..=CHROMIUM.len() {
+    let mut output = vec![0xa5; expected.len()];
+    for end in 0..=data.len() {
         visible.set(end);
         match decoder.decode_into(&mut output) {
             Ok(()) => {
-                assert_eq!(end, CHROMIUM.len());
-                assert_eq!(&output, REFERENCE);
+                assert_eq!(end, data.len());
+                assert_eq!(&output, expected);
             }
             Err(error) => {
                 assert!(error.is_recoverable_eof(), "visible {end}: {error:?}");
                 let stable = decoder.decoded_output_bytes().unwrap_or(0);
-                assert_eq!(stable % 32, 0);
-                assert_eq!(&output[..stable], &REFERENCE[..stable], "visible {end}");
+                assert_eq!(stable % (32 * color.num_components()), 0);
+                assert_eq!(&output[..stable], &expected[..stable], "visible {end}");
             }
         }
     }
