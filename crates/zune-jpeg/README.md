@@ -73,6 +73,32 @@ The `scaled_decode` example writes packed RGB bytes to stdout:
 cargo run -p zune-jpeg --example scaled_decode -- image.jpg 2 > image.rgb
 ```
 
+### Malformed baseline Huffman input
+
+Non-strict baseline Huffman decoding recovers an invalid canonical code by
+consuming 17 bits and substituting symbol zero. This preserves the DC predictor
+or ends an AC block without discarding coefficients already decoded.
+Strict mode continues to reject invalid codes.
+Unknown entropy markers are fatal in both modes; they are not treated as
+recoverable EOF or successful partial output.
+
+A prefetched EOI does not discard usable buffered bits. When entropy actually
+runs out, decoding completes that MCU and reconstructs subsequent missing MCUs
+from zero coefficients, including the remainder of the current row. Neutral
+output uses the configured colorspace conversion and opaque alpha semantics.
+For known-height, non-DNL single scans containing all components, the missing
+tail does not run entropy decoding or IDCT for synthetic MCUs; packed 4:4:4
+tails are filled directly in bounded output chunks.
+
+This is deliberate best-effort compatibility, not a uniquely correct
+interpretation of damaged entropy. Physical EOF on growing input remains
+retryable and is distinct from a final EOI. Progressive Huffman error policy,
+restart handling and DNL barriers remain separate.
+
+Packed RGB/BGR and alpha variants retain native 16-bit YCbCr coefficient
+precision and half-up rounding across scalar and SIMD paths. Chroma
+interpolation, edge handling and output scaling are unchanged.
+
 ### Incremental input
 
 `JpegDecoder` can be retried on the same decoder when the underlying reader can
