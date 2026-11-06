@@ -559,7 +559,8 @@ pub fn decode_residual_block(
         let mode = if component == Component::Luma {
             ctx.neighbor_tracker.get_intra_mode(x0, y0)
         } else {
-            ctx.intra_mode_chroma // Our decoded chroma mode
+            // this block's chroma mode (4:4:4 NxN CUs have four)
+            ctx.neighbor_tracker.get_intra_mode_chroma(x0, y0)
         };
 
         get_intra_scan_idx(ctx, log2_trafo_size, mode, component)

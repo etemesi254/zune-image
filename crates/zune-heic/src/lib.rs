@@ -32,6 +32,7 @@
 //!   decoded into RGBA / LumaA output; premultiplied alpha (`prem`) is
 //!   reported by [`HeifDecoder::is_alpha_premultiplied`].
 //! - **Greyscale** (monochrome HEVC) images decode to [`Luma`](zune_core::colorspace::ColorSpace::Luma).
+//! - **Chroma formats:** 4:2:0, 4:2:2 and 4:4:4 (including lossless RGB).
 //! - **`no_std`** (with `alloc`) when the `std` feature is disabled.
 //!
 //! # Usage
@@ -204,8 +205,9 @@
 //!
 //! - Only the primary image is decoded (no thumbnails, depth maps or image
 //!   sequences).
-//! - 8-bit, intra-coded HEVC only (what HEIF still images use), in 4:2:0 or
-//!   monochrome; 10-bit, 4:2:2 and 4:4:4 images are rejected.
+//! - 8-bit, intra-coded HEVC only (what HEIF still images use); 10-bit images
+//!   are rejected, as are the range extension's CU chroma QP offsets and
+//!   separately coded colour planes.
 //! - Premultiplied alpha is returned as stored (like libheif); see
 //!   [`HeifDecoder::is_alpha_premultiplied`].
 //! - With VideoToolbox, the YCbCr → RGB conversion is not the libheif one, so

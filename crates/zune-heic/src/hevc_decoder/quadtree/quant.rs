@@ -189,7 +189,8 @@ pub fn decode_quantization_parameters(
             TABLE_8_22[idx_cr] - qp_bd_offset_c as i8
         )
     } else {
-        (qp_i_cb as i8, qp_i_cr as i8)
+        // 4:2:2 and 4:4:4: QpC = Min(qPi, 51) (spec 8.6.1)
+        (qp_i_cb.min(51) as i8, qp_i_cr.min(51) as i8)
     };
 
     ctx.qp_cb_prime = (i32::from(qp_cb) + qp_bd_offset_c).max(0);

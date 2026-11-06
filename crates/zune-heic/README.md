@@ -89,6 +89,7 @@ in order of importance
 - [x] Clean aperture cropping (`clap`), rotation (`irot`) and mirroring (`imir`).
 - [x] Alpha planes, including premultiplied alpha detection.
 - [x] Greyscale (monochrome) images.
+- [x] 4:2:0, 4:2:2 and 4:4:4 chroma, including lossless RGB.
 - [x] Colour description (`colr` nclx, or the HEVC VUI) for the YCbCr → RGB conversion.
 - [x] Exif and ICC profile extraction.
 - [x] Support for `no_std`.
@@ -155,8 +156,9 @@ samples in `fuzz-samples/`:
 ## Limitations
 
 - Only the primary image is decoded (no thumbnails, depth maps or image sequences).
-- 8-bit, intra-coded HEVC only (what HEIF still images use), in 4:2:0 or monochrome;
-  10-bit, 4:2:2 and 4:4:4 images are rejected.
+- 8-bit, intra-coded HEVC only (what HEIF still images use); 10-bit images are
+  rejected, as are the range extension's CU chroma QP offsets and separately coded
+  colour planes.
 - AVIF (AV1-coded HEIF) is not supported.
 - Premultiplied alpha is returned as stored, like libheif does.
 - With VideoToolbox, the YCbCr → RGB conversion is the one macOS uses, so the output is

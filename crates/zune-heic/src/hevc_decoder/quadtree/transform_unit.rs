@@ -463,8 +463,10 @@ pub fn read_transform_unit(
     if chroma_format == ChromaFormat::Monochrome {
         return Ok(());
     }
-    // In 4:2:0, if Luma is 4x4, we only process Chroma at the 4th block (blk_idx 3)
-    let is_420_small = (chroma_format == ChromaFormat::Yuv420) && (log2_size == 2);
+    // In 4:2:0 and 4:2:2, 4x4 luma blocks have no chroma of their own: the
+    // 4x4 chroma block(s) of their 8x8 parent are decoded with the 4th
+    // (blk_idx 3), at the parent's position (x_base, y_base)
+    let is_420_small = chroma_format != ChromaFormat::Yuv444 && log2_size == 2;
     let should_decode_chroma = !is_420_small || blk_idx == 3;
 
     if should_decode_chroma {
@@ -533,11 +535,11 @@ pub fn read_transform_unit(
             if chroma_format == ChromaFormat::Yuv422 {
                 let y_offset = 1 << log2_size_c;
                 if (cbf & 2) != 0 {
-                    // Note: y_base + y_offset translated back to Luma coordinates
+                    // the second block's position in luma coordinates
                     decode_residual_block(
                         ctx,
                         xc,
-                        xc + (y_offset * sub_h),
+                        yc + (y_offset * sub_h),
                         log2_size_c,
                         if c_idx == 1 { Component::Cb } else { Component::Cr },
                     );

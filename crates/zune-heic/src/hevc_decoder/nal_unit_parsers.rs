@@ -487,6 +487,16 @@ pub fn decode_slice_header(
             sh.slice_cr_qp_offset = 0;
         }
 
+        // cu_chroma_qp_offset_enabled_flag (range extension): the CU-level
+        // chroma QP offsets it enables are not supported
+        if pps.range_extension.as_ref().is_some_and(|r| r.chroma_qp_offset_list_len > 0)
+            && r.read_flag()?
+        {
+            return Err(NalError::Generic(
+                "CU chroma QP offsets (cu_chroma_qp_offset_enabled_flag) are not supported".into()
+            ));
+        }
+
         // 9. Deblocking Filter
         // Defaults are inherited from the PPS (spec 7.4.7.1)
         sh.slice_deblocking_filter_disabled_flag = pps.deblocking_filter_disabled_flag;

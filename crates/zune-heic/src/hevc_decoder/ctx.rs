@@ -518,7 +518,7 @@ impl DecodeSliceContext<'_> {
             x0,
             y0,
             n_t,
-            c_idx,
+            if c_idx == 0 { (1, 1) } else { self.sps.chroma_format.get_subsampling() },
             &mut self.ref_samples_available[..p_len],
             self.sps.pic_width_in_luma_samples as isize,
             self.sps.pic_height_in_luma_samples as isize,
@@ -544,9 +544,16 @@ impl DecodeSliceContext<'_> {
             print_border(&self.ref_samples_p[..p_len], n_t);
         }
 
-        if c_idx == 0 {
-            // 4. Apply Smoothing filters (Standard [1,2,1] or Strong 32x32)
-            let strong_enabled = self.sps.strong_intra_smoothing_enable_flag;
+        // 4. Smoothing filters (standard [1,2,1], or strong for 32x32 luma):
+        //    luma, and chroma too in 4:4:4 (spec 8.4.4.2.3), unless the range
+        //    extension disables them
+        let smoothing_disabled = self
+            .sps
+            .range_extension
+            .as_ref()
+            .is_some_and(|r| r.intra_smoothing_disabled_flag);
+        if !smoothing_disabled && (c_idx == 0 || self.sps.chroma_format == ChromaFormat::Yuv444) {
+            let strong_enabled = self.sps.strong_intra_smoothing_enable_flag && c_idx == 0;
             apply_reference_smoothing(
                 &mut self.ref_samples_p[..p_len],
                 n_t,
@@ -643,23 +650,25 @@ pub fn print_border(p: &[u8], n_t: usize) {
 }
 #[allow(clippy::too_many_arguments)]
 fn check_availability(
-    tracker: &NeighborTracker, x0: usize, y0: usize, n_t: usize, c_idx: usize,
-    available: &mut [bool], frame_width: isize, frame_height: isize, ctu_size: isize,
+    tracker: &NeighborTracker, x0: usize, y0: usize, n_t: usize,
+    (scale_x, scale_y): (usize, usize), available: &mut [bool], frame_width: isize,
+    frame_height: isize, ctu_size: isize,
 ) {
-    let scale = if c_idx == 0 { 1 } else { 2 };
-    let sx0 = (x0 * scale) as isize;
-    let sy0 = (y0 * scale) as isize;
+    // (scale_x, scale_y): luma samples per sample of this plane
+    let sx0 = (x0 * scale_x) as isize;
+    let sy0 = (y0 * scale_y) as isize;
 
-    // HEVC neighbor availability operates on a 4x4 luma grid minimum.
-    // We scale this chunk size for chroma.
-    let chunk_size = 4 / scale;
+    // HEVC neighbor availability operates on a 4x4 luma grid minimum:
+    // the samples of this plane covering one 4-sample luma run share it
+    let chunk_y = 4 / scale_y;
+    let chunk_x = 4 / scale_x;
 
     // --- 1. Below-Left and Left (Bottom-to-Top) ---
     // Process in chunks rather than pixel-by-pixel
     let mut i = 0;
     while i < 2 * n_t {
         let px = sx0 - 1;
-        let py = sy0 + ((2 * n_t - 1 - i) * scale) as isize;
+        let py = sy0 + ((2 * n_t - 1 - i) * scale_y) as isize;
 
         // Fast Coordinate Assumptions
         let is_avail = if px < 0 || py >= frame_height {
@@ -672,12 +681,12 @@ fn check_availability(
         };
 
         // Fill the chunk
-        for j in 0..chunk_size {
+        for j in 0..chunk_y {
             if i + j < 2 * n_t {
                 available[i + j] = is_avail;
             }
         }
-        i += chunk_size;
+        i += chunk_y;
     }
 
     // --- 2. Top-Left Corner ---
@@ -696,7 +705,7 @@ fn check_availability(
     // --- 3. Top and Top-Right (Left-to-Right) ---
     let mut i = 1;
     while i <= 2 * n_t {
-        let px = sx0 + ((i - 1) * scale) as isize;
+        let px = sx0 + ((i - 1) * scale_x) as isize;
         let py = sy0 - 1;
 
         let is_avail = if py < 0 || px >= frame_width {
@@ -709,12 +718,12 @@ fn check_availability(
         };
 
         // Fill the chunk
-        for j in 0..chunk_size {
+        for j in 0..chunk_x {
             if i + j <= 2 * n_t {
                 available[2 * n_t + i + j] = is_avail;
             }
         }
-        i += chunk_size;
+        i += chunk_x;
     }
 }
 
