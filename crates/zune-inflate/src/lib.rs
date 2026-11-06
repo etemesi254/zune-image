@@ -9,7 +9,7 @@
 //! This crate features a deflate/zlib decoder inspired by
 //! Eric Bigger's [libdeflate].
 //!
-//! This libary has a smaller set of features hence you should use it
+//! This library has a smaller set of features hence you should use it
 //! if it aligns with your end goals.
 //!
 //! Use it if
@@ -51,14 +51,14 @@
 //!
 //! # Usage
 //!
-//! Decoding delfate data
+//! Decoding deflate data
 //
 //! ```no_run
 //! use zune_inflate::DeflateDecoder;
 //! let totally_valid_data = [0;23];
 //! let mut decoder = DeflateDecoder::new(&totally_valid_data);
 //!
-//! let decompressed =decoder.decode_deflate().unwrap();
+//! let decompressed = decoder.decode_deflate().unwrap();
 //! ```
 //!
 //! Decoding zlib data
@@ -68,7 +68,7 @@
 //! let totally_valid_data = [0;23];
 //! let mut decoder = DeflateDecoder::new(&totally_valid_data);
 //!
-//! let decompressed =decoder.decode_zlib().unwrap();
+//! let decompressed = decoder.decode_zlib().unwrap();
 //! ```
 //!
 //! Decoding zlib data without confirming the adler32 checksum

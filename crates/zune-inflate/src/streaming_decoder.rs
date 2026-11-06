@@ -3,7 +3,7 @@ use crate::constants::{
     DEFLATE_MAX_CODEWORD_LENGTH, DEFLATE_MAX_LITLEN_CODEWORD_LENGTH,
     DEFLATE_MAX_OFFSET_CODEWORD_LENGTH, DEFLATE_MAX_PRE_CODEWORD_LEN, DEFLATE_NUM_LITLEN_SYMS,
     DEFLATE_NUM_OFFSET_SYMS, DEFLATE_NUM_PRECODE_SYMS, DEFLATE_PRECODE_LENS_PERMUTATION,
-    DELFATE_MAX_LENS_OVERRUN, FASTCOPY_BYTES, FASTLOOP_MAX_BYTES_WRITTEN, HUFFDEC_END_OF_BLOCK,
+    DEFLATE_MAX_LENS_OVERRUN, FASTCOPY_BYTES, FASTLOOP_MAX_BYTES_WRITTEN, HUFFDEC_END_OF_BLOCK,
     HUFFDEC_EXCEPTIONAL, HUFFDEC_LITERAL, HUFFDEC_SUITABLE_POINTER, LITLEN_DECODE_BITS,
     LITLEN_DECODE_RESULTS, LITLEN_ENOUGH, LITLEN_TABLE_BITS, OFFSET_DECODE_RESULTS, OFFSET_ENOUGH,
     OFFSET_TABLEBITS, PRECODE_DECODE_RESULTS, PRECODE_ENOUGH, PRECODE_TABLE_BITS,
@@ -103,7 +103,7 @@ impl StreamingDecoder {
         &mut self, block_type: u64, chunk: &[u8],
     ) -> Result<(), DecodeErrorStatus> {
         const COUNT: usize =
-            DEFLATE_NUM_LITLEN_SYMS + DEFLATE_NUM_OFFSET_SYMS + DELFATE_MAX_LENS_OVERRUN;
+            DEFLATE_NUM_LITLEN_SYMS + DEFLATE_NUM_OFFSET_SYMS + DEFLATE_MAX_LENS_OVERRUN;
 
         let mut lens = [0_u8; COUNT];
         let mut precode_lens = [0; DEFLATE_NUM_PRECODE_SYMS];
@@ -314,7 +314,7 @@ impl StreamingDecoder {
     ///
     /// Unlike a one-shot decoder, `DeflateDecoder` does not require the entire compressed
     /// stream to be available upfront. Instead, the caller feeds compressed data piece by
-    /// piece via [`decode_chunk`], growing the output buffer on demand and supplying more
+    /// piece via [`StreamingDecoder::decode_chunk`], growing the output buffer on demand and supplying more
     /// input as requested. The decoder suspends and resumes transparently across chunk
     /// boundaries — including mid-codeword, mid-match, and mid-block-header boundaries.
     ///
@@ -381,7 +381,7 @@ impl StreamingDecoder {
     /// # Chunk sizing
     ///
     /// Any chunk size from 1 byte upward is valid. Smaller chunks increase the number
-    /// of [`NeedsMoreInput`] round-trips but do not affect correctness. There is no
+    /// of [`DecodeStatus::NeedsMoreInput`] round-trips but do not affect correctness. There is no
     /// requirement for chunks to align to block or byte boundaries in the compressed
     /// stream.
     ///
@@ -389,7 +389,7 @@ impl StreamingDecoder {
     ///
     /// `out_block` is a flat `&mut [u8]` that the decoder writes into sequentially
     /// starting at offset [`decode_dest`]. The caller is responsible for allocation;
-    /// the decoder never reallocates. On [`NeedsMoreOutput`], the caller must grow the
+    /// the decoder never reallocates. On [`DecodeStatus::NeedsMoreOutput`], the caller must grow the
     /// buffer (e.g. with `Vec::resize`) before retrying — the decoder guarantees it will
     /// not advance past the end of the slice.
     ///
@@ -412,12 +412,12 @@ impl StreamingDecoder {
     /// mid-stream) from a truncated or corrupt stream. Passing `is_final_chunk = true`
     /// on a non-final chunk will cause the decoder to treat missing input as corruption
     /// and return [`DecodeStatus::Error`]. Passing `is_final_chunk = false` on the
-    /// genuinely final chunk will cause the decoder to return [`NeedsMoreInput`] instead
-    /// of [`Finished`] after consuming all input.
+    /// genuinely final chunk will cause the decoder to return [`DecodeStatus::NeedsMoreInput`] instead
+    /// of [`DecodeStatus::Finished`] after consuming all input.
     ///
     /// # Output limit
     ///
-    /// The decoder enforces the limit set in [`DeflateOptions`]. If the decompressed
+    /// The decoder enforces the limit set in [`crate::decoder::DeflateOptions`]. If the decompressed
     /// output would exceed it, [`DecodeStatus::Error`] is returned immediately. This
     /// is a defence against zip-bomb inputs where a small compressed stream expands to
     /// an enormous output.

@@ -17,9 +17,9 @@ use core::fmt::{Debug, Display, Formatter};
 ///
 /// This struct contains two fields,
 ///
-/// - `error`:Tells you the error that actually occured.
+/// - `error`:Tells you the error that actually occurred.
 /// - `data`: Gives you decoded data up until that point when
-/// the error was encountered.
+///   the error was encountered.
 ///
 /// One can recover data up to the error if they so wish but
 /// guarantees about data state is not given
