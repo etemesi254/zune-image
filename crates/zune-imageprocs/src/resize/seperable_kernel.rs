@@ -31,6 +31,27 @@ impl PrecomputedKernels {
             in_width, in_height, out_width, out_height, method, method,
         )
     }
+    /// Like [`PrecomputedKernels::new`] but always builds kernels for both axes,
+    /// even when one dimension is unchanged (an identity kernel in that case).
+    ///
+    /// The fixed-point u8 path needs both axes since it always runs the fused
+    /// horizontal + vertical pass.
+    pub fn new_both_axes(
+        in_width: usize, in_height: usize, out_width: usize, out_height: usize,
+        method: ResizeMethod,
+    ) -> Self {
+        let (kernel_fn, radius) = get_kernel_fn_and_radius(method);
+        let x_ratio = in_width as f32 / out_width as f32;
+        let y_ratio = in_height as f32 / out_height as f32;
+        PrecomputedKernels {
+            horizontal: Some(precompute_kernels(
+                in_width, out_width, x_ratio, radius, kernel_fn,
+            )),
+            vertical: Some(precompute_kernels(
+                in_height, out_height, y_ratio, radius, kernel_fn,
+            )),
+        }
+    }
     pub fn new_separated_kernels(
         in_width: usize, in_height: usize, out_width: usize, out_height: usize,
         horiz_method: ResizeMethod, vert_method: ResizeMethod,
@@ -293,13 +314,60 @@ pub fn resample_region_generic<T>(
     }
 }
 
+/// Number of bits used to represent linear-light samples in the u8 resize path.
+///
+/// 8 bits is not enough to hold linearized sRGB (dark tones collapse, e.g. sRGB 0..=6
+/// all map to 0), so u8 samples are expanded to this precision through a lookup
+/// table, resampled, and mapped back to the gamma encoded u8 with a second table.
+pub(crate) const LINEAR_BITS: u32 = 12;
+pub(crate) const LINEAR_MAX: i32 = (1 << LINEAR_BITS) - 1;
+
+/// Lookup tables used to resample u8 images in linear light.
+pub(crate) struct LinearLightLut {
+    /// gamma encoded u8 -> linear value in `0..=LINEAR_MAX`
+    pub to_linear: [i32; 256],
+    /// linear value in `0..=LINEAR_MAX` -> gamma encoded u8
+    pub to_gamma:  Vec<u8>,
+}
+
+impl LinearLightLut {
+    pub fn new(transfer_function: crate::transfer_curve::TransferFunction) -> Self {
+        let max = LINEAR_MAX as f32;
+        let mut to_linear = [0_i32; 256];
+        for (i, v) in to_linear.iter_mut().enumerate() {
+            let lin = transfer_function.linearize(i as f32 / 255.0).clamp(0.0, 1.0);
+            *v = (lin * max).round() as i32;
+        }
+        let to_gamma = (0..=LINEAR_MAX)
+            .map(|i| {
+                let g = transfer_function.gamma(i as f32 / max).clamp(0.0, 1.0);
+                (g * 255.0).round() as u8
+            })
+            .collect();
+        LinearLightLut {
+            to_linear,
+            to_gamma,
+        }
+    }
+}
+
+/// Fixed-point resampler for u8 images.
+///
+/// `kernels` must contain both horizontal and vertical kernels
+/// (see [`PrecomputedKernels::new_both_axes`]).
+///
+/// If `lut` is `Some`, the input is treated as gamma encoded: it is resampled in linear light
+/// at [`LINEAR_BITS`] of precision and re-encoded on output.
 pub fn resample_region_u8(
     region: &mut PlanarRegionMut<'_, u8>, src_channels: &[&[u8]], in_width: usize,
-    kernels: &PrecomputedKernels,
+    kernels: &PrecomputedKernels, lut: Option<&LinearLightLut>,
 ) {
     let out_width = region.width;
-    let h_kernels = kernels.horizontal.as_ref().unwrap();
-    let v_kernels = kernels.vertical.as_ref().unwrap();
+    let (Some(h_kernels), Some(v_kernels)) =
+        (kernels.horizontal.as_ref(), kernels.vertical.as_ref())
+    else {
+        panic!("resample_region_u8 requires kernels for both axes, use PrecomputedKernels::new_both_axes");
+    };
 
     let max_v_taps = v_kernels
         .iter()
@@ -337,11 +405,21 @@ pub fn resample_region_u8(
                         let start = kernel.start_idx as usize;
                         let count = (kernel.end_idx - kernel.start_idx + 1) as usize;
                         *out_pixel = if let Some(slice) = in_row.get(start..start + count) {
-                            slice
-                                .iter()
-                                .zip(kernel.weights_i32.iter())
-                                .map(|(&p, &w)| i32::from(p) * w)
-                                .sum::<i32>()
+                            if let Some(lut) = lut {
+                                // 12-bit linear * Q16 weight, fits in i32 even with
+                                // negative lobes (4095 * 65536 * ~1.5 < 2^31)
+                                slice
+                                    .iter()
+                                    .zip(kernel.weights_i32.iter())
+                                    .map(|(&p, &w)| lut.to_linear[usize::from(p)] * w)
+                                    .sum::<i32>()
+                            } else {
+                                slice
+                                    .iter()
+                                    .zip(kernel.weights_i32.iter())
+                                    .map(|(&p, &w)| i32::from(p) * w)
+                                    .sum::<i32>()
+                            }
                         } else {
                             0
                         };
@@ -364,9 +442,16 @@ pub fn resample_region_u8(
                 }
             }
 
-            // Shift Q32 -> u8 with rounding and clamp
-            for (px, &acc) in out_row.iter_mut().zip(row_accumulator.iter()) {
-                *px = ((acc + (1_i64 << 31)) >> 32).clamp(0, 255) as u8;
+            // Shift Q32 -> sample with rounding and clamp
+            if let Some(lut) = lut {
+                for (px, &acc) in out_row.iter_mut().zip(row_accumulator.iter()) {
+                    let linear = ((acc + (1_i64 << 31)) >> 32).clamp(0, i64::from(LINEAR_MAX));
+                    *px = lut.to_gamma[linear as usize];
+                }
+            } else {
+                for (px, &acc) in out_row.iter_mut().zip(row_accumulator.iter()) {
+                    *px = ((acc + (1_i64 << 31)) >> 32).clamp(0, 255) as u8;
+                }
             }
         }
         ring_buffer.fill(0);
