@@ -10,7 +10,8 @@
 //!
 //! Not as fast as AVX one.
 
-const SCALE_BITS: i32 = 512 + 65536 + (128 << 17);
+use super::scaled_basis::{BASIS_10, BASIS_12, BASIS_14, BASIS_3, BASIS_5, BASIS_6, BASIS_7};
+use super::{CONST_BITS, OUTPUT_SHIFT, PASS1_ROUND, PASS1_SHIFT, SCALE_BITS};
 
 #[inline(always)]
 fn wa(a: i32, b: i32) -> i32 {
@@ -35,8 +36,110 @@ pub fn idct_int_1x1(in_vector: &mut [i32; 64], mut out_vector: &mut [i16], strid
     for _ in 0..7 {
         out_vector = &mut out_vector[stride..];
         out_vector[..8].fill(coeff);
-
     }
+}
+
+// Separable reduced-IDCT weights and pass precision match libjpeg-turbo's
+// jidctred.c. These average DCT reconstruction cells, rather than sampling a
+// full 8x8 reconstruction. Frequency four vanishes at half scale; even AC
+// frequencies vanish at quarter scale.
+const HALF_WEIGHTS: [[i32; 8]; 4] = [
+    [16384, 20995, 15137, 7373, 0, -4926, -6270, -4176],
+    [16384, 8697, -15137, -17799, 0, 11893, 6270, -1730],
+    [16384, -8697, -15137, 17799, 0, -11893, 6270, 1730],
+    [16384, -20995, 15137, -7373, 0, 4926, -6270, 4176]
+];
+
+const QUARTER_WEIGHTS: [[i32; 8]; 2] = [
+    [32768, 29692, 0, -10426, 0, 6967, 0, -5906],
+    [32768, -29692, 0, 10426, 0, -6967, 0, 5906]
+];
+
+fn reduced_idct<const SIDE: usize>(
+    coefficients: &[i32; 64], output: &mut [i16], stride: usize, weights: &[[i32; 8]; SIDE],
+    column_shift: u32, row_shift: u32
+) {
+    assert!(stride >= SIDE && output.len() >= (SIDE - 1) * stride + SIDE);
+    let mut workspace = [[0_i32; 8]; SIDE];
+    for row in 0..SIDE {
+        for column in 0..8 {
+            let mut sum = 0_i32;
+            for frequency in 0..8 {
+                sum = wa(
+                    sum,
+                    wm(
+                        coefficients[frequency * 8 + column],
+                        weights[row][frequency]
+                    )
+                );
+            }
+            workspace[row][column] = wa(sum, 1 << (column_shift - 1)) >> column_shift;
+        }
+    }
+    for row in 0..SIDE {
+        for column in 0..SIDE {
+            let mut sum = 0_i32;
+            for frequency in 0..8 {
+                sum = wa(
+                    sum,
+                    wm(workspace[row][frequency], weights[column][frequency])
+                );
+            }
+            let sample = wa(sum, 1 << (row_shift - 1)) >> row_shift;
+            output[row * stride + column] = clamp(wa(sample, 128));
+        }
+    }
+}
+
+/// Reconstruct a half-scale 4x4 block without modifying coefficients or row padding.
+pub fn idct_scaled_4x4(coefficients: &mut [i32; 64], output: &mut [i16], stride: usize) {
+    reduced_idct(coefficients, output, stride, &HALF_WEIGHTS, 12, 19);
+}
+
+/// Reconstruct a quarter-scale 2x2 block without modifying coefficients or row padding.
+pub fn idct_scaled_2x2(coefficients: &mut [i32; 64], output: &mut [i16], stride: usize) {
+    reduced_idct(coefficients, output, stride, &QUARTER_WEIGHTS, 13, 20);
+}
+
+/// Reconstruct the eighth-scale block average without modifying coefficients.
+pub fn idct_scaled_1x1(coefficients: &mut [i32; 64], output: &mut [i16], stride: usize) {
+    assert!(stride > 0 && !output.is_empty());
+    output[0] = clamp(wa(wa(coefficients[0], 4) >> 3, 128));
+}
+
+/// Reconstruct a three-eighths-scale block with native integer rounding.
+pub fn idct_scaled_3x3(coefficients: &mut [i32; 64], output: &mut [i16], stride: usize) {
+    reduced_idct(coefficients, output, stride, &BASIS_3, 11, 18);
+}
+
+/// Reconstruct a five-eighths-scale block with native integer rounding.
+pub fn idct_scaled_5x5(coefficients: &mut [i32; 64], output: &mut [i16], stride: usize) {
+    reduced_idct(coefficients, output, stride, &BASIS_5, 11, 18);
+}
+
+/// Reconstruct a three-quarters-scale block with native integer rounding.
+pub fn idct_scaled_6x6(coefficients: &mut [i32; 64], output: &mut [i16], stride: usize) {
+    reduced_idct(coefficients, output, stride, &BASIS_6, 11, 18);
+}
+
+/// Reconstruct a seven-eighths-scale block with native integer rounding.
+pub fn idct_scaled_7x7(coefficients: &mut [i32; 64], output: &mut [i16], stride: usize) {
+    reduced_idct(coefficients, output, stride, &BASIS_7, 11, 18);
+}
+
+/// Reconstruct a ten-sample chroma block for native component scaling.
+pub fn idct_scaled_10x10(coefficients: &mut [i32; 64], output: &mut [i16], stride: usize) {
+    reduced_idct(coefficients, output, stride, &BASIS_10, 11, 18);
+}
+
+/// Reconstruct a twelve-sample chroma block for native component scaling.
+pub fn idct_scaled_12x12(coefficients: &mut [i32; 64], output: &mut [i16], stride: usize) {
+    reduced_idct(coefficients, output, stride, &BASIS_12, 11, 18);
+}
+
+/// Reconstruct a fourteen-sample chroma block for native component scaling.
+pub fn idct_scaled_14x14(coefficients: &mut [i32; 64], output: &mut [i16], stride: usize) {
+    reduced_idct(coefficients, output, stride, &BASIS_14, 11, 18);
 }
 
 #[allow(unused_assignments)]
@@ -58,10 +161,10 @@ pub fn idct_int(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize
         let p2 = in_vector[ptr + 16];
         let p3 = in_vector[ptr + 48];
 
-        let p1 = wm(wa(p2, p3), 2217);
+        let p1 = wm(wa(p2, p3), 4433);
 
-        let t2 = wa(p1, wm(p3, -7567));
-        let t3 = wa(p1, wm(p2, 3135));
+        let t2 = wa(p1, wm(p3, -15137));
+        let t3 = wa(p1, wm(p2, 6270));
 
         let p2 = in_vector[ptr];
         let p3 = in_vector[32 + ptr];
@@ -69,10 +172,10 @@ pub fn idct_int(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize
         let t0 = fsh(wa(p2, p3));
         let t1 = fsh(ws(p2, p3));
 
-        let x0 = wa(wa(t0, t3), 512);
-        let x3 = wa(ws(t0, t3), 512);
-        let x1 = wa(wa(t1, t2), 512);
-        let x2 = wa(ws(t1, t2), 512);
+        let x0 = wa(wa(t0, t3), PASS1_ROUND);
+        let x3 = wa(ws(t0, t3), PASS1_ROUND);
+        let x1 = wa(wa(t1, t2), PASS1_ROUND);
+        let x2 = wa(ws(t1, t2), PASS1_ROUND);
 
         let mut t0 = in_vector[ptr + 56];
         let mut t1 = in_vector[ptr + 40];
@@ -83,31 +186,31 @@ pub fn idct_int(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize
         let p4 = wa(t1, t3);
         let p1 = wa(t0, t3);
         let p2 = wa(t1, t2);
-        let p5 = wm(wa(p3, p4), 4816);
+        let p5 = wm(wa(p3, p4), 9633);
 
-        t0 = wm(t0, 1223);
-        t1 = wm(t1, 8410);
-        t2 = wm(t2, 12586);
-        t3 = wm(t3, 6149);
+        t0 = wm(t0, 2446);
+        t1 = wm(t1, 16819);
+        t2 = wm(t2, 25172);
+        t3 = wm(t3, 12299);
 
-        let p1 = wa(p5, wm(p1, -3685));
-        let p2 = wa(p5, wm(p2, -10497));
-        let p3 = wm(p3, -8034);
-        let p4 = wm(p4, -1597);
+        let p1 = wa(p5, wm(p1, -7373));
+        let p2 = wa(p5, wm(p2, -20995));
+        let p3 = wm(p3, -16069);
+        let p4 = wm(p4, -3196);
 
         t3 = wa(t3, wa(p1, p4));
         t2 = wa(t2, wa(p2, p3));
         t1 = wa(t1, wa(p2, p4));
         t0 = wa(t0, wa(p1, p3));
 
-        in_vector[ptr] = ws(wa(x0, t3), 0) >> 10;
-        in_vector[ptr + 8] = ws(wa(x1, t2), 0) >> 10;
-        in_vector[ptr + 16] = ws(wa(x2, t1), 0) >> 10;
-        in_vector[ptr + 24] = ws(wa(x3, t0), 0) >> 10;
-        in_vector[ptr + 32] = ws(ws(x3, t0), 0) >> 10;
-        in_vector[ptr + 40] = ws(ws(x2, t1), 0) >> 10;
-        in_vector[ptr + 48] = ws(ws(x1, t2), 0) >> 10;
-        in_vector[ptr + 56] = ws(ws(x0, t3), 0) >> 10;
+        in_vector[ptr] = wa(x0, t3) >> PASS1_SHIFT;
+        in_vector[ptr + 8] = wa(x1, t2) >> PASS1_SHIFT;
+        in_vector[ptr + 16] = wa(x2, t1) >> PASS1_SHIFT;
+        in_vector[ptr + 24] = wa(x3, t0) >> PASS1_SHIFT;
+        in_vector[ptr + 32] = ws(x3, t0) >> PASS1_SHIFT;
+        in_vector[ptr + 40] = ws(x2, t1) >> PASS1_SHIFT;
+        in_vector[ptr + 48] = ws(x1, t2) >> PASS1_SHIFT;
+        in_vector[ptr + 56] = ws(x0, t3) >> PASS1_SHIFT;
     }
 
     // horizontal pass
@@ -115,9 +218,9 @@ pub fn idct_int(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize
         let p2 = in_vector[i + 2];
         let p3 = in_vector[i + 6];
 
-        let p1 = wm(wa(p2, p3), 2217);
-        let t2 = wa(p1, wm(p3, -7567));
-        let t3 = wa(p1, wm(p2, 3135));
+        let p1 = wm(wa(p2, p3), 4433);
+        let t2 = wa(p1, wm(p3, -15137));
+        let t3 = wa(p1, wm(p2, 6270));
 
         let p2 = in_vector[i];
         let p3 = in_vector[i + 4];
@@ -139,17 +242,17 @@ pub fn idct_int(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize
         let p4 = wa(t1, t3);
         let p1 = wa(t0, t3);
         let p2 = wa(t1, t2);
-        let p5 = wm(wa(p3, p4), f2f(1.175875602));
+        let p5 = wm(wa(p3, p4), 9633);
 
-        t0 = wm(t0, 1223);
-        t1 = wm(t1, 8410);
-        t2 = wm(t2, 12586);
-        t3 = wm(t3, 6149);
+        t0 = wm(t0, 2446);
+        t1 = wm(t1, 16819);
+        t2 = wm(t2, 25172);
+        t3 = wm(t3, 12299);
 
-        let p1 = wa(p5, wm(p1, -3685));
-        let p2 = wa(p5, wm(p2, -10497));
-        let p3 = wm(p3, -8034);
-        let p4 = wm(p4, -1597);
+        let p1 = wa(p5, wm(p1, -7373));
+        let p2 = wa(p5, wm(p2, -20995));
+        let p3 = wm(p3, -16069);
+        let p4 = wm(p4, -3196);
 
         t3 = wa(t3, wa(p1, p4));
         t2 = wa(t2, wa(p2, p3));
@@ -165,14 +268,14 @@ pub fn idct_int(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize
             .try_into()
             .unwrap();
 
-        out[0] = clamp(wa(x0, t3) >> 17);
-        out[1] = clamp(wa(x1, t2) >> 17);
-        out[2] = clamp(wa(x2, t1) >> 17);
-        out[3] = clamp(wa(x3, t0) >> 17);
-        out[4] = clamp(ws(x3, t0) >> 17);
-        out[5] = clamp(ws(x2, t1) >> 17);
-        out[6] = clamp(ws(x1, t2) >> 17);
-        out[7] = clamp(ws(x0, t3) >> 17);
+        out[0] = clamp(wa(x0, t3) >> OUTPUT_SHIFT);
+        out[1] = clamp(wa(x1, t2) >> OUTPUT_SHIFT);
+        out[2] = clamp(wa(x2, t1) >> OUTPUT_SHIFT);
+        out[3] = clamp(wa(x3, t0) >> OUTPUT_SHIFT);
+        out[4] = clamp(ws(x3, t0) >> OUTPUT_SHIFT);
+        out[5] = clamp(ws(x2, t1) >> OUTPUT_SHIFT);
+        out[6] = clamp(ws(x1, t2) >> OUTPUT_SHIFT);
+        out[7] = clamp(ws(x0, t3) >> OUTPUT_SHIFT);
 
         i += 8;
         pos += stride;
@@ -180,16 +283,9 @@ pub fn idct_int(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize
 }
 
 #[inline]
-#[allow(clippy::cast_possible_truncation)]
-/// Multiply a number by 4096
-fn f2f(x: f32) -> i32 {
-    (x * 4096.0 + 0.5) as i32
-}
-
-#[inline]
-/// Multiply a number by 4096
+/// Scale a number to the IDCT constant precision.
 fn fsh(x: i32) -> i32 {
-    x << 12
+    x << CONST_BITS
 }
 
 /// Clamp values between 0 and 255
@@ -205,11 +301,11 @@ pub fn idct4x4(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize)
 
     // vertical pass
     for ptr in 0..4 {
-        let i0 = wa(fsh(in_vector[ptr]), 512);
+        let i0 = wa(fsh(in_vector[ptr]), PASS1_ROUND);
         let i2 = in_vector[ptr + 16];
 
-        let p1 = wm(i2, 2217);
-        let p3 = wm(i2, 5352);
+        let p1 = wm(i2, 4433);
+        let p3 = wm(i2, 10703);
 
         let x0 = wa(i0, p3);
         let x1 = wa(i0, p1);
@@ -220,25 +316,25 @@ pub fn idct4x4(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize)
         let i4 = in_vector[ptr + 24];
         let i3 = in_vector[ptr + 8];
 
-        let p5 = wm(wa(i4, i3), 4816);
+        let p5 = wm(wa(i4, i3), 9633);
 
-        let p1 = wa(p5, wm(i3, -3685));
-        let p2 = wa(p5, wm(i4, -10497));
+        let p1 = wa(p5, wm(i3, -7373));
+        let p2 = wa(p5, wm(i4, -20995));
 
-        let t3 = wa(p5, wm(i3, 867));
-        let t2 = wa(p5, wm(i4, -5945));
+        let t3 = wa(p5, wm(i3, 1730));
+        let t2 = wa(p5, wm(i4, -11892));
 
-        let t1 = wa(p2, wm(i3, -1597));
-        let t0 = wa(p1, wm(i4, -8034));
+        let t1 = wa(p2, wm(i3, -3196));
+        let t0 = wa(p1, wm(i4, -16069));
 
-        in_vector[ptr] = wa(x0, t3) >> 10;
-        in_vector[ptr + 8] = wa(x1, t2) >> 10;
-        in_vector[ptr + 16] = wa(x2, t1) >> 10;
-        in_vector[ptr + 24] = wa(x3, t0) >> 10;
-        in_vector[ptr + 32] = ws(x3, t0) >> 10;
-        in_vector[ptr + 40] = ws(x2, t1) >> 10;
-        in_vector[ptr + 48] = ws(x1, t2) >> 10;
-        in_vector[ptr + 56] = ws(x0, t3) >> 10;
+        in_vector[ptr] = wa(x0, t3) >> PASS1_SHIFT;
+        in_vector[ptr + 8] = wa(x1, t2) >> PASS1_SHIFT;
+        in_vector[ptr + 16] = wa(x2, t1) >> PASS1_SHIFT;
+        in_vector[ptr + 24] = wa(x3, t0) >> PASS1_SHIFT;
+        in_vector[ptr + 32] = ws(x3, t0) >> PASS1_SHIFT;
+        in_vector[ptr + 40] = ws(x2, t1) >> PASS1_SHIFT;
+        in_vector[ptr + 48] = ws(x1, t2) >> PASS1_SHIFT;
+        in_vector[ptr + 56] = ws(x0, t3) >> PASS1_SHIFT;
     }
 
     // horizontal pass
@@ -247,8 +343,8 @@ pub fn idct4x4(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize)
         let i0 = in_vector[i];
 
         let t0 = wa(fsh(i0), SCALE_BITS);
-        let t2 = wm(i2, 2217);
-        let t3 = wm(i2, 5352);
+        let t2 = wm(i2, 4433);
+        let t3 = wm(i2, 10703);
 
         let x0 = wa(t0, t3);
         let x3 = ws(t0, t3);
@@ -259,16 +355,16 @@ pub fn idct4x4(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize)
         let i3 = in_vector[i + 3];
         let i1 = in_vector[i + 1];
 
-        let p5 = wm(wa(i3, i1), f2f(1.175875602));
+        let p5 = wm(wa(i3, i1), 9633);
 
-        let p1 = wa(p5, wm(i1, -3685));
-        let p2 = wa(p5, wm(i3, -10497));
+        let p1 = wa(p5, wm(i1, -7373));
+        let p2 = wa(p5, wm(i3, -20995));
 
-        let t3 = wa(p5, wm(i1, 867));
-        let t2 = wa(p5, wm(i3, -5945));
+        let t3 = wa(p5, wm(i1, 1730));
+        let t2 = wa(p5, wm(i3, -11892));
 
-        let t1 = wa(p2, wm(i1, -1597));
-        let t0 = wa(p1, wm(i3, -8034));
+        let t1 = wa(p2, wm(i1, -3196));
+        let t0 = wa(p1, wm(i3, -16069));
 
         // to prevent some bad images from crashing
         let mut tmp = [0; 8];
@@ -280,14 +376,14 @@ pub fn idct4x4(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize)
             .unwrap();
 
         out.copy_from_slice(&[
-            clamp(wa(x0, t3) >> 17),
-            clamp(wa(x1, t2) >> 17),
-            clamp(wa(x2, t1) >> 17),
-            clamp(wa(x3, t0) >> 17),
-            clamp(ws(x3, t0) >> 17),
-            clamp(ws(x2, t1) >> 17),
-            clamp(ws(x1, t2) >> 17),
-            clamp(ws(x0, t3) >> 17)
+            clamp(wa(x0, t3) >> OUTPUT_SHIFT),
+            clamp(wa(x1, t2) >> OUTPUT_SHIFT),
+            clamp(wa(x2, t1) >> OUTPUT_SHIFT),
+            clamp(wa(x3, t0) >> OUTPUT_SHIFT),
+            clamp(ws(x3, t0) >> OUTPUT_SHIFT),
+            clamp(ws(x2, t1) >> OUTPUT_SHIFT),
+            clamp(ws(x1, t2) >> OUTPUT_SHIFT),
+            clamp(ws(x0, t3) >> OUTPUT_SHIFT)
         ]);
 
         pos += stride;
