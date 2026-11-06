@@ -2895,16 +2895,12 @@ fn baseline_scan_eof_respects_lenient_and_incremental_modes() {
         lenient.iter().any(|byte| *byte != 0),
         "lenient truncated decode should produce best-effort pixels"
     );
-    // The digest changed from `0x1eab_e750_2dcb_ddc3` (the legacy pixels) when a
-    // row that consumed the zero padding appended past the end of the data
-    // stopped being published even in part: every completed row before it is
-    // the same best-effort content as before, and the row that ran out of
-    // data — whose last block carried values decoded from padding — and
-    // everything after it are the neutral filler instead.
+    // Completed rows use accurate IDCT reconstruction. The row that consumed
+    // padding past the end of the input, and every later row, stay neutral.
     assert_eq!(
         fnv1a(&lenient),
-        0x4297eaaf2b39cae4,
-        "lenient output should match the completed rows plus the neutral filler"
+        0x64ae_c14a_eaa3_e181,
+        "lenient output should match accurate-IDCT completed rows plus neutral filler"
     );
 
     let strict_error = decode_with_mode(truncated, false, true)
@@ -2917,16 +2913,23 @@ fn baseline_scan_eof_respects_lenient_and_incremental_modes() {
 }
 
 #[test]
-fn baseline_multi_sos_lenient_eof_preserves_neutral_output() {
+fn baseline_multi_sos_lenient_eof_recovers_available_data() {
     let data = include_bytes!("../../../test-images/jpeg/tiny_non_interleaved_444.jpg");
     let cutoffs = [sos_data_start(data, 0) + 4, sos_data_start(data, 2) + 3];
 
-    for cutoff in cutoffs {
+    for (cutoff, expected) in cutoffs
+        .into_iter()
+        .zip([fnv1a(&vec![128; 16 * 16 * 3]), 0x4dc1_f675_3e30_f1f5])
+    {
         let pixels = decode_with_mode(&data[..cutoff], false, false)
             .expect("non-strict one-shot decode should accept a truncated component scan");
-        assert!(
-            pixels.iter().all(|byte| *byte == 128),
-            "cutoff {cutoff}: incomplete component scans should produce neutral output"
+        assert_eq!(pixels.len(), 16 * 16 * 3);
+        // Missing components retain the neutral placeholder; completed component
+        // data before final EOF matches the production libjpeg-turbo reference.
+        assert_eq!(
+            fnv1a(&pixels),
+            expected,
+            "cutoff {cutoff}: preserve neutral or recoverable component data"
         );
     }
 }
