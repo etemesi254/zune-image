@@ -89,7 +89,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
         if self.is_interleaved {
             // this helps us catch component errors.
-            self.set_upsampling();
+            self.set_upsampling(output.is_raw());
         }
         if self.is_interleaved {
             mcu_width = self.mcu_x;
@@ -954,7 +954,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         };
 
         // Size of our output image(width*height)
-        let is_hv = usize::from(self.is_interleaved);
+        let raw_mode = output.is_raw();
+        let is_hv = usize::from(self.is_interleaved && !raw_mode);
         let upsampler_scratch_size = is_hv
             * self
                 .components
@@ -969,8 +970,6 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         upsampler_scratch_space.clear();
         upsampler_scratch_space.resize(upsampler_scratch_size, 0);
         let mut tmp = [0_i32; DCT_BLOCK];
-
-        let raw_mode = output.is_raw();
 
         for (pos, comp) in self.components.iter_mut().enumerate() {
             // Allocate only needed components.
