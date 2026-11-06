@@ -131,6 +131,8 @@ impl OperationsTrait for Rotate {
         }
 
         let depth = image.depth().bit_type();
+        // Channel lengths are in bytes
+        let pix_size = image.depth().size_of();
         let colorspace = image.colorspace();
 
         // --- 180 Degree Fast Path (In-Place Reversal) ---
@@ -158,7 +160,7 @@ impl OperationsTrait for Rotate {
                 frame.channels_ref(colorspace, false).iter().collect();
             let num_channels = src_channels.len();
 
-            let new_channels = vec![Channel::new_with_bit_type(new_w * new_h, depth); num_channels];
+            let new_channels = vec![Channel::new_with_bit_type(new_w * new_h * pix_size, depth); num_channels];
             let mut dest_frame = Frame::new(new_channels);
 
             match depth {
