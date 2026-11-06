@@ -20,6 +20,10 @@ pub struct DecodeSliceContext<'a> {
     // quantization group
     pub current_qg_x: usize,
     pub current_qg_y: usize,
+    /// Position and log2 size of the coding unit being decoded
+    pub cu_x0: usize,
+    pub cu_y0: usize,
+    pub cu_log2_size: u8,
     pub last_qp_in_slice: i8, // This tracks the "previous" QP for the next CU
     pub last_qp_in_previous_qg: i8,
 
@@ -86,6 +90,9 @@ impl<'a> DecodeSliceContext<'a> {
             intra_mode_luma: 0,
             intra_mode_chroma: 0,
             cu_transquant_bypass_flag: false,
+            cu_x0: 0,
+            cu_y0: 0,
+            cu_log2_size: 3,
             qp_y_prime: 0,
             qp_cb_prime: 0,
             qp_cr_prime: 0,

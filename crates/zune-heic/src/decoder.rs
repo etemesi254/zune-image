@@ -196,37 +196,42 @@ where
                     self.ftyp_section = Some(ftype);
                 }
                 b"mdat" => {
-                    // store mdat option
+                    // A file may have several `mdat` boxes; item locations
+                    // (`iloc`) are absolute file offsets, so keep one
+                    // contiguous region from the first payload to the end of
+                    // the last one (the bytes between boxes are zero).
                     trace!("Found MDAT section :{:?}", header.get_total_size());
                     let payload_start_offset = self.stream.position()?;
-                    // skip to the next section
-                    match header.get_total_size() {
+                    let payload = match header.get_total_size() {
                         BoxSize::Absolute(total_size) => {
                             let payload_size = total_size.saturating_sub(header.get_header_size());
-
-                            if payload_size > self.options.hevc_max_mdat_size() as u64 {
-                                return Err(HeicErrors::Generic {
-                                    msg: format!(
-                                        "MDAT {} size exceeds HEIC max configured size {}",
-                                        payload_size,
-                                        self.options.hevc_max_mdat_size()
-                                    ),
-                                });
-                            }
+                            self.check_mdat_size(payload_start_offset, payload_size)?;
                             let mut output = vec![0; payload_size as usize];
-
                             self.stream.read_exact_bytes(&mut output)?;
-                            self.mdat_section = Some(MDatSection {
-                                raw_data: output,
-                                start_offset: payload_start_offset,
-                            });
+                            output
                         }
                         BoxSize::ToEnd => {
                             // read to end of file/stream
                             let mut output = Vec::with_capacity(1024);
                             self.stream.read_all(&mut output)?;
+                            self.check_mdat_size(payload_start_offset, output.len() as u64)?;
+                            output
+                        }
+                    };
+                    match &mut self.mdat_section {
+                        Some(mdat) if payload_start_offset >= mdat.start_offset + mdat.raw_data.len() as u64 => {
+                            let gap = payload_start_offset - mdat.start_offset;
+                            mdat.raw_data.resize(gap as usize, 0);
+                            mdat.raw_data.extend_from_slice(&payload);
+                        }
+                        Some(_) => {
+                            return Err(HeicErrors::Generic {
+                                msg: "Overlapping mdat boxes".to_string(),
+                            });
+                        }
+                        None => {
                             self.mdat_section = Some(MDatSection {
-                                raw_data: output,
+                                raw_data: payload,
                                 start_offset: payload_start_offset,
                             });
                         }
@@ -294,8 +299,14 @@ where
         self.find_alpha(primary_id);
         // Calc colorspace
         self.internal_colorspace()?;
-        // Load exif if present
-        self.load_exif_data()?;
+        // Load exif if present. Metadata that cannot be read does not stop
+        // the image from being decoded (like libheif): warn and go on.
+        let position = self.stream.position()?;
+        if let Err(e) = self.load_exif_data() {
+            warn!("Ignoring unreadable Exif metadata: {e:?}");
+            self.exif_data = None;
+            self.stream.seek(ZSeekFrom::Start(position))?;
+        }
         // ICC too
         let _ = self.extract_icc_profile_inner();
 
@@ -929,6 +940,13 @@ where
             }
         }
 
+        // The HEVC bitstream decides, like libheif 1.17, which decodes and
+        // converts whatever the bitstream holds: some files say one channel
+        // in `pixi` (and in `hvcC`) but carry a 4:2:0 picture.
+        if let Some(chroma_format_idc) = self.primary_chroma_format_idc() {
+            base_channels = if chroma_format_idc == 0 { 1 } else { 3 };
+        }
+
         // --- STEP 2: an alpha plane, found by `find_alpha` ---
         let has_alpha_mask = self.alpha.is_some();
 
@@ -948,6 +966,47 @@ where
         };
         self.colorspace = Some(result);
         Ok(())
+    }
+
+    /// Check that the image data, with an `mdat` payload of `payload_size`
+    /// bytes at `payload_start` added, stays within
+    /// [`hevc_max_mdat_size`](DecoderOptions::hevc_max_mdat_size).
+    fn check_mdat_size(&self, payload_start: u64, payload_size: u64) -> Result<(), HeicErrors> {
+        let start = self.mdat_section.as_ref().map_or(payload_start, |m| m.start_offset);
+        let total = (payload_start + payload_size).saturating_sub(start);
+        if total > self.options.hevc_max_mdat_size() as u64 {
+            return Err(HeicErrors::Generic {
+                msg: format!(
+                    "MDAT {} size exceeds HEIC max configured size {}",
+                    total,
+                    self.options.hevc_max_mdat_size()
+                ),
+            });
+        }
+        Ok(())
+    }
+
+    /// `chroma_format_idc` of the SPS of the primary image's first coded
+    /// picture (its `hvcC`, else the grid item's), if there is one.
+    fn primary_chroma_format_idc(&self) -> Option<u32> {
+        let layout = self.primary.as_ref()?;
+        let iprp = self.meta_section.as_ref()?.iprp.as_ref()?;
+        let (ipma, ipco) = (iprp.ipma.as_ref()?, iprp.ipco.as_ref()?);
+        let sps_of = |item_id: u32| -> Option<Vec<u8>> {
+            let entry = ipma.entries.iter().find(|e| e.item_id == item_id)?;
+            entry.associations.iter().find_map(|assoc| {
+                let index = usize::from(assoc.property_index).checked_sub(1)?;
+                match ipco.properties.get(index) {
+                    Some(ItemProperty::HvcC { payload }) => {
+                        crate::processor::extract_hevc_parameter_sets(payload).sps
+                    }
+                    _ => None,
+                }
+            })
+        };
+        let first = *layout.tile_ids.first()?;
+        let sps = sps_of(first).or_else(|| sps_of(layout.item_id))?;
+        sps_chroma_format_idc(&sps)
     }
 
     /// Internal method to find and load EXIF data into the struct.
@@ -980,6 +1039,11 @@ where
             return Ok(());
         }
         let position = &exif_iloc.extents[0];
+        // an Exif item starts with a 4-byte offset to the TIFF header; some
+        // files have an empty Exif item
+        if position.length < 4 {
+            return Ok(());
+        }
 
         // 3. Calculate absolute file offset
         let absolute_offset = match exif_iloc.construction_method {
@@ -1256,3 +1320,70 @@ where
 //         );
 //     }
 // }
+
+/// `chroma_format_idc` from an SPS NAL unit (with its 2-byte header), or
+/// `None` if it is too short.
+fn sps_chroma_format_idc(nal: &[u8]) -> Option<u32> {
+    // remove emulation prevention bytes (00 00 03 -> 00 00); the field is in
+    // the first few dozen bytes
+    let mut rbsp = Vec::with_capacity(64);
+    let mut zeros = 0;
+    for &b in nal.get(2..)?.iter().take(64) {
+        if zeros >= 2 && b == 3 {
+            zeros = 0;
+            continue;
+        }
+        zeros = if b == 0 { zeros + 1 } else { 0 };
+        rbsp.push(b);
+    }
+
+    let mut pos = 0usize;
+    let mut bits = |n: usize| -> Option<u32> {
+        let mut v = 0u32;
+        for _ in 0..n {
+            let byte = *rbsp.get(pos >> 3)?;
+            v = (v << 1) | u32::from((byte >> (7 - (pos & 7))) & 1);
+            pos += 1;
+        }
+        Some(v)
+    };
+    // sps_video_parameter_set_id, sps_max_sub_layers_minus1, temporal_id_nesting
+    bits(4)?;
+    let max_sub_layers_minus1 = bits(3)? as usize;
+    bits(1)?;
+    // profile_tier_level(1, sps_max_sub_layers_minus1): general part
+    bits(32)?;
+    bits(32)?;
+    bits(32)?;
+    let mut sub_layer_flags = [(false, false); 8];
+    for flags in sub_layer_flags.iter_mut().take(max_sub_layers_minus1) {
+        *flags = (bits(1)? == 1, bits(1)? == 1);
+    }
+    if max_sub_layers_minus1 > 0 {
+        for _ in max_sub_layers_minus1..8 {
+            bits(2)?;
+        }
+    }
+    for &(profile, level) in sub_layer_flags.iter().take(max_sub_layers_minus1) {
+        if profile {
+            bits(32)?;
+            bits(32)?;
+            bits(24)?;
+        }
+        if level {
+            bits(8)?;
+        }
+    }
+    let mut ue = || -> Option<u32> {
+        let mut leading = 0;
+        while bits(1)? == 0 {
+            leading += 1;
+            if leading > 31 {
+                return None;
+            }
+        }
+        Some((1u32 << leading) - 1 + bits(leading)?)
+    };
+    ue()?; // sps_seq_parameter_set_id
+    ue() // chroma_format_idc
+}

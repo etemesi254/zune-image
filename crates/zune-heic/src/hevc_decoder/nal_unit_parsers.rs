@@ -130,7 +130,11 @@ pub fn parse_scaling_list_data(r: &mut BitReader) -> Result<ScalingLists, NalErr
             } else {
                 // Prediction Mode: Copy from a previous matrix
                 let pred_matrix_id_delta = r.read_ue()? as usize;
-                let ref_matrix_id = matrix_id - pred_matrix_id_delta;
+                let ref_matrix_id = matrix_id.checked_sub(pred_matrix_id_delta).ok_or_else(|| {
+                    NalError::Generic(format!(
+                        "scaling_list_pred_matrix_id_delta {pred_matrix_id_delta} out of range"
+                    ))
+                })?;
 
                 match size_id {
                     0 => sl.size0[matrix_id] = sl.size0[ref_matrix_id],
@@ -527,6 +531,20 @@ pub fn decode_slice_header(
                 let v = r.get_bits((offset_len_minus1 + 1) as u8)?;
                 sh.entry_point_offsets.push((v as u32).wrapping_add(1));
             }
+        }
+    }
+
+    // slice_segment_header_extension: its bytes have no meaning for this
+    // decoder, but must be skipped (multi-layer encoders use it)
+    if pps.slice_segment_header_extension_present_flag {
+        let extension_length = r.read_ue()?;
+        if extension_length > 256 {
+            return Err(NalError::Generic(format!(
+                "slice_segment_header_extension_length {extension_length} out of range"
+            )));
+        }
+        for _ in 0..extension_length {
+            r.get_bits(8)?;
         }
     }
 

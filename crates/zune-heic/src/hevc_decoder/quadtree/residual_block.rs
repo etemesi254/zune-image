@@ -480,10 +480,12 @@ pub fn decode_residual_block(
     }
 
     // --- Transform Skip Logic ---
+    // Log2MaxTransformSkipSize: from the PPS range extension, else 2 (4x4
+    // blocks only, as in HEVC version 1)
     let log2_max_transform_skip_size = if let Some(range) = pps.range_extension.as_ref() {
         range.log2_max_transform_skip_block_size
     } else {
-        0
+        2
     };
     let transform_skip_flag = if ctx.pps.transform_skip_enabled_flag
         && !ctx.cu_transquant_bypass_flag

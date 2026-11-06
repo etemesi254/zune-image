@@ -222,7 +222,17 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
 
     let sps_extension_present_flag = r.read_flag()?;
 
-    if sps_extension_present_flag {
+    // sps_range_extension_flag, sps_multilayer_extension_flag,
+    // sps_3d_extension_flag, sps_scc_extension_flag, sps_extension_4bits
+    // (7.3.2.2.1); only the range extension matters for decoding the base
+    // layer, and it comes first
+    let sps_range_extension_flag = sps_extension_present_flag && {
+        let range = r.read_flag()?;
+        r.get_bits(7)?;
+        range
+    };
+
+    if sps_range_extension_flag {
         let mut sps_range_ext = SpsRangeExtension::default();
 
         sps_range_ext.transform_skip_rotation_enabled_flag = r.read_flag()?;
