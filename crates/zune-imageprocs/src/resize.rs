@@ -23,7 +23,7 @@ use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 use crate::premul_alpha::PremultiplyAlpha;
 use crate::resize::seperable_kernel::{
-    resample_region_generic, resample_region_u8, PrecomputedKernels,
+    resample_region_generic, resample_region_u8, LinearLightLut, PrecomputedKernels,
 };
 use crate::transfer_curve::{ConversionType, TransferCurve, TransferFunction};
 
@@ -133,46 +133,68 @@ impl OperationsTrait for Resize {
 
     #[allow(clippy::too_many_lines, unused_variables)]
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        let is_image_linear = image.metadata().color_trc() == Some(ColorCharacteristics::Linear);
-        let transfer_function = image
-            .metadata()
-            .color_trc()
-            .unwrap_or(ColorCharacteristics::sRGB);
+        let (old_w, old_h) = image.dimensions();
+        let (new_w, new_h) = calc_absolute_dimensions(self.dimensions, image);
 
-        if !is_image_linear {
-            trace!("Converting image to linear along resize method");
-            TransferCurve::new(
-                TransferFunction::from(transfer_function),
-                ConversionType::GammaToLinear,
-            )
-            .execute_impl(image)?;
+        if (old_w, old_h) == (new_w, new_h) {
+            trace!("Resize dimensions match image dimensions, no-op");
+            return Ok(());
         }
+
+        let is_image_linear = image.metadata().color_trc() == Some(ColorCharacteristics::Linear);
+        let transfer_function = TransferFunction::from(
+            image
+                .metadata()
+                .color_trc()
+                .unwrap_or(ColorCharacteristics::sRGB),
+        );
 
         let is_premultiplied = image.metadata().is_premultiplied_alpha();
         let colorspace = image.colorspace();
         let has_alpha = colorspace.has_alpha();
         let original_depth = image.depth();
+        let needs_premultiply = !is_premultiplied && has_alpha;
 
-        if !is_premultiplied && has_alpha {
+        if needs_premultiply {
+            // Convert before linearizing so the transfer curve runs at full precision
             image.convert_depth(BitDepth::Float32)?;
+        }
+
+        // u8 images are linearized inside the resampler via lookup tables, since 8 bits
+        // can't hold linear light without crushing dark tones.
+        let linearize_in_kernel = !is_image_linear && image.depth().bit_type() == BitType::U8;
+        let linearize_whole_image = !is_image_linear && !linearize_in_kernel;
+
+        if linearize_whole_image {
+            trace!("Converting image to linear along resize method");
+            TransferCurve::new(transfer_function, ConversionType::GammaToLinear)
+                .execute_impl(image)?;
+        }
+
+        if needs_premultiply {
             trace!("Premultiplying alpha along resize method");
             PremultiplyAlpha::new(AlphaState::PreMultiplied).execute_impl(image)?;
         }
 
-        let (old_w, old_h) = image.dimensions();
-        let (new_w, new_h) = calc_absolute_dimensions(self.dimensions, image);
         let depth = image.depth().bit_type();
+        // Channel lengths are in bytes
+        let pix_size = image.depth().size_of();
 
         trace!("Resize dims -> width:{new_w} height:{new_h}");
 
-        let precomputed_kernels = PrecomputedKernels::new(old_w, old_h, new_w, new_h, self.method);
+        let precomputed_kernels = if depth == BitType::U8 {
+            PrecomputedKernels::new_both_axes(old_w, old_h, new_w, new_h, self.method)
+        } else {
+            PrecomputedKernels::new(old_w, old_h, new_w, new_h, self.method)
+        };
+        let linear_lut = linearize_in_kernel.then(|| LinearLightLut::new(transfer_function));
 
         for frame in image.frames_mut() {
             let src_channels: Vec<&Channel> =
                 frame.channels_ref(colorspace, false).iter().collect();
             let num_channels = src_channels.len();
 
-            let new_channels = vec![Channel::new_with_bit_type(new_w * new_h, depth); num_channels];
+            let new_channels = vec![Channel::new_with_bit_type(new_w * new_h * pix_size, depth); num_channels];
             let mut dest_frame = Frame::new(new_channels);
 
             // 2. Dispatch to the frame primitive using the new dimensions
@@ -189,7 +211,13 @@ impl OperationsTrait for Resize {
                         colorspace,
                         false,
                         |region| {
-                            resample_region_u8(region, &src_slices, old_w, &precomputed_kernels);
+                            resample_region_u8(
+                                region,
+                                &src_slices,
+                                old_w,
+                                &precomputed_kernels,
+                                linear_lut.as_ref(),
+                            );
                         },
                     )?;
                 }
@@ -251,19 +279,19 @@ impl OperationsTrait for Resize {
 
         image.set_dimensions(new_w, new_h);
 
-        if !is_premultiplied && has_alpha {
+        if needs_premultiply {
             trace!("Un-premultiplying alpha along resize method");
             PremultiplyAlpha::new(AlphaState::NonPreMultiplied).execute_impl(image)?;
-            image.convert_depth(original_depth)?;
         }
 
-        if !is_image_linear {
+        if linearize_whole_image {
             trace!("Converting image back to gamma along resize method");
-            TransferCurve::new(
-                TransferFunction::from(transfer_function),
-                ConversionType::LinearToGamma,
-            )
-            .execute_impl(image)?;
+            TransferCurve::new(transfer_function, ConversionType::LinearToGamma)
+                .execute_impl(image)?;
+        }
+
+        if needs_premultiply {
+            image.convert_depth(original_depth)?;
         }
 
         Ok(())
