@@ -45,6 +45,7 @@ pub fn idct_int_1x1(in_vector: &mut [i32; 64], mut out_vector: &mut [i16], strid
     clippy::op_ref,
     clippy::cast_possible_truncation
 )]
+#[cfg_attr(all(target_arch = "wasm32", target_feature = "simd128"), allow(dead_code))]
 pub fn idct_int(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize) {
     let mut pos = 0;
     let mut i = 0;
@@ -200,6 +201,7 @@ fn clamp(a: i32) -> i16 {
 }
 
 /// IDCT assuming only the upper 4x4 is filled.
+#[cfg_attr(all(target_arch = "wasm32", target_feature = "simd128"), allow(dead_code))]
 pub fn idct4x4(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize) {
     let mut pos = 0;
 

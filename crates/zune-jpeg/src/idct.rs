@@ -37,12 +37,15 @@ use zune_core::log::debug;
 use zune_core::options::DecoderOptions;
 
 use crate::decoder::IDCTPtr;
+#[cfg_attr(all(target_arch = "wasm32", target_feature = "simd128"), allow(unused_imports))]
 use crate::idct::scalar::{idct_int, idct_int_1x1};
 
 #[cfg(feature = "x86")]
 pub mod avx2;
 #[cfg(feature = "neon")]
 pub mod neon;
+#[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+pub mod wasm32;
 
 pub mod scalar;
 
@@ -71,9 +74,17 @@ pub fn choose_idct_func(options: &DecoderOptions) -> IDCTPtr {
             };
         }
     }
-    debug!("Using scalar integer IDCT");
-    // use generic one
-    return idct_int;
+    #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+    {
+        debug!("Using vector integer IDCT");
+        return wasm32::idct_simd128;
+    }
+    #[cfg(not(all(target_arch = "wasm32", target_feature = "simd128")))]
+    {
+        debug!("Using scalar integer IDCT");
+        // use generic one
+        return idct_int;
+    }
 }
 
 /// Choose a function to implement 4x4 IDCT.
@@ -94,8 +105,14 @@ pub fn choose_idct_4x4_func(_options: &DecoderOptions) -> IDCTPtr {
             };
         }
     }
-
-    scalar::idct4x4
+    #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+    {
+        return wasm32::idct_simd128_4x4;
+    }
+    #[cfg(not(all(target_arch = "wasm32", target_feature = "simd128")))]
+    {
+        return scalar::idct4x4;
+    }
 }
 
 pub fn choose_idct_1x1_func(_: &DecoderOptions) -> IDCTPtr {
@@ -108,6 +125,84 @@ pub fn choose_idct_1x1_func(_: &DecoderOptions) -> IDCTPtr {
 #[allow(dead_code)]
 mod tests {
     use super::*;
+
+    /// A block of any coefficients shifted down by `shift`, its `kept` first
+    /// rows and columns, each kept one in `sparse`.
+    fn wild_block(state: &mut u64, shift: u32, kept: usize, sparse: u64) -> [i32; 64] {
+        let mut next = || {
+            *state = state.wrapping_mul(0x5851_f42d_4c95_7f2d).wrapping_add(0x1405_7b7e_f767_814f);
+            *state >> 16
+        };
+        let mut block = [0; 64];
+        for at in 0..64 {
+            if at % 8 < kept && at / 8 < kept && next() % sparse == 0 {
+                block[at] = (next() as u32 as i32) >> shift;
+            }
+        }
+        block
+    }
+
+    /// The kernels in lanes against the scalar ones over blocks of every
+    /// shape, the wrapping coefficients of hostile streams among them, at a
+    /// stride past the block, each writing only its block; the 4 x 4 kernel
+    /// leaving its zero coefficients zero.
+    #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+    #[test]
+    fn the_kernels_in_lanes_are_the_scalar_kernels() {
+        const STRIDE: usize = 11;
+        let kernels: [(IDCTPtr, IDCTPtr, usize); 2] = [
+            (wasm32::idct_simd128, idct_int, 8),
+            (wasm32::idct_simd128_4x4, scalar::idct4x4, 4)
+        ];
+        for (lanes, scalar, kept) in kernels {
+            let mut state = 0x1234_5678_9abc_def0;
+            let (mut clipped, mut alone) = (0, 0);
+            for index in 0..200_000 {
+                let shift = [20, 16, 11, 0][index % 4];
+                let sparse = [1, 2, 8, 64][index / 4 % 4];
+                let mut block = wild_block(&mut state, shift, kept, sparse);
+                // A block of its DC alone, which the 8 x 8 kernel tests for.
+                if index % 16 == 15 {
+                    let dc = block[0];
+                    block = [0; 64];
+                    block[0] = dc;
+                }
+                let mut scalar_block = block;
+                let mut made = [-1; 8 * STRIDE];
+                let mut expected = [-1; 8 * STRIDE];
+                let given = block;
+                lanes(&mut block, &mut made, STRIDE);
+                scalar(&mut scalar_block, &mut expected, STRIDE);
+                assert_eq!(made, expected, "{index}: {given:?}");
+                assert_eq!(block, given);
+                clipped += made.iter().filter(|&&sample| sample == 0 || sample == 255).count();
+                alone += usize::from(given[1..] == [0; 63]);
+            }
+            assert!(clipped > 100_000 && alone > 1_000, "{clipped} {alone}");
+        }
+    }
+
+    /// The control: a coefficient moved moves what a kernel makes, and an
+    /// output too short for the block loses its rows, never a panic.
+    #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+    #[test]
+    fn a_kernel_in_lanes_reads_every_coefficient_and_writes_only_its_rows() {
+        let mut state = 0x0fed_cba9_8765_4321;
+        let block = wild_block(&mut state, 20, 8, 1);
+        let mut base = [0; 64];
+        wasm32::idct_simd128(&mut block.clone(), &mut base, 8);
+        for at in 0..64 {
+            let mut moved = block;
+            moved[at] = moved[at].wrapping_add(16);
+            let mut made = [0; 64];
+            wasm32::idct_simd128(&mut moved, &mut made, 8);
+            assert_ne!(made, base, "coefficient {at}");
+        }
+        let mut short = [-1; 60];
+        wasm32::idct_simd128(&mut block.clone(), &mut short, 8);
+        wasm32::idct_simd128_4x4(&mut block.clone(), &mut short, 8);
+        assert_eq!(short[56..], [-1; 4]);
+    }
 
     #[test]
     fn idct_test0() {
