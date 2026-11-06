@@ -232,9 +232,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     * component.horizontal_sample
                     * mcu_height
                     * 64;
+                // Mid-grey where no scan holds a block, as a zero block is.
                 if !resuming || mcu.len() != len {
                     mcu.clear();
-                    mcu.resize(len, 0);
+                    mcu.resize(len, 128);
                 }
             }
         }
@@ -1235,8 +1236,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     });
                     self.checkpoint_scan(mcu_row, j + 1, ctx_pixels_written, dc_predictions)?;
                 }
-                if !handled_restart && stream.marker().is_some() {
-                    if matches!(stream.marker(), Some(Marker::DNL)) && j + 1 < mcu_width {
+                if !handled_restart && matches!(stream.marker(), Some(Marker::DNL)) {
+                    if j + 1 < mcu_width {
                         return Err(DecodeErrors::FormatStatic(
                             "DNL marker found before the end of an MCU row",
                         ));
@@ -1255,8 +1256,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 break;
             }
 
-            if B::marker_ends_data() && stream.marker().is_some() && stream.bits_left() == 0 {
-                if matches!(stream.marker(), Some(Marker::DNL)) && j + 1 < mcu_width {
+            if B::marker_ends_data()
+                && matches!(stream.marker(), Some(Marker::DNL))
+                && stream.bits_left() == 0
+            {
+                if j + 1 < mcu_width {
                     return Err(DecodeErrors::FormatStatic(
                         "DNL marker found before the end of an MCU row",
                     ));
@@ -1367,7 +1371,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     | Marker::COM
                     | Marker::APP(_)
             );
-            if ends_scan && !is_last_row && bits_left > 0 {
+            // When Huffman data ends early the scan's rows go on, their blocks zero, and the
+            // marker waits for the last of them.
+            if ends_scan && !is_last_row && (bits_left > 0 || B::marker_ends_data()) {
                 return Ok(McuContinuation::Ok);
             }
             if *m == Marker::EOI {
@@ -1382,8 +1388,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 // https://github.com/google/libultrahdr
                 *stream.seen_eoi() = true;
             } else if let Marker::RST(_) = m {
-                // A latched RST means the entropy segment is already exhausted.
-                self.handle_rst(stream)?;
+                // A latched RST ends a segment whose interval may go on past this row, so it is
+                // taken when `todo` runs out, the interval's other blocks left zero.
+                if self.restart_interval == 0 || !B::marker_ends_data() {
+                    self.handle_rst(stream)?;
+                }
             } else if let Marker::SOS = m {
                 self.parse_marker_inner(Marker::SOS)?;
                 self.invalidate_scan_checkpoint();

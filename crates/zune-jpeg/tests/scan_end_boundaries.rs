@@ -15,8 +15,9 @@
 //! because such an MCU carries values the data never stated.
 
 use zune_core::bytestream::ZCursor;
+use zune_core::options::DecoderOptions;
 use zune_jpeg::errors::DecodeErrors;
-use zune_jpeg::JpegDecoder;
+use zune_jpeg::{JpegDecoder, RawImcuRowStatus};
 
 use std::cell::Cell;
 use std::io::{BufRead, Read, Seek, SeekFrom};
@@ -209,4 +210,102 @@ fn a_truncated_scan_publishes_only_rows_the_data_held() {
             "cutoff {cutoff}: the retry is not byte-identical to the one-shot decode"
         );
     }
+}
+
+/// A grey JPEG of `blocks_wide` by `rows` blocks. Its DC codes are `0` for no difference and `10`
+/// for three bits, its AC code `0` an end of block, its quantization 16, so a difference of 4 is
+/// 8 levels.
+fn grey_jpeg(blocks_wide: u16, rows: u16, restart: u16, scan: &[u8]) -> Vec<u8> {
+    let (width, height) = (blocks_wide * 8, rows * 8);
+    let mut out = vec![0xff, 0xd8, 0xff, 0xdb, 0, 67, 0];
+    out.extend([16; 64]);
+    out.extend([0xff, 0xc4, 0, 21, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3]);
+    out.extend([0xff, 0xc4, 0, 20, 0x10, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    out.extend([0xff, 0xc0, 0, 11, 8]);
+    out.extend(height.to_be_bytes());
+    out.extend(width.to_be_bytes());
+    out.extend([1, 1, 0x11, 0]);
+    out.extend([0xff, 0xdd, 0, 4]);
+    out.extend(restart.to_be_bytes());
+    out.extend([0xff, 0xda, 0, 8, 1, 1, 0, 0, 63, 0]);
+    out.extend(scan);
+    out.extend([0xff, 0xd9]);
+    out
+}
+
+/// A first block 8 levels above mid-grey, then `blocks` with no difference, padded with ones.
+fn segment(blocks: usize) -> Vec<u8> {
+    let bits = format!("101000{}", "00".repeat(blocks));
+    let padded = format!("{bits}{}", "1".repeat(bits.len().next_multiple_of(8) - bits.len()));
+    padded
+        .as_bytes()
+        .chunks(8)
+        .map(|byte| byte.iter().fold(0, |value, bit| value * 2 + (bit - b'0')))
+        .collect()
+}
+
+/// The one plane of `data`, pulled row by row.
+fn pulled(data: &[u8]) -> Vec<u8> {
+    let mut decoder = JpegDecoder::new(ZCursor::new(data));
+    decoder.decode_headers().unwrap();
+    let mut raw = decoder.raw_output();
+    let layout = raw.layout().unwrap();
+    let width = layout[0].width;
+    let mut plane = vec![0; width * layout[0].height];
+    let mut row = 0;
+    loop {
+        let mut planes = [&mut plane[row * width..]];
+        match raw.decode_next_imcu_row(&mut planes, &[width]).unwrap() {
+            RawImcuRowStatus::RowReady { rows_written } => row += rows_written[0],
+            RawImcuRowStatus::Complete => return plane,
+            status => panic!("{status:?}"),
+        }
+    }
+}
+
+#[test]
+fn past_its_bytes_a_scan_is_mid_grey() {
+    let whole = grey_jpeg(9, 1, 0, &segment(8));
+    assert!(pulled(&whole).iter().all(|&sample| sample == 136));
+    assert!(decode(&whole).unwrap().chunks(3).all(|pixel| pixel[0] == 136));
+
+    let cut = grey_jpeg(9, 1, 0, &segment(1));
+    let plane = pulled(&cut);
+    assert!(plane[..16].iter().all(|&sample| sample == 136), "{plane:?}");
+    assert!(plane[16..72].iter().all(|&sample| sample == 128), "{plane:?}");
+}
+
+#[test]
+fn a_short_interval_resumes_at_its_restart_marker() {
+    let scan = [&segment(3)[..], &[0xff, 0xd0], &segment(1), &[0xff, 0xd1], &segment(3)].concat();
+    let plane = pulled(&grey_jpeg(2, 6, 4, &scan));
+    let samples: Vec<u8> = (0..12).map(|block| plane[block / 2 * 8 * 16 + block % 2 * 8]).collect();
+    assert_eq!(samples, [136, 136, 136, 136, 136, 136, 128, 128, 136, 136, 136, 136]);
+}
+
+#[test]
+fn a_scan_short_of_its_blocks_is_an_error_in_strict_mode() {
+    let cut = grey_jpeg(9, 1, 0, &segment(1));
+    let options = DecoderOptions::default().set_strict_mode(true);
+    let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&cut), options);
+    assert!(decoder.decode().is_err());
+}
+
+#[test]
+fn a_component_no_scan_holds_is_mid_grey() {
+    let data = include_bytes!("../../../test-images/jpeg/non_interleaved_420_64x64.jpg");
+    let last = data.windows(2).rposition(|bytes| bytes == [0xff, 0xda]).unwrap();
+    let cut = [&data[..last], &[0xff, 0xd9][..]].concat();
+
+    let mut decoder = JpegDecoder::new(ZCursor::new(&cut));
+    decoder.decode_headers().unwrap();
+    let mut raw = decoder.raw_output();
+    let layout = raw.layout().unwrap();
+    let mut planes: Vec<Vec<u8>> =
+        layout[..3].iter().map(|plane| vec![0; plane.stride * plane.height]).collect();
+    let mut slices: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
+    raw.decode_into_planes(&mut slices).unwrap();
+    drop(raw);
+    assert!(planes[2].iter().all(|&sample| sample == 128));
+    assert!(planes[1].iter().any(|&sample| sample != 128));
 }

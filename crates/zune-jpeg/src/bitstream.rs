@@ -122,6 +122,7 @@ pub(crate) struct HuffmanBitstreamState {
     pub(crate) zeros_past_end: usize,
     pub(crate) exhausted:      bool,
     pub(crate) stuffed_past_end: bool,
+    pub(crate) filled:         u16,
     pub(crate) seen_eoi:       bool,
     pub(crate) eob_run:        i32
 }
@@ -300,6 +301,10 @@ pub(crate) struct BitStreamHuffman {
     /// `0xFF` was data or the first half of a marker is exactly what the missing byte would
     /// have said, so a row that reached it is not publishable.
     stuffed_past_end:    bool,
+    /// Zero bits appended after a marker, at the low end of the buffer. While `bits_left` is no
+    /// more than this the entropy-coded data is used up, and while it is less a code has been
+    /// read from those zeros.
+    filled:              u16,
     /// True if we have seen end of image marker.
     /// Don't read anything after that.
     seen_eoi:            bool,
@@ -529,6 +534,7 @@ impl BitStream for BitStreamHuffman {
             zeros_past_end:      0,
             exhausted:           false,
             stuffed_past_end:    false,
+            filled:              0,
             seen_eoi:            false,
             strict:              false,
         }
@@ -552,6 +558,7 @@ impl BitStream for BitStreamHuffman {
             zeros_past_end:      0,
             exhausted:           false,
             stuffed_past_end:    false,
+            filled:              0,
             seen_eoi:            false,
             strict:              false,
         }
@@ -610,6 +617,7 @@ impl BitStream for BitStreamHuffman {
             zeros_past_end:   self.zeros_past_end,
             exhausted:        self.exhausted,
             stuffed_past_end: self.stuffed_past_end,
+            filled:           self.filled,
             seen_eoi:       self.seen_eoi,
             eob_run:        self.eob_run
         }
@@ -625,6 +633,7 @@ impl BitStream for BitStreamHuffman {
         self.zeros_past_end = state.zeros_past_end;
         self.exhausted = state.exhausted;
         self.stuffed_past_end = state.stuffed_past_end;
+        self.filled = state.filled;
         self.seen_eoi = state.seen_eoi;
         self.eob_run = state.eob_run;
     }
@@ -651,6 +660,9 @@ impl BitStream for BitStreamHuffman {
     ///    File/Memory buffer containing a valid JPEG stream
     ///
     /// This function will only refill if `self.count` is less than 32
+    ///
+    /// Returns `false` once codes have been read from the zero bits appended after a marker, so
+    /// a block can stop there.
     #[inline(always)] // to many call sites? ( perf improvement by 4%)
     fn refill<T>(&mut self, reader: &mut ZReader<T>) -> Result<bool, DecodeErrors>
     where
@@ -721,10 +733,11 @@ impl BitStream for BitStreamHuffman {
                                 // removes some panics
                                 self.buffer <<= 8;
                                 self.bits_left += 8;
+                                self.filled = self.filled.saturating_add(8);
                                 self.aligned_buffer = self.buffer << (64 - self.bits_left);
                             }
 
-                            return Ok(false);
+                            return Ok(true);
                         }
                     }
                 }
@@ -738,13 +751,15 @@ impl BitStream for BitStreamHuffman {
                 // also we are in over-reading mode, where we fill it with zeroes
 
                 // fill with zeroes
+                let own_bits = u16::from(self.bits_left) >= self.filled;
                 self.buffer <<= 32;
                 self.bits_left += 32;
+                self.filled = self.filled.saturating_add(32);
                 if self.overread_by > 0 {
                     self.zeros_past_end += 32;
                 }
                 self.aligned_buffer = self.buffer << (64 - self.bits_left);
-                return Ok(true);
+                return Ok(own_bits);
             }
 
             if self.overread_by > 0 {
@@ -824,10 +839,17 @@ impl BitStream for BitStreamHuffman {
         let (mut symbol, mut r, mut fast_ac);
         // Decode AC coefficients
         let mut pos: usize = 1;
-        if  self.bits_left < 1 && self.marker.is_some() {
-            return Err(DecodeErrors::Format(
-                "No more bytes left in stream before marker".to_string()
-            ));
+        // Past the segment's bytes no code is decoded: a block with no bits of its own stays zero
+        // until a restart marker resumes the scan, as libjpeg-turbo leaves it
+        // (`insufficient_data` in jdhuff.c).
+        self.refill(reader)?;
+        if u16::from(self.bits_left) <= self.filled && (self.marker.is_some() || self.seen_eoi) {
+            if self.strict {
+                return Err(DecodeErrors::Format(
+                    "No more bytes left in stream before marker".to_string()
+                ));
+            }
+            return Ok(1);
         }
         // decode DC, dc prediction will contain the value
         self.decode_dc(reader, dc_table, dc_prediction)?;
@@ -836,7 +858,9 @@ impl BitStream for BitStreamHuffman {
         block[0] = dc_prediction.wrapping_mul(qt_table[0]);
 
         while pos < 64 {
-            self.refill(reader)?;
+            if !self.refill(reader)? {
+                return Ok(pos as u16);
+            }
             symbol = self.peek_bits::<HUFF_LOOKAHEAD>();
             fast_ac = ac_lookup[symbol as usize];
             symbol = ac_table.lookup[symbol as usize];
@@ -1183,6 +1207,7 @@ impl BitStream for BitStreamHuffman {
     #[cold]
     fn reset(&mut self) {
         self.bits_left = 0;
+        self.filled = 0;
         self.marker = None;
         self.buffer = 0;
         self.aligned_buffer = 0;
