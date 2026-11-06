@@ -8,7 +8,7 @@ use zune_core::bytestream::{ZByteReaderTrait, ZCursor};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::DecoderOptions;
 use zune_jpeg::errors::DecodeErrors;
-use zune_jpeg::{JpegDecoder, ScanlineReadStatus, ScanlineStatus};
+use zune_jpeg::{JpegDecoder, ScanlineDecodeSession, ScanlineReadStatus, ScanlineStatus};
 
 struct GrowableCursor<'a> {
     data:     &'a [u8],
@@ -149,9 +149,16 @@ fn assert_scanlines_match_decode(bytes: &[u8], colorspace: ColorSpace, rows_per_
     let mut decoder = JpegDecoder::new_with_options(ZCursor::new(bytes), options);
     let mut scanlines = decoder.scanline_output();
     assert_eq!(scanlines.start().unwrap(), ScanlineStatus::Ready);
+    let stride = scanlines.output_row_bytes().unwrap() + 5;
+    let actual = read_scanline_rows(&mut scanlines, rows_per_read, stride);
+    assert_eq!(actual, expected);
+}
+
+fn read_scanline_rows<T: ZByteReaderTrait>(
+    scanlines: &mut ScanlineDecodeSession<'_, T>, rows_per_read: usize, stride: usize
+) -> Vec<u8> {
     let row_bytes = scanlines.output_row_bytes().unwrap();
     let height = scanlines.output_height().unwrap();
-    let stride = row_bytes + 5;
     let mut actual = vec![0; row_bytes * height];
 
     while scanlines.output_scanline() < height {
@@ -173,8 +180,33 @@ fn assert_scanlines_match_decode(bytes: &[u8], colorspace: ColorSpace, rows_per_
                 .iter()
                 .all(|byte| *byte == 0xCD));
         }
+        assert!(storage[rows * stride..].iter().all(|byte| *byte == 0xCD));
     }
-    assert_eq!(actual, expected);
+    actual
+}
+
+#[test]
+fn restart_read_ahead_preserves_scanlines_and_padding() {
+    let data = include_bytes!("../../../test-images/jpeg/restart_cross_row_128x128.jpg");
+    let mut expected_row = vec![48_u8; 128 * 3];
+    expected_row[48 * 3..80 * 3].fill(208);
+    for strict in [true, false] {
+        for rows_per_read in [1, 17] {
+            let options = DecoderOptions::default()
+                .set_strict_mode(strict)
+                .jpeg_set_out_colorspace(ColorSpace::RGB);
+            let mut decoder = JpegDecoder::new_with_options(ZCursor::new(data), options);
+            let mut scanlines = decoder.scanline_output();
+            assert_eq!(scanlines.start().unwrap(), ScanlineStatus::Ready);
+            assert_eq!(scanlines.output_row_bytes(), Some(128 * 3));
+            let output = read_scanline_rows(&mut scanlines, rows_per_read, 128 * 3 + 13);
+            assert_eq!(scanlines.finish().unwrap(), ScanlineStatus::Complete);
+            assert_eq!(output.len(), 128 * expected_row.len());
+            for (index, row) in output.chunks_exact(expected_row.len()).enumerate() {
+                assert_eq!(row, expected_row, "native scanline pixels in row {index}");
+            }
+        }
+    }
 }
 
 fn decode_all_scanlines<T: ZByteReaderTrait>(decoder: &mut JpegDecoder<T>) -> Vec<u8> {
