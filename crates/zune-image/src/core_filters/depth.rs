@@ -48,10 +48,9 @@ use crate::traits::OperationsTrait;
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
 pub(crate) fn depth_u16_to_u8(from: &[u16], to: &mut [u8], max_value: u16) {
     if max_value == u16::MAX {
-        // divide by 257, this clamps it to 0..255
+        // round(x * 255 / 65535) == round(x / 257)
         for (old, new) in from.iter().zip(to.iter_mut()) {
-            let new_val = (old / 257) as u8;
-            *new = new_val;
+            *new = ((u32::from(*old) + 128) / 257) as u8;
         }
     } else {
         //okay do scaling
@@ -59,8 +58,7 @@ pub(crate) fn depth_u16_to_u8(from: &[u16], to: &mut [u8], max_value: u16) {
         let scale = 255.0;
 
         for (old, new) in from.iter().zip(to.iter_mut()) {
-            let new_val = ((f32::from(*old) * max) * scale) as u8;
-            *new = new_val;
+            *new = ((f32::from(*old) * max) * scale + 0.5).clamp(0.0, 255.0) as u8;
         }
     }
 }
@@ -78,13 +76,19 @@ pub(crate) fn depth_u16_to_u8(from: &[u16], to: &mut [u8], max_value: u16) {
 /// - `max_value`: Maximum value we expect this pixel to store.
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
 pub(crate) fn depth_u8_to_u16(from: &[u8], to: &mut [u16], max_value: u16) {
+    if max_value == u16::MAX {
+        // x * 65535 / 255 == x * 257, exact
+        for (old, new) in from.iter().zip(to.iter_mut()) {
+            *new = u16::from(*old) * 257;
+        }
+        return;
+    }
     // okay do scaling
     let max = 1.0 / 255.0;
     let scale = f32::from(max_value);
 
     for (old, new) in from.iter().zip(to.iter_mut()) {
-        let new_val = ((f32::from(*old) * max) * scale) as u16;
-        *new = new_val;
+        *new = ((f32::from(*old) * max) * scale + 0.5) as u16;
     }
 }
 
@@ -145,7 +149,7 @@ impl OperationsTrait for Depth {
 
                     // scale by multiplying with 255
                     for (old_chan, new_chan) in old_data.iter().zip(new_channel_raw.iter_mut()) {
-                        *new_chan = (255.0 * old_chan).clamp(0.0, 255.0) as u8;
+                        *new_chan = (255.0 * old_chan + 0.5).clamp(0.0, 255.0) as u8;
                     }
 
                     *channel = new_channel;
@@ -158,7 +162,7 @@ impl OperationsTrait for Depth {
 
                     // scale by multiplying with 65535
                     for (old_chan, new_chan) in old_data.iter().zip(new_channel_raw.iter_mut()) {
-                        *new_chan = (65535.0 * old_chan).clamp(0.0, 65535.0) as u16;
+                        *new_chan = (65535.0 * old_chan + 0.5).clamp(0.0, 65535.0) as u16;
                     }
 
                     *channel = new_channel;
