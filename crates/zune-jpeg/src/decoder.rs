@@ -652,7 +652,9 @@ struct ScanlineState {
     staged_rows:     usize,
     staging:         Vec<u8>,
     source_complete: bool,
-    entropy_tables:  Option<Box<EntropyTables>>
+    entropy_tables:  Option<Box<EntropyTables>>,
+    /// Where the stripe before `next_mcu_stripe` began decoding.
+    stripe_start:    StripeStart
 }
 
 impl Default for ScanlineState {
@@ -666,8 +668,58 @@ impl Default for ScanlineState {
             staged_rows:     0,
             staging:         Vec::new(),
             source_complete: false,
-            entropy_tables:  None
+            entropy_tables:  None,
+            stripe_start:    StripeStart::Unknown
         }
+    }
+}
+
+/// Where a streaming baseline MCU stripe began decoding.
+#[derive(Clone)]
+enum StripeStart {
+    /// Not known: no stripe was produced, or it resumed from a checkpoint
+    /// inside an MCU row.
+    Unknown,
+    /// At the first SOS, with no checkpoint.
+    ScanStart,
+    /// At this checkpoint, which starts its MCU row.
+    Checkpoint(Box<ScanCheckpoint>)
+}
+
+/// A converted scanline session's place between two MCU stripes, from which
+/// another session over the same JPEG bytes, with the same options, can
+/// continue without decoding the stripes before it.
+///
+/// Take one with [`ScanlineDecodeSession::resume_point`] and continue from it
+/// with [`ScanlineDecodeSession::resume_at`]. Only single-scan sequential
+/// Huffman images have them.
+///
+/// A point holds the entropy decoder's state at the start of the stripe
+/// before it, not at it. Resuming decodes that stripe again without
+/// returning its rows, so vertical upsampling across the stripe edge sees
+/// the same samples as an uninterrupted decode, and every row from
+/// [`Self::output_scanline`] on is identical to it.
+#[derive(Clone)]
+pub struct ScanlineResumePoint {
+    prime:           StripeStart,
+    next_stripe:     usize,
+    output_scanline: usize
+}
+
+impl ScanlineResumePoint {
+    /// The first converted row a session resumed here returns.
+    #[must_use]
+    pub const fn output_scanline(&self) -> usize {
+        self.output_scanline
+    }
+}
+
+impl core::fmt::Debug for ScanlineResumePoint {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ScanlineResumePoint")
+            .field("next_stripe", &self.next_stripe)
+            .field("output_scanline", &self.output_scanline)
+            .finish_non_exhaustive()
     }
 }
 
@@ -988,6 +1040,102 @@ where
         Ok(ScanlineStatus::Complete)
     }
 
+    /// This session's place between two MCU stripes, for
+    /// [`Self::resume_at`] on another session over the same bytes.
+    ///
+    /// `None` unless the image is a single-scan sequential Huffman image, at
+    /// least one stripe has been decoded, rows remain, and every row decoded
+    /// so far has been read or skipped, so the next row returned starts a
+    /// stripe. Reading the whole image and keeping the points wanted makes an
+    /// index for decoding bands of it later.
+    #[must_use]
+    pub fn resume_point(&self) -> Option<ScanlineResumePoint> {
+        let state = &self.decoder.scanline_state;
+        if state.phase != ScanlinePhase::StreamingBaseline
+            || self.decoder.is_arithmetic
+            || state.staged_row != state.staged_rows
+            || state.output_scanline >= usize::from(self.decoder.height())
+        {
+            return None;
+        }
+        match &state.stripe_start {
+            StripeStart::Unknown => None,
+            prime => Some(ScanlineResumePoint {
+                prime: prime.clone(),
+                next_stripe: state.next_mcu_stripe,
+                output_scanline: state.output_scanline
+            })
+        }
+    }
+
+    /// Continue this session from `point`, which another session over the
+    /// same bytes, with the same options, gave: the next row read is row
+    /// [`ScanlineResumePoint::output_scanline`], and it and every row after
+    /// it are those an uninterrupted decode gives.
+    ///
+    /// The session must not have read or skipped any rows. It decodes the
+    /// stripe before the point again, without returning its rows. Returns
+    /// [`ScanlineStatus::NeedMoreInput`] without resuming when the headers
+    /// are not yet available; an image without resume points, or input
+    /// ending before the point, is an error.
+    pub fn resume_at(
+        &mut self, point: &ScanlineResumePoint
+    ) -> Result<ScanlineStatus, DecodeErrors> {
+        match self.start()? {
+            ScanlineStatus::Ready => {}
+            status => return Ok(status)
+        }
+        if self.decoder.scanline_state.phase != ScanlinePhase::Start
+            || self.decoder.scanline_state.output_scanline != 0
+        {
+            return Err(DecodeErrors::FormatStatic(
+                "a scanline session can resume only before it reads rows"
+            ));
+        }
+        if point.next_stripe == 0 || point.output_scanline >= usize::from(self.decoder.height()) {
+            return Err(DecodeErrors::FormatStatic(
+                "scanline resume point is outside this image"
+            ));
+        }
+        self.decoder.prepare_for_scan_decode()?;
+        if self.decoder.is_progressive
+            || self.decoder.is_arithmetic
+            || usize::from(self.decoder.num_scans) != self.decoder.components.len()
+        {
+            return Err(DecodeErrors::FormatStatic(
+                "scanline resume needs a single-scan sequential Huffman image"
+            ));
+        }
+        self.decoder.scanline_state.phase = ScanlinePhase::StreamingBaseline;
+        match &point.prime {
+            StripeStart::Unknown => {
+                return Err(DecodeErrors::FormatStatic("scanline resume point has no stripe"))
+            }
+            StripeStart::ScanStart => {}
+            StripeStart::Checkpoint(checkpoint) => {
+                if checkpoint.mcu_row + 1 != point.next_stripe {
+                    return Err(DecodeErrors::FormatStatic(
+                        "scanline resume point is inconsistent"
+                    ));
+                }
+                self.decoder.install_scan_checkpoint(**checkpoint);
+            }
+        }
+        self.decoder.scanline_state.next_mcu_stripe = point.next_stripe - 1;
+        match self.produce_scanline_stripe()? {
+            ScanlineReadStatus::RowsProcessed { .. } => {}
+            ScanlineReadStatus::NeedMoreInput | ScanlineReadStatus::Complete => {
+                return Err(DecodeErrors::FormatStatic(
+                    "input ended before the scanline resume point"
+                ))
+            }
+        }
+        let state = &mut self.decoder.scanline_state;
+        state.staged_row = state.staged_rows;
+        state.output_scanline = point.output_scanline;
+        Ok(ScanlineStatus::Ready)
+    }
+
     fn produce_scanline_stripe(&mut self) -> Result<ScanlineReadStatus, DecodeErrors> {
         let row_bytes = self.output_row_bytes().ok_or(DecodeErrors::FormatStatic(
             "converted output row size overflow"
@@ -1046,6 +1194,15 @@ where
             false
         };
         let requested_stripe = self.decoder.scanline_state.next_mcu_stripe;
+        let stripe_start = match self.decoder.scan_checkpoint() {
+            None if requested_stripe == 0 => StripeStart::ScanStart,
+            Some(checkpoint)
+                if checkpoint.mcu_col == 0 && checkpoint.mcu_row == requested_stripe =>
+            {
+                StripeStart::Checkpoint(Box::new(*checkpoint))
+            }
+            _ => StripeStart::Unknown
+        };
         let sink = ConvertedScanlineSink {
             pixels,
             stride,
@@ -1091,6 +1248,7 @@ where
             .saturating_sub(self.decoder.scanline_state.output_scanline);
         let rows_written = rows_written.min(remaining);
         self.decoder.scanline_state.next_mcu_stripe += 1;
+        self.decoder.scanline_state.stripe_start = stripe_start;
         self.decoder.scanline_state.source_complete |= source_complete;
         if self.decoder.scanline_state.phase == ScanlinePhase::StreamingBaseline
             && self.decoder.is_arithmetic
@@ -1834,6 +1992,13 @@ where
     pub(crate) fn set_baseline_scans_seen(&mut self, scans_seen: usize) {
         if let Some(state) = self.scan_state.as_deref_mut() {
             state.baseline_scans_seen = scans_seen;
+        }
+    }
+
+    /// Make `checkpoint` the scan's resume point, as if decoding had saved it.
+    pub(crate) fn install_scan_checkpoint(&mut self, checkpoint: ScanCheckpoint) {
+        if let Some(state) = self.scan_state.as_mut() {
+            state.scan_checkpoint = Some(Box::new(checkpoint));
         }
     }
 

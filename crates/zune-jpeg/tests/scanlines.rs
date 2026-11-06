@@ -8,7 +8,7 @@ use zune_core::bytestream::{ZByteReaderTrait, ZCursor};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::DecoderOptions;
 use zune_jpeg::errors::DecodeErrors;
-use zune_jpeg::{JpegDecoder, ScanlineReadStatus, ScanlineStatus};
+use zune_jpeg::{JpegDecoder, ScanlineReadStatus, ScanlineResumePoint, ScanlineStatus};
 
 struct GrowableCursor<'a> {
     data:     &'a [u8],
@@ -832,4 +832,214 @@ fn dnl_scanlines_are_rejected_before_false_completion() {
         ))
     ));
     assert_eq!(scanlines.output_scanline(), 0);
+}
+
+/// Reads `bytes` whole, `rows_per_read` rows at a time, keeping every resume
+/// point offered between reads, and checks the rows against `decode`.
+fn resume_points(
+    bytes: &[u8], options: DecoderOptions, rows_per_read: usize
+) -> (Vec<u8>, usize, Vec<ScanlineResumePoint>) {
+    let expected = JpegDecoder::new_with_options(ZCursor::new(bytes), options)
+        .decode()
+        .unwrap();
+    let mut decoder = JpegDecoder::new_with_options(ZCursor::new(bytes), options);
+    let mut scanlines = decoder.scanline_output();
+    assert_eq!(scanlines.start().unwrap(), ScanlineStatus::Ready);
+    assert!(scanlines.resume_point().is_none());
+    let row_bytes = scanlines.output_row_bytes().unwrap();
+    let height = scanlines.output_height().unwrap();
+    let mut actual = vec![0; row_bytes * height];
+    let mut points: Vec<ScanlineResumePoint> = Vec::new();
+    while scanlines.output_scanline() < height {
+        let row = scanlines.output_scanline();
+        let end = (row + rows_per_read).min(height);
+        let status = scanlines
+            .read_scanlines(&mut actual[row * row_bytes..end * row_bytes], row_bytes)
+            .unwrap();
+        assert!(matches!(status, ScanlineReadStatus::RowsProcessed { rows } if rows > 0));
+        if let Some(point) = scanlines.resume_point() {
+            assert_eq!(point.output_scanline(), scanlines.output_scanline());
+            assert!(points
+                .last()
+                .map_or(true, |last| last.output_scanline() < point.output_scanline()));
+            points.push(point);
+        }
+    }
+    assert!(scanlines.resume_point().is_none());
+    assert_eq!(actual, expected);
+    (expected, row_bytes, points)
+}
+
+/// Resumes a new session at each point and checks `band` rows from it, or
+/// those to the end, against a whole decode.
+fn assert_resumed_bands_match_decode(
+    bytes: &[u8], options: DecoderOptions, rows_per_read: usize, band: usize
+) -> usize {
+    let (expected, row_bytes, points) = resume_points(bytes, options, rows_per_read);
+    let height = expected.len() / row_bytes;
+    for point in &points {
+        let mut decoder = JpegDecoder::new_with_options(ZCursor::new(bytes), options);
+        let mut scanlines = decoder.scanline_output();
+        assert_eq!(scanlines.resume_at(point).unwrap(), ScanlineStatus::Ready);
+        let first = point.output_scanline();
+        assert_eq!(scanlines.output_scanline(), first);
+        let end = (first + band).min(height);
+        let mut rows = vec![0xCD; (end - first) * row_bytes];
+        let mut done = 0;
+        while first + done < end {
+            let status = scanlines
+                .read_scanlines(&mut rows[done * row_bytes..], row_bytes)
+                .unwrap();
+            let ScanlineReadStatus::RowsProcessed { rows: read } = status else {
+                panic!("resumed at row {first}, read returned {status:?} after {done} rows")
+            };
+            done += read;
+        }
+        assert!(
+            rows == expected[first * row_bytes..end * row_bytes],
+            "rows {first}..{end} differ after resuming"
+        );
+    }
+    points.len()
+}
+
+#[test]
+fn resumed_bands_match_decode_across_sampling_modes() {
+    let options = DecoderOptions::default();
+    for (bytes, name) in [
+        (include_bytes!("../../../test-images/jpeg/2029.jpg").as_slice(), "4:2:0, odd size"),
+        (include_bytes!("../../../test-images/jpeg/fox410.jpg").as_slice(), "4:1:0"),
+        (
+            include_bytes!("../../../test-images/jpeg/medium_horiz_samp_2500x1786.jpg").as_slice(),
+            "4:2:2"
+        ),
+        (
+            include_bytes!("../../../test-images/jpeg/medium_vertical_samp_2500x1786.jpg")
+                .as_slice(),
+            "4:4:0"
+        ),
+        (
+            include_bytes!("../../../test-images/jpeg/medium_no_samp_2500x1786.jpg").as_slice(),
+            "4:4:4"
+        ),
+        (include_bytes!("../../../test-images/jpeg/sampling_factors.jpg").as_slice(), "mixed"),
+        (
+            include_bytes!("../../../test-images/jpeg/weid_sampling_factors.jpg").as_slice(),
+            "all 1x2"
+        ),
+        (
+            include_bytes!("../../../test-images/jpeg/mjpeg_huffman.jpg").as_slice(),
+            "4:2:2, restart every 80 MCUs"
+        ),
+        (
+            include_bytes!("../../../test-images/jpeg/four_components.jpg").as_slice(),
+            "CMYK, restart every 165 MCUs"
+        )
+    ] {
+        let points = assert_resumed_bands_match_decode(bytes, options, 1, 40);
+        assert!(points > 2, "{name}: only {points} resume points");
+    }
+}
+
+#[test]
+fn resumed_bands_match_decode_in_other_colorspaces() {
+    let bytes = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    for colorspace in [ColorSpace::RGBA, ColorSpace::Luma, ColorSpace::BGR, ColorSpace::YCbCr] {
+        let options = DecoderOptions::default().jpeg_set_out_colorspace(colorspace);
+        assert_resumed_bands_match_decode(bytes, options, 1, 40);
+    }
+}
+
+#[test]
+fn whole_stripe_reads_offer_the_same_resume_points() {
+    let bytes = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let options = DecoderOptions::default();
+    let (_, _, by_row) = resume_points(bytes, options, 1);
+    let (_, _, by_stripe) = resume_points(bytes, options, 18);
+    let rows = |points: &[ScanlineResumePoint]| -> Vec<usize> {
+        points.iter().map(ScanlineResumePoint::output_scanline).collect()
+    };
+    assert_eq!(rows(&by_row), rows(&by_stripe));
+    assert_resumed_bands_match_decode(bytes, options, 18, 1000);
+}
+
+#[test]
+fn a_resumed_session_reads_to_the_end_and_finishes() {
+    let bytes = include_bytes!("../../../test-images/jpeg/mjpeg_huffman.jpg");
+    let options = DecoderOptions::default();
+    let (expected, row_bytes, points) = resume_points(bytes, options, 1);
+    let point = points[points.len() / 2].clone();
+    let mut decoder = JpegDecoder::new_with_options(ZCursor::new(bytes), options);
+    let mut scanlines = decoder.scanline_output();
+    assert_eq!(scanlines.resume_at(&point).unwrap(), ScanlineStatus::Ready);
+    let first = point.output_scanline();
+    let mut rest = vec![0; expected.len() - first * row_bytes];
+    let mut row = first;
+    while row < expected.len() / row_bytes {
+        let status = scanlines
+            .read_scanlines(&mut rest[(row - first) * row_bytes..], row_bytes)
+            .unwrap();
+        let ScanlineReadStatus::RowsProcessed { rows } = status else {
+            panic!("read returned {status:?} at row {row}")
+        };
+        row += rows;
+    }
+    assert_eq!(rest, expected[first * row_bytes..]);
+    assert_eq!(scanlines.finish().unwrap(), ScanlineStatus::Complete);
+}
+
+#[test]
+fn multi_scan_and_progressive_images_offer_no_resume_points() {
+    for bytes in [
+        include_bytes!("../../../test-images/jpeg/baseline_non_interleaved.jpg").as_slice(),
+        include_bytes!("../../../test-images/jpeg/progressive_restart_420.jpg").as_slice()
+    ] {
+        let (_, _, points) = resume_points(bytes, DecoderOptions::default(), 1);
+        assert!(points.is_empty());
+    }
+}
+
+#[test]
+fn resume_is_refused_where_it_cannot_hold() {
+    let options = DecoderOptions::default();
+    let baseline = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let (_, row_bytes, points) = resume_points(baseline, options, 1);
+    let point = points[1].clone();
+
+    // After a row has been read.
+    let mut decoder = JpegDecoder::new_with_options(ZCursor::new(baseline), options);
+    let mut scanlines = decoder.scanline_output();
+    let mut row = vec![0; row_bytes];
+    scanlines.read_scanlines(&mut row, row_bytes).unwrap();
+    assert!(scanlines.resume_at(&point).is_err());
+
+    // On an image without resume points.
+    let progressive = include_bytes!("../../../test-images/jpeg/progressive_restart_420.jpg");
+    let mut decoder = JpegDecoder::new_with_options(ZCursor::new(progressive), options);
+    assert!(decoder.scanline_output().resume_at(&point).is_err());
+
+    // Past the end of a shorter image.
+    let small = include_bytes!("../../../test-images/jpeg/non_interleaved_444_64x64.jpg");
+    let last = points.last().unwrap().clone();
+    let mut decoder = JpegDecoder::new_with_options(ZCursor::new(small), options);
+    assert!(decoder.scanline_output().resume_at(&last).is_err());
+}
+
+#[test]
+fn resume_waits_for_headers() {
+    let bytes = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let options = DecoderOptions::default();
+    let (expected, row_bytes, points) = resume_points(bytes, options, 1);
+    let point = points[2].clone();
+    let limit = Rc::new(Cell::new(20));
+    let mut decoder =
+        JpegDecoder::new_with_options(GrowableCursor::new(bytes, limit.clone()), options);
+    let mut scanlines = decoder.scanline_output();
+    assert_eq!(scanlines.resume_at(&point).unwrap(), ScanlineStatus::NeedMoreInput);
+    limit.set(bytes.len());
+    assert_eq!(scanlines.resume_at(&point).unwrap(), ScanlineStatus::Ready);
+    let first = point.output_scanline();
+    let mut row = vec![0; row_bytes];
+    scanlines.read_scanlines(&mut row, row_bytes).unwrap();
+    assert_eq!(row, expected[first * row_bytes..(first + 1) * row_bytes]);
 }

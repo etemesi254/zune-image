@@ -323,7 +323,7 @@ pub use crate::cancel::{CancelCheck, NeverCancel};
 pub use crate::components::SampleRatios;
 pub use crate::decoder::{
     ImageInfo, JpegDecoder, PlaneInfo, RawDecodeSession, RawImcuRowStatus, ScanlineDecodeSession,
-    ScanlineReadStatus, ScanlineStatus
+    ScanlineReadStatus, ScanlineResumePoint, ScanlineStatus
 };
 pub use crate::marker::Marker;
 mod bitstream;
