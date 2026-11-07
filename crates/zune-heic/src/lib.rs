@@ -33,6 +33,12 @@
 //!   reported by [`HeifDecoder::is_alpha_premultiplied`].
 //! - **Greyscale** (monochrome HEVC) images decode to [`Luma`](zune_core::colorspace::ColorSpace::Luma).
 //! - **Chroma formats:** 4:2:0, 4:2:2 and 4:4:4 (including lossless RGB).
+//! - **Uncompressed images** (`unci`, ISO/IEC 23001-17): RGB(A), greyscale
+//!   (with alpha) and YCbCr (4:4:4, 4:2:2, 4:2:0) with 1 to 16 bits per
+//!   component, in any component order and every interleaving libheif reads
+//!   (component, pixel, mixed, row, tile-component), with padding,
+//!   alignment and tiles, uncompressed or zlib/deflate compressed (Brotli
+//!   with the `brotli` feature). The output matches libheif 1.21.
 //! - **`no_std`** (with `alloc`) when the `std` feature is disabled.
 //!
 //! # Usage
@@ -197,6 +203,7 @@
 //!   kernels are then chosen at compile time (`-C target-feature`).
 //! - `simd`: use `core::simd` (portable SIMD) transforms; requires a nightly
 //!   compiler.
+//! - `brotli`: Brotli-compressed uncompressed (`unci`) images; needs `std`.
 //! - `dump-tiles`: `HeifDecoder::decode_tiles_yuv`, which returns every coded
 //!   picture's HEVC bitstream and its decoded YCbCr planes, for testing the
 //!   decoder against a reference decoder.
@@ -208,6 +215,11 @@
 //! - 8-bit, intra-coded HEVC only (what HEIF still images use); 10-bit images
 //!   are rejected, as are the range extension's CU chroma QP offsets and
 //!   separately coded colour planes.
+//! - Uncompressed (`unci`) images: no blocks, floating-point, signed or
+//!   complex components, Bayer (filter array) or palette images, or 4:1:1
+//!   subsampling; images larger than the configured data limit
+//!   (16 MiB by default) need it raised with
+//!   [`DecoderOptions::set_hevc_max_mdat_size`].
 //! - Premultiplied alpha is returned as stored (like libheif); see
 //!   [`HeifDecoder::is_alpha_premultiplied`].
 //! - With VideoToolbox, the YCbCr → RGB conversion is not the libheif one, so
@@ -232,6 +244,7 @@
 //!
 //! [`DecoderOptions`]: zune_core::options::DecoderOptions
 //! [`DecoderOptions::hvec_set_use_videotoolbox`]: zune_core::options::DecoderOptions::hvec_set_use_videotoolbox
+//! [`DecoderOptions::set_hevc_max_mdat_size`]: zune_core::options::DecoderOptions::set_hevc_max_mdat_size
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(unexpected_cfgs)]
 // The decoder itself is safe Rust; `unsafe` is only allowed in the opt-in
@@ -280,6 +293,7 @@ mod hevc_decoder;
 pub(crate) use hevc_decoder::macros::{dbg_print, dbg_println, debug_more};
 mod processor;
 mod transform;
+mod unci;
 mod utils;
 
 pub extern crate zune_core;

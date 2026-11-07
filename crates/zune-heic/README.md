@@ -90,6 +90,10 @@ in order of importance
 - [x] Alpha planes, including premultiplied alpha detection.
 - [x] Greyscale (monochrome) images.
 - [x] 4:2:0, 4:2:2 and 4:4:4 chroma, including lossless RGB.
+- [x] Uncompressed images (`unci`, ISO/IEC 23001-17): RGB(A), greyscale and YCbCr with
+  1 to 16 bits per component, all of libheif's interleavings, padding, alignment and
+  tiles, uncompressed or zlib/deflate (and Brotli) compressed; bit-identical to
+  libheif 1.21.
 - [x] Colour description (`colr` nclx, or the HEVC VUI) for the YCbCr → RGB conversion.
 - [x] Exif and ICC profile extraction.
 - [x] Support for `no_std`.
@@ -100,6 +104,7 @@ in order of importance
 |--------------|-----|-------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `std`        | yes | Multi-threaded decoding, runtime CPU feature detection for the SIMD transforms, reading from `std::io` types and the Apple VideoToolbox decoder.                  |
 | `simd`       | no  | Use `core::simd` (portable SIMD) transforms, requires a nightly compiler.                                                                                        |
+| `brotli`     | no  | Brotli-compressed uncompressed (`unci`) images; needs `std`.                                                                                                     |
 | `dump-tiles` | no  | `HeifDecoder::decode_tiles_yuv`: every coded picture's HEVC bitstream and decoded YCbCr planes, for testing the decoder against a reference decoder.              |
 
 ## Using in a `no_std` environment
@@ -160,6 +165,9 @@ samples in `fuzz-samples/`:
   rejected, as are the range extension's CU chroma QP offsets and separately coded
   colour planes.
 - AVIF (AV1-coded HEIF) is not supported.
+- Uncompressed (`unci`) images: no blocks, floating-point, signed or complex components,
+  Bayer or palette images, or 4:1:1 subsampling. Images over the data limit
+  (16 MiB by default) need it raised with `DecoderOptions::set_hevc_max_mdat_size`.
 - Premultiplied alpha is returned as stored, like libheif does.
 - With VideoToolbox, the YCbCr → RGB conversion is the one macOS uses, so the output is
   not bit-identical to libheif. Disable it with `hvec_set_use_videotoolbox(false)` if

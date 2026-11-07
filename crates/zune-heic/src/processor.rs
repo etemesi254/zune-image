@@ -26,9 +26,9 @@ pub struct HevcSample<'a> {
     pub extents: Vec<&'a [u8]>
 }
 impl<T: ZByteReaderTrait> HeifDecoder<T> {
-    /// The coded pictures of `layout`, in raster order, as zero-copy slices
-    /// of the image data plus their parameter sets.
-    fn collect_samples(&self, layout: &ImageLayout) -> Result<Vec<HevcSample<'_>>, HeicErrors> {
+    /// The data of item `item_id`, as zero-copy slices of the image data
+    /// (one per `iloc` extent).
+    pub(crate) fn item_extents(&self, item_id: u32) -> Result<Vec<&[u8]>, HeicErrors> {
         let meta = self.meta_section.as_ref().ok_or(HeicErrors::Generic {
             msg: "No meta".into()
         })?;
@@ -37,6 +37,52 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
         })?;
         let mdat = self.mdat_section.as_ref().ok_or(HeicErrors::Generic {
             msg: "No mdat loaded".into()
+        })?;
+        let item_iloc =
+            iloc.items
+                .iter()
+                .find(|i| i.item_id == item_id)
+                .ok_or(HeicErrors::Generic {
+                    msg: format!("Item {item_id} missing in iloc")
+                })?;
+
+        let mut extents = Vec::with_capacity(item_iloc.extents.len());
+        for extent in &item_iloc.extents {
+            let absolute_offset = match item_iloc.construction_method {
+                0 => item_iloc.base_offset + extent.offset,
+                1 => {
+                    let idat_off = meta.idat.as_ref().ok_or(HeicErrors::Generic {
+                        msg: "Missing idat offset".into()
+                    })?;
+                    idat_off.position + item_iloc.base_offset + extent.offset
+                }
+                _ => {
+                    return Err(HeicErrors::Generic {
+                        msg: "Unsupported construction method".into()
+                    });
+                }
+            };
+            let start = absolute_offset
+                .checked_sub(mdat.start_offset)
+                .ok_or(HeicErrors::Generic {
+                    msg: "Data offset points to before MDAT payload".into()
+                })? as usize;
+            let slice = start
+                .checked_add(extent.length as usize)
+                .and_then(|end| mdat.raw_data.get(start..end))
+                .ok_or(HeicErrors::Generic {
+                    msg: "Extent goes out of MDAT bounds!".into()
+                })?;
+            extents.push(slice);
+        }
+        Ok(extents)
+    }
+
+    /// The coded pictures of `layout`, in raster order, as zero-copy slices
+    /// of the image data plus their parameter sets.
+    fn collect_samples(&self, layout: &ImageLayout) -> Result<Vec<HevcSample<'_>>, HeicErrors> {
+        let meta = self.meta_section.as_ref().ok_or(HeicErrors::Generic {
+            msg: "No meta".into()
         })?;
         let iprp = meta.iprp.as_ref().ok_or(HeicErrors::Generic {
             msg: "Missing iprp".into()
@@ -81,44 +127,7 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
                     pps: None
                 });
 
-            let item_iloc =
-                iloc.items
-                    .iter()
-                    .find(|i| i.item_id == item_id)
-                    .ok_or(HeicErrors::Generic {
-                        msg: format!("Item {item_id} missing in iloc")
-                    })?;
-
-            // zero-copy slices of the item's data
-            let mut extents = Vec::with_capacity(item_iloc.extents.len());
-            for extent in &item_iloc.extents {
-                let absolute_offset = match item_iloc.construction_method {
-                    0 => item_iloc.base_offset + extent.offset,
-                    1 => {
-                        let idat_off = meta.idat.as_ref().ok_or(HeicErrors::Generic {
-                            msg: "Missing idat offset".into()
-                        })?;
-                        idat_off.position + item_iloc.base_offset + extent.offset
-                    }
-                    _ => {
-                        return Err(HeicErrors::Generic {
-                            msg: "Unsupported construction method".into()
-                        });
-                    }
-                };
-                let start = absolute_offset
-                    .checked_sub(mdat.start_offset)
-                    .ok_or(HeicErrors::Generic {
-                        msg: "Data offset points to before MDAT payload".into()
-                    })? as usize;
-                let slice = start
-                    .checked_add(extent.length as usize)
-                    .and_then(|end| mdat.raw_data.get(start..end))
-                    .ok_or(HeicErrors::Generic {
-                        msg: "Extent goes out of MDAT bounds!".into()
-                    })?;
-                extents.push(slice);
-            }
+            let extents = self.item_extents(item_id)?;
 
             samples.push(HevcSample {
                 item_id,

@@ -17,6 +17,7 @@ use crate::hevc_decoder::HevcDecoder;
 use crate::hevc_decoder::nal_parser::NalFraming;
 use crate::processor::HevcSample;
 use crate::transform::{self, CleanAperture, Transform};
+use crate::unci::{UnciColour, UnciHeader};
 use crate::utils::Lock;
 
 
@@ -567,7 +568,7 @@ where
             return;
         };
         let alpha_type = self.get_item_type(alpha_id);
-        if &alpha_type != b"hvc1" && &alpha_type != b"grid" {
+        if &alpha_type != b"hvc1" && &alpha_type != b"grid" && &alpha_type != b"unci" {
             warn!("Ignoring alpha image {alpha_id} of unsupported type {alpha_type:?}");
             return;
         }
@@ -766,6 +767,14 @@ where
             .any(|t| matches!(t, Transform::Rotate(_) | Transform::Crop(_)));
         let mut canvas = if needs_canvas { vec![0u8; w * h * channels] } else { Vec::new() };
 
+        if &self.get_item_type(layout.item_id) == b"unci" {
+            {
+                let target: &mut [u8] = if needs_canvas { &mut canvas } else { &mut *output };
+                self.decode_unci(layout, channels, target)?;
+            }
+            return transform::apply_interleaved(&layout.transforms, channels, canvas, (w, h), output);
+        }
+
         {
             let canvas: &mut [u8] = if needs_canvas { &mut canvas } else { &mut *output };
 
@@ -823,6 +832,67 @@ where
         }
 
         transform::apply_interleaved(&layout.transforms, channels, canvas, (w, h), output)
+    }
+
+    /// The properties associated with item `item_id`, in `ipma` order.
+    fn item_properties(&self, item_id: u32) -> Vec<&ItemProperty> {
+        let Some(iprp) = self.meta_section.as_ref().and_then(|m| m.iprp.as_ref()) else {
+            return Vec::new();
+        };
+        let (Some(ipma), Some(ipco)) = (&iprp.ipma, &iprp.ipco) else {
+            return Vec::new();
+        };
+        ipma.entries
+            .iter()
+            .filter(|e| e.item_id == item_id)
+            .flat_map(|e| &e.associations)
+            // property_index is 1-based, 0 means "none"
+            .filter_map(|a| ipco.properties.get(usize::from(a.property_index).checked_sub(1)?))
+            .collect()
+    }
+
+    /// The description of `unci` item `item_id`.
+    fn unci_header(&self, item_id: u32) -> Result<UnciHeader, HeicErrors> {
+        UnciHeader::parse(self.item_properties(item_id).into_iter())
+    }
+
+    /// Decode `unci` (uncompressed) item `layout` into `output`, `channels`
+    /// samples per pixel, before its transformations.
+    fn decode_unci(
+        &self, layout: &ImageLayout, channels: usize, output: &mut [u8]
+    ) -> Result<(), HeicErrors> {
+        let header = self.unci_header(layout.item_id)?;
+        let extents = self.item_extents(layout.item_id)?;
+        let data: alloc::borrow::Cow<[u8]> = match extents.as_slice() {
+            [one] => alloc::borrow::Cow::Borrowed(one),
+            more => alloc::borrow::Cow::Owned(more.concat())
+        };
+        // the item's nclx colour description, else libheif's default
+        // (full-range Rec. 601)
+        let conversion = (header.colour()?.0 == UnciColour::YCbCr).then(|| {
+            Conversion::new(self.item_nclx_profiles().get(&layout.item_id).copied().unwrap_or(
+                ColourInfo {
+                    matrix_coefficients: 6,
+                    colour_primaries:    1,
+                    full_range:          true
+                }
+            ))
+        });
+        // decompressed data: the image (up to 4 16-bit components per
+        // pixel) with room for padding, or the configured data size
+        let max_bytes = (layout.width.saturating_mul(layout.height))
+            .saturating_mul(8)
+            .saturating_add(1 << 20)
+            .max(self.options.hevc_max_mdat_size());
+        header.decode(
+            &data,
+            layout.width,
+            layout.height,
+            channels,
+            conversion.as_ref(),
+            max_bytes,
+            output
+        )
     }
 
     /// item_id -> grid positions (an item may in theory be referenced more than once)
@@ -948,7 +1018,14 @@ where
         }
 
         // --- STEP 2: an alpha plane, found by `find_alpha` ---
-        let has_alpha_mask = self.alpha.is_some();
+        let mut has_alpha_mask = self.alpha.is_some();
+
+        // An uncompressed image says what its components are, alpha included
+        if &self.get_item_type(primary_id) == b"unci" {
+            let (colour, has_alpha) = self.unci_header(primary_id)?.colour()?;
+            base_channels = if colour == UnciColour::Mono { 1 } else { 3 };
+            has_alpha_mask |= has_alpha;
+        }
 
         // --- STEP 3: Resolve the final ColorSpace enum ---
         let result = match (base_channels, has_alpha_mask) {
