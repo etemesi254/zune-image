@@ -1,130 +1,130 @@
 [
   {
     "name": "incomplete_image.jpg",
-    "hash": 68661873485518884521477706306294613983,
+    "hash": 99412466882579045767153730293824826535,
     "comment": "Truncated input: completed rows plus neutral filler after EOF recovery"
   },
   {
     "name": "weird_components.jpg",
-    "hash": 55126960114634715306742136909897443026
+    "hash": 23607575189683992407066572154861787923
   },
   {
     "name": "Kiara_limited_progressive_four_components.jpg",
-    "hash": 119436015459886331911253274671309338438
+    "hash": 317584839462440192032609803364242390612
   },
   {
     "name": "rebuilt_relax_fill_bytes_before_marker.jpg",
-    "hash": 11743555007527377653666271084047641717
+    "hash": 51012870490327283191019841563983371142
   },
   {
     "name": "large_no_samp_7680_4320.jpg",
-    "hash": 78298921866871824011106248114591715171,
+    "hash": 101325818783897862398447586255420724126,
     "comment": "Simple large image"
   },
   {
     "name": "large_no_samp_7680_4320.jpg",
-    "hash": 318693790604007287114582453436534128489 ,
+    "hash": 61533644309871819406721048645816578468 ,
     "colorspace": "ycbcr"
   },
   {
     "name": "large_horiz_samp_7680_4320.jpg",
-    "hash": 258300549736770413578783049919306336675,
+    "hash": 187705489291391540156084015214137709763,
     "colorspace": "luma",
     "comment": "Convert YCbCr to grayscale"
   },
   {
     "name": "large_horiz_samp_7680_4320.jpg",
     "colorspace": "ycbcr",
-    "hash": 187089797650285117366052796829496644013
+    "hash": 181646090826465488460321580282434434813
   },
   {
     "name": "large_vertical_samp_7680_4320.jpg",
-    "hash": 141563893351526192573577009628189544333
+    "hash": 108058895475066298885855102185000394297
   },
   {
     "name": "medium_no_samp_2500x1786.jpg",
-    "hash": 89362797331434800953047243504429478251
+    "hash": 33711794797330507995213487246814708266
   },
   {
     "name": "medium_no_samp_2500x1786.jpg",
-    "hash": 291874786663895286460461230469345392126,
+    "hash": 267009667728907710636531777470536686185,
     "colorspace": "luma"
   },
   {
     "name": "medium_horiz_samp_2500x1786.jpg",
-    "hash": 53028507435190255452665888884299223575
+    "hash": 120002830345720719416257974548809807397
   },
   {
     "name": "medium_horiz_samp_2500x1786.jpg",
-    "hash": 291874786663895286460461230469345392126,
+    "hash": 267009667728907710636531777470536686185,
     "colorspace": "luma"
   },
   {
     "name": "medium_horiz_samp_2500x1786.jpg",
-    "hash": 204844316806424632749911849041441976131,
+    "hash": 276805905266762568722245056998326127711,
     "colorspace": "ycbcr"
   },
   {
     "name": "huffman_third_index.jpg",
-    "hash": 133175253843308546331686378179836169848,
+    "hash": 59506946807933144565164313021002055659,
     "colorspace": "luma"
   },
   {
     "name": "four_components.jpg",
-    "hash": 287906653374850903431781302953270340417
+    "hash": 313038075596423662094554141526308454027
   },
   {
     "name": "huge_sof_number.jpg",
-    "hash": 333739973749682239551179394830479925883
+    "hash": 235789963197409271170967224927500836116
   },
   {
     "name": "weid_sampling_factors.jpg",
-    "hash": 3503674285196750445517055941814306276,
+    "hash": 320393585810008004730315366182192135776,
     "comment": "Non normal sampling factors, h2v1 for all components"
   },
   {
     "name": "2029.jpg",
-    "hash": 28817868748997507268707381353489368029
+    "hash": 267293865311634838760748185895215334996
   },
   {
     "name": "down_sampled_grayscale_prog.jpg",
-    "hash": 144870374991788934132025830743647721527,
+    "hash": 103516645850504369190218230332842784322,
     "comment": "Down sampled progressive image with only grayscale component"
   },
   {
     "name": "progressive_dc_huffman_table_1.jpg",
-    "hash": 174920954580235010517398776891831906725,
+    "hash": 204969760276138072481815463426009913564,
     "comment": "Progressive non-interleaved scan selecting DC Huffman table 1; from image-rs/image tests/images/jpg/progressive/3.jpg"
   },
   {
     "name": "weird_sampling_2.jpeg",
-    "hash": 153334696196554300891417361546372006533,
+    "hash": 77476115291612913865309303518039602096,
     "comment": "Y and Cb not sub-sampled, Cr sub-sampled, jxl effect"
   },
   {
     "name": "2029.jpg",
-    "hash": 141772925169929705521688831799118378165,
+    "hash": 32639816655703166376264725960866714347,
     "comment": "testing-bgr support",
     "colorspace": "bgr"
   },
   {
     "name": "mjpeg_huffman.jpg",
-    "hash": 18012888231835939384638618897799869133,
+    "hash": 298858959244580096351030876189888334479,
     "comment": "Image needs to be filled with default huffman tables"
   },
   {
     "name": "sampling_factors.jpg",
-    "hash": 284621623123194664498179714486900153633,
+    "hash": 2138032936591059846496326932750168604,
     "comment": "Another weird sampling factor,(when will it end)"
   },
   {
     "name": "fox410.jpg",
-    "hash": 31442107016347398716020146443366879014,
+    "hash": 255214882220537855574483106676973733510,
     "comment": "4:1:0 chroma subsampling"
   },
   {
     "name": "sos_news.jpeg",
-    "hash": 109677255988131284084676849366241145140,
+    "hash": 75560093847610594389769615423004966224,
     "comment": "SOS interleaved with markers"
   },
   {
@@ -139,39 +139,39 @@
   },
   {
     "name": "arith/seq.jpg",
-    "hash": 308699570423173762598813957121638158295
+    "hash": 240955232124395161524736474803374379873
   },
   {
     "name": "arith/seq-restart.jpg",
-    "hash": 308699570423173762598813957121638158295
+    "hash": 240955232124395161524736474803374379873
   },
   {
     "name": "arith/seq-restart-block.jpg",
-    "hash": 308699570423173762598813957121638158295
+    "hash": 240955232124395161524736474803374379873
   },
   {
     "name": "arith/prog.jpg",
-    "hash": 308699570423173762598813957121638158295
+    "hash": 240955232124395161524736474803374379873
   },
   {
     "name": "arith/prog-restart.jpg",
-    "hash": 308699570423173762598813957121638158295
+    "hash": 240955232124395161524736474803374379873
   },
   {
     "name": "noninterleaved-dc-table-1-17x19.jpg",
-    "hash": 260187211213493560908542562379946200200,
+    "hash": 295475366953168951855998924511657514678,
     "colorspace": "rgb",
     "comment": "Progressive separate DC-first scans using chroma Huffman table 1; authored color grid."
   },
   {
     "name": "noninterleaved-dc-table-2-83x59.jpg",
-    "hash": 274891929724699243682941713076100204759,
+    "hash": 245585410905815166123875848379856401113,
     "colorspace": "rgb",
     "comment": "Progressive separate DC-first scans using chroma Huffman table 2; authored color grid."
   },
   {
     "name": "noninterleaved-dc-table-3-160x120.jpg",
-    "hash": 338905096724338343787526504398364891758,
+    "hash": 205937624091713206189866638383476466051,
     "colorspace": "rgb",
     "comment": "Progressive separate DC-first scans using chroma Huffman table 3; authored color grid."
   },
@@ -182,12 +182,12 @@
   },
   {
     "name": "non_interleaved_luma_last_88x88.jpg",
-    "hash": 230899805145446127519755498179913013246,
+    "hash": 63643014080168136669620672178463370277,
     "comment": "Non-interleaved scans with luma declared last"
   },
   {
     "name": "non_interleaved_marker_read_ahead_88x88.jpg",
-    "hash": 230899805145446127519755498179913013246,
+    "hash": 63643014080168136669620672178463370277,
     "comment": "Read-ahead marker must not drop the final scan row"
   },
   {
@@ -208,27 +208,27 @@
   },
   {
     "name": "non_interleaved_422_65x65.jpg",
-    "hash": 125392369964902515184048940464823668963,
+    "hash": 304225986679131999304626770521036837069,
     "comment": "Odd dimensions and partial final MCU"
   },
   {
     "name": "app14/baseline_rgb.jpg",
-    "hash": 139831103022478584221336932444455009305,
+    "hash": 17782900742442959466115482548844892558,
     "comment": "APP14 transform-zero RGB"
   },
   {
     "name": "app14/baseline_rgb_interleaved.jpg",
-    "hash": 139831103022478584221336932444455009305,
+    "hash": 17782900742442959466115482548844892558,
     "comment": "Interleaved APP14 transform-zero RGB"
   },
   {
     "name": "app14/single_component_transform_zero.jpg",
-    "hash": 329656582808320911505644169604535672546,
+    "hash": 202976026775709424080060879610748043037,
     "comment": "Single-component APP14 remains luma"
   },
   {
     "name": "app14/baseline_cmyk.jpg",
-    "hash": 28017601491891897541172391788177697883,
+    "hash": 279690131598987128612884701641299698219,
     "comment": "Four-component APP14 transform-zero CMYK"
   }
 ]
