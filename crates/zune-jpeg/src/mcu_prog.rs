@@ -1529,10 +1529,15 @@ where
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "std")]
     use alloc::rc::Rc;
+    #[cfg(feature = "std")]
     use alloc::sync::Arc;
+    #[cfg(feature = "std")]
     use core::cell::{Cell, RefCell};
+    #[cfg(feature = "std")]
     use core::sync::atomic::{AtomicUsize, Ordering};
+    #[cfg(feature = "std")]
     use std::io::{self, BufRead, Read, Seek, SeekFrom};
 
     use zune_core::bytestream::ZCursor;
@@ -1543,6 +1548,7 @@ mod tests {
 
     const DC_ONLY_SMOOTHING_HASH: u64 = 0xa007_fba6_4972_7faa;
 
+    #[cfg(feature = "std")]
     struct GrowingInput {
         data:           Vec<u8>,
         visible:        Rc<Cell<usize>>,
@@ -1551,6 +1557,7 @@ mod tests {
         absolute_seeks: Rc<RefCell<Vec<usize>>>
     }
 
+    #[cfg(feature = "std")]
     impl GrowingInput {
         fn new(data: Vec<u8>, visible: Rc<Cell<usize>>) -> Self {
             Self {
@@ -1563,6 +1570,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "std")]
     impl Read for GrowingInput {
         fn read(&mut self, destination: &mut [u8]) -> io::Result<usize> {
             let source = self.fill_buf()?;
@@ -1573,6 +1581,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "std")]
     impl BufRead for GrowingInput {
         fn fill_buf(&mut self) -> io::Result<&[u8]> {
             let end = self.visible.get().min(self.data.len());
@@ -1585,6 +1594,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "std")]
     impl Seek for GrowingInput {
         fn seek(&mut self, from: SeekFrom) -> io::Result<u64> {
             let (base, offset) = match from {
@@ -1940,6 +1950,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "std")]
     fn progressive_raw_dc_presence_rolls_back_on_cancellation() {
         use crate::errors::DecodeErrors;
         use crate::NeverCancel;
@@ -1987,6 +1998,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "std")]
     fn progressive_dc_presence_restores_before_raw_checkpoint_decode() {
         use crate::bitstream::{BitStream, BitStreamHuffman};
         use crate::errors::DecodeErrors;
@@ -2042,6 +2054,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "std")]
     fn progressive_raw_replay_crosses_fine_checkpoint_row_boundary() {
         let data =
             include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg").to_vec();
@@ -2287,6 +2300,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "std")]
     #[cfg(feature = "std")]
     fn progressive_smoothing_retry_does_not_commit_estimates_or_precision() {
         let data = smoothing_jpeg(true);
