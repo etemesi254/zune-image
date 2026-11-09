@@ -154,17 +154,48 @@ fn subset_scan_uses_frame_mcu_geometry_and_neutral_missing_components() {
 fn repeated_sequential_scan_preserves_ac_and_resets_dc_prediction() {
     let mut data = frame(8, 8, &[(1, 0x11), (2, 0x11), (3, 0x11)]);
     scan(&mut data, &[1], &[(4, true)]);
-    scan(&mut data, &[2, 3], &[(0, false); 2]);
+    scan(&mut data, &[2], &[(0, false)]);
     // Redefine the AC table between repeated scans.
     data.extend_from_slice(&[0xFF, 0xC4, 0, 20, 0x10]);
     data.extend_from_slice(&[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     data.push(0);
     // This table's EOB is one bit, so encode the scan explicitly.
     data.extend_from_slice(&[0xFF, 0xDA, 0, 8, 1, 1, 0, 0, 63, 0, 0x1B]);
+    // Complete the image only after the repeated scan; a later SOS is ignored.
+    data.extend_from_slice(&[0xFF, 0xDA, 0, 8, 1, 3, 0, 0, 63, 0, 0x07]);
     data.extend_from_slice(&[0xFF, 0xD9]);
     let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&data), options(false));
     decoder.decode().unwrap();
     assert_eq!(&decoder.baseline_coefficients[0][..2], &[8, 8]);
+}
+
+#[test]
+fn repeated_sequential_scan_after_complete_image_keeps_committed_coefficients() {
+    let mut data = frame(8, 8, &[(1, 0x11), (2, 0x11), (3, 0x11)]);
+    scan(&mut data, &[1], &[(4, true)]);
+    scan(&mut data, &[2, 3], &[(0, false); 2]);
+    let mut complete_data = data.clone();
+    complete_data.extend_from_slice(&[0xFF, 0xD9]);
+    let mut complete = JpegDecoder::new_with_options(ZCursor::new(&complete_data), options(false));
+    let expected = complete.decode().unwrap();
+    data.extend_from_slice(&[0xFF, 0xC4, 0, 20, 0x10]);
+    data.extend_from_slice(&[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    data.push(0);
+    data.extend_from_slice(&[0xFF, 0xDA, 0, 8, 1, 1, 0, 0, 63, 0, 0x1B, 0xFF, 0xD9]);
+    let mut lenient = JpegDecoder::new_with_options(ZCursor::new(&data), options(false));
+    assert_eq!(lenient.decode().unwrap(), expected);
+    assert_eq!(
+        lenient.baseline_coefficients,
+        complete.baseline_coefficients
+    );
+    assert_eq!(&lenient.baseline_coefficients[0][..2], &[32, 8]);
+    let mut strict = JpegDecoder::new_with_options(ZCursor::new(&data), options(true));
+    assert!(matches!(
+        strict.decode(),
+        Err(crate::errors::DecodeErrors::FormatStatic(
+            "SOS after a baseline scan that already had all components"
+        ))
+    ));
 }
 
 #[test]
