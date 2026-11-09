@@ -57,6 +57,8 @@ pub(crate) struct Components {
     pub progressive_bits: [i8; 64],
     /// Precision before the most recent scan touching this component.
     pub progressive_previous_bits: [i8; 10],
+    /// At least one DC coefficient is backed by accepted entropy data.
+    pub progressive_dc_seen: bool,
     /// An up-sampling function, can be basic or SSE, depending
     /// on the platform
     pub up_sampler: UpSampler,
@@ -164,6 +166,7 @@ impl Components {
             dc_diff: 0,
             progressive_bits: [-1; 64],
             progressive_previous_bits: [-1; 10],
+            progressive_dc_seen: false,
             up_sampler: upsample_no_op,
             // set later
             width_stride: horizontal_sample,

@@ -113,16 +113,18 @@ macro_rules! decode_huff {
 /// entropy data.
 #[derive(Clone, Copy)]
 pub(crate) struct HuffmanBitstreamState {
-    pub(crate) buffer:         u64,
-    pub(crate) aligned_buffer: u64,
-    pub(crate) bits_left:      u8,
-    pub(crate) marker:         Option<Marker>,
-    pub(crate) overread_by:    usize,
-    pub(crate) zeros_past_end: usize,
-    pub(crate) exhausted:      bool,
-    pub(crate) stuffed_past_end: bool,
-    pub(crate) seen_eoi:       bool,
-    pub(crate) eob_run:        i32
+    pub(crate) buffer:                  u64,
+    pub(crate) aligned_buffer:          u64,
+    pub(crate) bits_left:               u8,
+    pub(crate) marker:                  Option<Marker>,
+    pub(crate) marker_bits:             Option<u8>,
+    pub(crate) marker_padding_consumed: bool,
+    pub(crate) overread_by:             usize,
+    pub(crate) zeros_past_end:          usize,
+    pub(crate) exhausted:               bool,
+    pub(crate) stuffed_past_end:        bool,
+    pub(crate) seen_eoi:                bool,
+    pub(crate) eob_run:                 i32
 }
 
 /// Type-erased bitstream state snapshot stored in `ScanCheckpoint`.
@@ -229,6 +231,12 @@ pub(crate) trait BitStream {
         self.overread_by() > 0
     }
 
+    /// Huffman lookahead past a marker is not entropy data. Arithmetic
+    /// decoding instead permits its specified zero extension after markers.
+    fn consumed_marker_padding(&self) -> bool {
+        false
+    }
+
     /// True if we have seen end of image marker.
     /// Don't read anything after that.
     fn seen_eoi(&mut self) -> &mut bool;
@@ -281,6 +289,8 @@ pub(crate) struct BitStreamHuffman {
     bits_left:           u8,
     /// Did we find a marker(RST/EOF) during decoding?
     marker:              Option<Marker>,
+    marker_bits:         Option<u8>,
+    marker_padding_consumed: bool,
     /// An i16 with the bit corresponding to successive_low set to 1, others 0.
     successive_low_mask: i16,
     spec_start:          u8,
@@ -343,6 +353,7 @@ impl BitStreamHuffman {
     /// Discard the next `N` bits without checking
     #[inline]
     fn drop_bits(&mut self, n: u8) {
+        self.consume_marker_bits(n);
         // PS: Its a good check, but triggers fuzzer and a lot of false positives
         //debug_assert!(self.bits_left >= n);
         //self.bits_left -= n;
@@ -354,6 +365,7 @@ impl BitStreamHuffman {
     #[inline(always)]
     #[allow(clippy::cast_possible_truncation)]
     fn get_bits(&mut self, n_bits: u8) -> i32 {
+        self.consume_marker_bits(n_bits);
         let mask = (1_u64 << n_bits) - 1;
 
         self.aligned_buffer = self.aligned_buffer.rotate_left(u32::from(n_bits));
@@ -362,6 +374,14 @@ impl BitStreamHuffman {
         self.bits_left = left;
         self.exhausted |= exhausted;
         bits
+    }
+
+    #[inline]
+    fn consume_marker_bits(&mut self, bits: u8) {
+        if let Some(remaining) = &mut self.marker_bits {
+            self.marker_padding_consumed |= bits > *remaining;
+            *remaining = remaining.saturating_sub(bits);
+        }
     }
 
 
@@ -520,6 +540,8 @@ impl BitStream for BitStreamHuffman {
             aligned_buffer:      0,
             bits_left:           0,
             marker:              None,
+            marker_bits:         None,
+            marker_padding_consumed: false,
             successive_low_mask: 1,
             spec_start:          0,
             spec_end:            0,
@@ -543,6 +565,8 @@ impl BitStream for BitStreamHuffman {
             aligned_buffer:      0,
             bits_left:           0,
             marker:              None,
+            marker_bits:         None,
+            marker_padding_consumed: false,
             successive_low_mask: 1i16 << al,
             spec_start:          spec_start,
             spec_end:            spec_end,
@@ -570,6 +594,10 @@ impl BitStream for BitStreamHuffman {
             && (self.exhausted
                 || self.zeros_past_end > usize::from(self.bits_left)
                 || self.stuffed_past_end)
+    }
+    #[inline(always)]
+    fn consumed_marker_padding(&self) -> bool {
+        self.marker_padding_consumed
     }
     #[inline(always)]
     fn seen_eoi(&mut self) -> &mut bool {
@@ -605,6 +633,8 @@ impl BitStream for BitStreamHuffman {
             aligned_buffer: self.aligned_buffer,
             bits_left:      self.bits_left,
             marker:         self.marker,
+            marker_bits:    self.marker_bits,
+            marker_padding_consumed: self.marker_padding_consumed,
             overread_by:      self.overread_by,
             zeros_past_end:   self.zeros_past_end,
             exhausted:        self.exhausted,
@@ -620,6 +650,8 @@ impl BitStream for BitStreamHuffman {
         self.aligned_buffer = state.aligned_buffer;
         self.bits_left = state.bits_left;
         self.marker = state.marker;
+        self.marker_bits = state.marker_bits;
+        self.marker_padding_consumed = state.marker_padding_consumed;
         self.overread_by = state.overread_by;
         self.zeros_past_end = state.zeros_past_end;
         self.exhausted = state.exhausted;
@@ -711,6 +743,7 @@ impl BitStream for BitStreamHuffman {
 
                             let marker = Marker::from_u8(next_byte as u8);
                             self.marker = marker;
+                            self.marker_bits = Some(self.bits_left);
 
                             if let Some(Marker::UNKNOWN(_)) = marker{
                                 return Err(DecodeErrors::Format("Unknown marker in bit stream".to_string()));
@@ -1183,6 +1216,8 @@ impl BitStream for BitStreamHuffman {
     fn reset(&mut self) {
         self.bits_left = 0;
         self.marker = None;
+        self.marker_bits = None;
+        self.marker_padding_consumed = false;
         self.buffer = 0;
         self.aligned_buffer = 0;
         self.eob_run = 0;
@@ -1208,6 +1243,33 @@ const fn has_byte(b: u32, val: u8) -> bool {
     // Retrieved from Stanford bithacks
     // @ https://graphics.stanford.edu/~seander/bithacks.html#ZeroInWord
     has_zero(b ^ ((!0_u32 / 255) * (val as u32)))
+}
+
+#[cfg(test)]
+mod marker_padding_tests {
+    use zune_core::bytestream::{ZCursor, ZReader};
+
+    use super::{BitStream, BitStreamHuffman};
+
+    #[test]
+    fn marker_prefetch_and_consumption_survive_checkpoint_restore() {
+        let bytes = [0x00, 0xFF, 0xD9];
+        let mut reader = ZReader::new(ZCursor::new(&bytes));
+        let mut stream = BitStreamHuffman::new_progressive(0, 0, 0);
+        stream.refill(&mut reader).unwrap();
+        assert!(!stream.consumed_marker_padding());
+        let checkpoint = stream.save_state();
+        stream.drop_bits(8);
+        assert!(!stream.consumed_marker_padding());
+        stream.get_bits(1);
+        assert!(stream.consumed_marker_padding());
+        stream.restore_state(checkpoint);
+        assert!(!stream.consumed_marker_padding());
+        stream.get_bits(9);
+        assert!(stream.consumed_marker_padding());
+        stream.reset();
+        assert!(!stream.consumed_marker_padding());
+    }
 }
 
 // mod tests {
