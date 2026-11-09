@@ -70,6 +70,9 @@ pub struct StreamingDecoder {
     max_bytes: usize,
     // Keep track of bytes shifted out of the buffer to track absolute total
     window_slid_bytes: usize,
+    // set when a stored block was cut short by the output limit: its remaining
+    // bytes are not decoded, and the stream ends in an `OutputLimitExceeded` error
+    stored_clamped: bool,
 }
 impl StreamingDecoder {
     #[must_use]
@@ -508,6 +511,14 @@ impl StreamingDecoder {
                 }
 
                 DeflateState::CopyingUncompressedData { ref mut bytes_left } => {
+                    if *bytes_left == 0 && self.stored_clamped {
+                        return DecodeStatus::Error(InflateDecodeErrors::new_with_error(
+                            DecodeErrorStatus::OutputLimitExceeded(
+                                self.max_bytes,
+                                self.max_bytes.saturating_add(1),
+                            ),
+                        ));
+                    }
                     if *bytes_left == 0 {
                         self.state = if self.is_last_block {
                             DeflateState::Done
@@ -523,6 +534,15 @@ impl StreamingDecoder {
 
                     // If fulfilling this block breaches the limit, error out immediately.
                     // This prevents allocating or copying data for malformed payloads or bombs.
+                    if *bytes_left > global_remaining
+                        && global_remaining > 0
+                        && !self.stored_clamped
+                    {
+                        // Decode the part that still fits, then report the limit error on the
+                        // next iteration, so callers see every byte up to the limit.
+                        *bytes_left = global_remaining;
+                        self.stored_clamped = true;
+                    }
                     if *bytes_left > global_remaining {
                         return DecodeStatus::Error(InflateDecodeErrors::new_with_error(
                             DecodeErrorStatus::OutputLimitExceeded(
@@ -588,6 +608,9 @@ impl StreamingDecoder {
                         self.stream.buffer = 0;
                     }
 
+                    if *bytes_left == 0 && self.stored_clamped {
+                        continue; // reports the limit error at the top of this state
+                    }
                     if *bytes_left == 0 {
                         self.state = if self.is_last_block {
                             DeflateState::Done
