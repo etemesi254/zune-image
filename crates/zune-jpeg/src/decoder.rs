@@ -178,6 +178,7 @@ pub(crate) struct ProgressiveFineCheckpoint {
     pub(crate) mcu_col:          usize,
     pub(crate) todo:             usize,
     pub(crate) dc_predictions:   [(i32, i32); MAX_COMPONENTS],
+    pub(crate) dc_seen:          [bool; MAX_COMPONENTS],
     pub(crate) bitstream_state:  BitstreamStateSnapshot
 }
 
@@ -1159,6 +1160,9 @@ where
     /// including available progressive coefficients. Strict decoding continues
     /// to reject truncated input. Without this signal, EOF remains resumable
     /// and does not commit an incomplete raw stripe.
+    ///
+    /// Whole-image replays on this session retain the signal. Recreating a
+    /// session after completion or changing decoder options clears it.
     pub fn set_input_complete(&mut self) {
         self.decoder.raw_pull_state.input_complete = true;
     }
@@ -1568,9 +1572,6 @@ where
                 "raw output does not support DNL images"
             ));
         }
-        if self.decoder.raw_pull_state.phase == RawPullPhase::Complete {
-            self.decoder.raw_pull_state = RawPullState::default();
-        }
         let layout = self.layout().ok_or(DecodeErrors::FormatStatic(
             "raw layout unavailable before headers are decoded"
         ))?;
@@ -1651,9 +1652,6 @@ where
                 "raw output does not support DNL images"
             ));
         }
-        if self.decoder.raw_pull_state.phase == RawPullPhase::Complete {
-            self.decoder.raw_pull_state = RawPullState::default();
-        }
         let layout = self.layout().ok_or(DecodeErrors::FormatStatic(
             "raw layout unavailable before headers are decoded"
         ))?;
@@ -1688,6 +1686,12 @@ where
         &mut self, planes: &mut [&mut [u8]], strides: &[usize],
         layout: &[PlaneInfo; MAX_COMPONENTS]
     ) -> Result<(), DecodeErrors> {
+        if self.decoder.raw_pull_state.phase == RawPullPhase::Complete {
+            self.decoder.raw_pull_state = RawPullState {
+                input_complete: self.decoder.raw_pull_state.input_complete,
+                ..RawPullState::default()
+            };
+        }
         if self.decoder.is_progressive {
             return self.decode_progressive_whole_with_strides(planes, strides, layout);
         }
@@ -1990,6 +1994,7 @@ where
                 .get(idx)
                 .map_or((0, 0), |component| (component.dc_pred, component.dc_diff))
         });
+        let dc_seen = self.capture_progressive_dc_seen();
 
         if let Some(state) = self.scan_state.as_mut() {
             state.progressive_fine_checkpoint = Some(Box::new(ProgressiveFineCheckpoint {
@@ -2002,6 +2007,7 @@ where
                 mcu_col,
                 todo: self.todo,
                 dc_predictions,
+                dc_seen,
                 bitstream_state
             }));
         }
