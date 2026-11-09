@@ -1529,11 +1529,93 @@ where
 
 #[cfg(test)]
 mod tests {
+    use alloc::rc::Rc;
+    use alloc::sync::Arc;
+    use core::cell::{Cell, RefCell};
+    use core::sync::atomic::{AtomicUsize, Ordering};
+    use std::io::{self, BufRead, Read, Seek, SeekFrom};
+
     use zune_core::bytestream::ZCursor;
     use zune_core::options::DecoderOptions;
 
     use super::ProgressiveSmoothing;
     use crate::JpegDecoder;
+
+    const DC_ONLY_SMOOTHING_HASH: u64 = 0xa007_fba6_4972_7faa;
+
+    struct GrowingInput {
+        data:           Vec<u8>,
+        visible:        Rc<Cell<usize>>,
+        position:       usize,
+        read_position:  Arc<AtomicUsize>,
+        absolute_seeks: Rc<RefCell<Vec<usize>>>
+    }
+
+    impl GrowingInput {
+        fn new(data: Vec<u8>, visible: Rc<Cell<usize>>) -> Self {
+            Self {
+                data,
+                visible,
+                position: 0,
+                read_position: Arc::new(AtomicUsize::new(0)),
+                absolute_seeks: Rc::new(RefCell::new(Vec::new()))
+            }
+        }
+    }
+
+    impl Read for GrowingInput {
+        fn read(&mut self, destination: &mut [u8]) -> io::Result<usize> {
+            let source = self.fill_buf()?;
+            let len = source.len().min(destination.len());
+            destination[..len].copy_from_slice(&source[..len]);
+            self.consume(len);
+            Ok(len)
+        }
+    }
+
+    impl BufRead for GrowingInput {
+        fn fill_buf(&mut self) -> io::Result<&[u8]> {
+            let end = self.visible.get().min(self.data.len());
+            Ok(&self.data[self.position.min(end)..end])
+        }
+
+        fn consume(&mut self, count: usize) {
+            self.position += count;
+            self.read_position.store(self.position, Ordering::Relaxed);
+        }
+    }
+
+    impl Seek for GrowingInput {
+        fn seek(&mut self, from: SeekFrom) -> io::Result<u64> {
+            let (base, offset) = match from {
+                SeekFrom::Start(position) => (
+                    i64::try_from(position)
+                        .map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?,
+                    0
+                ),
+                SeekFrom::End(offset) => (
+                    i64::try_from(self.visible.get())
+                        .map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?,
+                    offset
+                ),
+                SeekFrom::Current(offset) => (
+                    i64::try_from(self.position)
+                        .map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?,
+                    offset
+                )
+            };
+            let position = base
+                .checked_add(offset)
+                .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
+            self.position = usize::try_from(position)
+                .map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+            self.read_position.store(self.position, Ordering::Relaxed);
+            if matches!(from, SeekFrom::Start(_)) {
+                self.absolute_seeks.borrow_mut().push(self.position);
+            }
+            Ok(self.position as u64)
+        }
+    }
 
     fn smoothing_jpeg(complete_ac: bool) -> Vec<u8> {
         let mut data = vec![0xFF, 0xD8, 0xFF, 0xDB, 0, 67, 0];
@@ -1585,7 +1667,7 @@ mod tests {
                     .windows(2)
                     .rposition(|marker| marker == [0xFF, 0xDA])
                     .unwrap();
-                data.truncate(last_sos + 10 + bytes);
+                data.truncate(last_sos + 10 + bytes); // Single-component SOS, then entropy.
                 if eoi {
                     data.extend_from_slice(&[0xFF, 0xD9]);
                 }
@@ -1755,7 +1837,7 @@ mod tests {
         for eoi in [false, true] {
             let mut data = noninterleaved_dc_jpeg(3, false, false);
             let dht = data.windows(2).position(|m| m == [0xFF, 0xC4]).unwrap();
-            data[dht + 21] = 0;
+            data[dht + 21] = 0; // DC symbol follows the table selector and sixteen counts.
             let sos = data.windows(2).position(|m| m == [0xFF, 0xDA]).unwrap();
             data.truncate(sos);
             for component in 1..=3 {
@@ -1782,7 +1864,7 @@ mod tests {
     fn final_raw_partial_dc_keeps_only_real_coefficients() {
         let mut data = noninterleaved_dc_jpeg(3, false, false);
         let sof = data.windows(2).position(|m| m == [0xFF, 0xC2]).unwrap();
-        data[sof + 8] = 16;
+        data[sof + 8] = 16; // SOF width low byte: two blocks per row.
         let sos = data.windows(2).position(|m| m == [0xFF, 0xDA]).unwrap();
         data.truncate(sos);
         for component in 1..=3 {
@@ -1795,13 +1877,23 @@ mod tests {
             DecoderOptions::default().set_strict_mode(false)
         );
         decoder.decode_headers().unwrap();
+        let mut planes = [[0xA5; 21 * 8]; 3];
         {
             let mut raw = decoder.raw_output();
             raw.set_input_complete();
-            let mut planes = [[0xA5; 128]; 3];
             let [y, u, v] = &mut planes;
-            raw.decode_into_planes_strided(&mut [y, u, v], &[16; 3])
+            raw.decode_into_planes_strided(&mut [y, u, v], &[21; 3])
                 .unwrap();
+        }
+        // libjpeg-turbo afad69da, JDCT_ISLOW + block smoothing, using a
+        // complete DC-only control with coefficients [128,256], [128,256], [128,0].
+        for (plane, expected) in planes.iter().zip([
+            0x1c5b_fa61_a2d4_7385,
+            0x1c5b_fa61_a2d4_7385,
+            0x0715_bc2b_821e_5d7d
+        ]) {
+            assert_eq!(logical_plane_hash(plane, 21, 16), expected);
+            assert!(plane.chunks_exact(21).all(|row| row[16..] == [0xA5; 5]));
         }
         assert!(decoder
             .components
@@ -1836,55 +1928,170 @@ mod tests {
             raw.decode_into_planes(&mut [&mut plane]).unwrap();
         }
         assert!(decoder.components[0].progressive_dc_seen);
+        let logical_end = layout[0].stride * layout[0].height;
+        assert_eq!(
+            plane_hash(&plane[..logical_end], layout[0].stride),
+            DC_ONLY_SMOOTHING_HASH
+        );
+        assert!(plane[..logical_end]
+            .chunks_exact(layout[0].stride)
+            .all(|row| row[22..].iter().all(|&sample| sample == 0xA5)));
+        assert!(plane[logical_end..].iter().all(|&sample| sample == 0xA5));
     }
 
     #[test]
     fn progressive_raw_dc_presence_rolls_back_on_cancellation() {
-        use alloc::sync::Arc;
-        use core::sync::atomic::{AtomicUsize, Ordering};
-
         use crate::errors::DecodeErrors;
         use crate::NeverCancel;
 
         let data = smoothing_jpeg(false);
-        let mut exercised_partial_dc = false;
-        for cutoff in 0..16 {
-            let mut decoder = JpegDecoder::new_with_options(
-                ZCursor::new(&data),
-                DecoderOptions::default().set_strict_mode(false)
-            );
-            decoder.decode_headers().unwrap();
-            let calls = Arc::new(AtomicUsize::new(0));
-            decoder.set_cancel(move || calls.fetch_add(1, Ordering::Relaxed) >= cutoff);
-            decoder.set_cancel_interval(1);
-            let layout = decoder.raw_output().layout().unwrap();
-            let mut plane = vec![0xA5; layout[0].byte_size];
-            let result = {
-                let mut raw = decoder.raw_output();
-                raw.set_input_complete();
-                raw.decode_into_planes(&mut [&mut plane])
-            };
-            let has_coefficients = decoder.progressive_mcus_buffer[0]
-                .iter()
-                .chain(&decoder.progressive_scan_buffer[0])
-                .any(|&value| value != 0);
-            if matches!(result, Err(DecodeErrors::Cancelled))
-                && !decoder.progressive_render_incomplete
-                && has_coefficients
-            {
-                exercised_partial_dc = true;
-                assert!(!decoder.components[0].progressive_dc_seen);
-                assert!(plane.iter().all(|&sample| sample == 0xA5));
-                decoder.set_cancel(NeverCancel);
-                let mut raw = decoder.raw_output();
-                raw.set_input_complete();
-                raw.decode_into_planes(&mut [&mut plane]).unwrap();
-            }
-        }
-        assert!(
-            exercised_partial_dc,
-            "must cancel after decoding real DC data"
+        let sos = data.windows(2).position(|m| m == [0xFF, 0xDA]).unwrap();
+        // Three four-bit DC codes plus 10, 9, 9 residual bits form the first row.
+        let first_row_end = sos + 10 + (3_usize * 4 + 10 + 9 + 9).div_ceil(8);
+        let visible = Rc::new(Cell::new(data.len()));
+        let input = GrowingInput::new(data, visible);
+        let read_position = Arc::clone(&input.read_position);
+        let mut decoder =
+            JpegDecoder::new_with_options(input, DecoderOptions::default().set_strict_mode(false));
+        decoder.decode_headers().unwrap();
+        decoder.set_cancel(move || read_position.load(Ordering::Relaxed) >= first_row_end);
+        decoder.set_cancel_interval(1);
+        let layout = decoder.raw_output().layout().unwrap();
+        let mut plane = vec![0xA5; layout[0].byte_size];
+        let result = {
+            let mut raw = decoder.raw_output();
+            raw.set_input_complete();
+            raw.decode_into_planes(&mut [&mut plane])
+        };
+        assert!(matches!(result, Err(DecodeErrors::Cancelled)));
+        assert!(!decoder.progressive_render_incomplete);
+        assert!(decoder.progressive_mcus_buffer[0]
+            .iter()
+            .chain(&decoder.progressive_scan_buffer[0])
+            .any(|&value| value != 0));
+        assert!(!decoder.components[0].progressive_dc_seen);
+        assert!(plane.iter().all(|&sample| sample == 0xA5));
+        decoder.set_cancel(NeverCancel);
+        let mut raw = decoder.raw_output();
+        raw.set_input_complete();
+        raw.decode_into_planes(&mut [&mut plane]).unwrap();
+        let logical_end = layout[0].stride * layout[0].height;
+        assert_eq!(
+            plane_hash(&plane[..logical_end], layout[0].stride),
+            DC_ONLY_SMOOTHING_HASH
         );
+        assert!(plane[..logical_end]
+            .chunks_exact(layout[0].stride)
+            .all(|row| row[22..].iter().all(|&sample| sample == 0xA5)));
+        assert!(plane[logical_end..].iter().all(|&sample| sample == 0xA5));
+    }
+
+    #[test]
+    fn progressive_dc_presence_restores_before_raw_checkpoint_decode() {
+        use crate::bitstream::{BitStream, BitStreamHuffman};
+        use crate::errors::DecodeErrors;
+
+        let data =
+            include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg").to_vec();
+        let scans: Vec<_> = data
+            .windows(2)
+            .enumerate()
+            .filter_map(|(offset, marker)| (marker == [0xFF, 0xDA]).then_some(offset))
+            .collect();
+        let dc_start = scans[0] + 10;
+        let visible = Rc::new(Cell::new(dc_start + (scans[1] - dc_start) / 2));
+        let input = GrowingInput::new(data, visible);
+        let mut decoder =
+            JpegDecoder::new_with_options(input, DecoderOptions::default().set_strict_mode(false));
+        decoder.set_incremental_mode(true);
+        decoder.decode_headers().unwrap();
+        let mut output = vec![0xA5; decoder.output_buffer_size().unwrap()];
+        assert!(decoder
+            .decode_into(&mut output)
+            .unwrap_err()
+            .is_recoverable_eof());
+        assert!(output.iter().all(|&sample| sample == 0xA5));
+        let mut checkpoint = decoder.progressive_fine_checkpoint().unwrap().clone();
+        assert!(checkpoint.mcu_row >= super::PROGRESSIVE_CHECKPOINT_ROW_INTERVAL);
+        assert!(checkpoint.dc_seen[0]);
+        assert!(!decoder.components[0].progressive_dc_seen);
+        let mut coefficients = core::mem::take(&mut decoder.progressive_scan_buffer);
+        let expected = coefficients.clone();
+        decoder.set_cancel(|| true);
+        // No new DC is decoded: acceptance must be restored from the checkpoint.
+        for seen in [false, true] {
+            checkpoint.dc_seen[0] = seen;
+            decoder.components[0].progressive_dc_seen = !seen;
+            let mut stream = BitStreamHuffman::new_progressive(
+                decoder.succ_low,
+                decoder.spec_start,
+                decoder.spec_end
+            );
+            assert!(matches!(
+                decoder.parse_entropy_coded_data(
+                    &mut stream,
+                    &mut coefficients,
+                    Some(&checkpoint),
+                    true,
+                ),
+                Err(DecodeErrors::Cancelled)
+            ));
+            assert_eq!(decoder.components[0].progressive_dc_seen, seen);
+            assert_eq!(coefficients, expected);
+        }
+    }
+
+    #[test]
+    fn progressive_raw_replay_crosses_fine_checkpoint_row_boundary() {
+        let data =
+            include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg").to_vec();
+        let scans: Vec<_> = data
+            .windows(2)
+            .enumerate()
+            .filter_map(|(offset, marker)| (marker == [0xFF, 0xDA]).then_some(offset))
+            .collect();
+        let dc_start = scans[0] + 10;
+        let len = data.len();
+        let visible = Rc::new(Cell::new(dc_start + (scans[1] - dc_start) / 2));
+        let input = GrowingInput::new(data, Rc::clone(&visible));
+        let seeks = Rc::clone(&input.absolute_seeks);
+        let mut decoder =
+            JpegDecoder::new_with_options(input, DecoderOptions::default().set_strict_mode(false));
+        decoder.decode_headers().unwrap();
+        let layout = decoder.raw_output().layout().unwrap()[0];
+        assert!(layout.height > super::PROGRESSIVE_CHECKPOINT_ROW_INTERVAL * 8);
+        let stride = layout.width + 5;
+        let mut plane = vec![0xA5; stride * layout.height];
+        {
+            let mut raw = decoder.raw_output();
+            assert!(raw
+                .decode_into_planes_strided(&mut [&mut plane], &[stride])
+                .unwrap_err()
+                .is_recoverable_eof());
+        }
+        assert!(plane.iter().all(|&sample| sample == 0xA5));
+        assert!(
+            decoder.progressive_scan_last_good_row >= super::PROGRESSIVE_CHECKPOINT_ROW_INTERVAL
+        );
+        assert!(decoder.progressive_fine_checkpoint().is_none());
+        seeks.borrow_mut().clear();
+        visible.set(len);
+        decoder
+            .raw_output()
+            .decode_into_planes_strided(&mut [&mut plane], &[stride])
+            .unwrap();
+        assert!(seeks
+            .borrow()
+            .first()
+            .is_some_and(|&position| position <= dc_start));
+        // libjpeg-turbo afad69da JDCT_ISLOW full grayscale output.
+        assert_eq!(
+            logical_plane_hash(&plane, stride, layout.width),
+            0x633d_0d94_ada7_20ca
+        );
+        assert!(plane
+            .chunks_exact(stride)
+            .all(|row| row[layout.width..] == [0xA5; 5]));
     }
 
     #[test]
@@ -1994,9 +2201,13 @@ mod tests {
     }
 
     fn plane_hash(plane: &[u8], stride: usize) -> u64 {
+        logical_plane_hash(plane, stride, 22)
+    }
+
+    fn logical_plane_hash(plane: &[u8], stride: usize, width: usize) -> u64 {
         plane
             .chunks_exact(stride)
-            .flat_map(|row| row[..22].iter())
+            .flat_map(|row| row[..width].iter())
             .fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
                 (hash ^ u64::from(*byte)).wrapping_mul(0x100_0000_01b3)
             })
@@ -2007,7 +2218,7 @@ mod tests {
         // JDCT_ISLOW + do_block_smoothing, including a partial edge block in
         // both dimensions. The two hashes are native libjpeg raw-plane goldens.
         for (complete_ac, expected) in [
-            (false, 0xa007_fba6_4972_7faa),
+            (false, DC_ONLY_SMOOTHING_HASH),
             (true, 0xd39b_63bf_88b1_b6ed)
         ] {
             let data = smoothing_jpeg(complete_ac);
@@ -2078,56 +2289,12 @@ mod tests {
     #[test]
     #[cfg(feature = "std")]
     fn progressive_smoothing_retry_does_not_commit_estimates_or_precision() {
-        use alloc::rc::Rc;
-        use std::cell::Cell;
-        use std::io::{self, BufRead, Read, Seek, SeekFrom};
-
-        struct GrowingInput {
-            data:     Vec<u8>,
-            visible:  Rc<Cell<usize>>,
-            position: usize
-        }
-        impl Read for GrowingInput {
-            fn read(&mut self, destination: &mut [u8]) -> io::Result<usize> {
-                let source = self.fill_buf()?;
-                let len = source.len().min(destination.len());
-                destination[..len].copy_from_slice(&source[..len]);
-                self.consume(len);
-                Ok(len)
-            }
-        }
-        impl BufRead for GrowingInput {
-            fn fill_buf(&mut self) -> io::Result<&[u8]> {
-                let end = self.visible.get().min(self.data.len());
-                Ok(&self.data[self.position.min(end)..end])
-            }
-            fn consume(&mut self, count: usize) {
-                self.position += count;
-            }
-        }
-        impl Seek for GrowingInput {
-            fn seek(&mut self, from: SeekFrom) -> io::Result<u64> {
-                let position = match from {
-                    SeekFrom::Start(position) => position as i64,
-                    SeekFrom::End(offset) => self.visible.get() as i64 + offset,
-                    SeekFrom::Current(offset) => self.position as i64 + offset
-                };
-                self.position = usize::try_from(position)
-                    .map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
-                Ok(self.position as u64)
-            }
-        }
-
         let data = smoothing_jpeg(true);
         let len = data.len();
         // Leave the AC scan one byte short, so its zero coefficients appear
         // complete after lookahead but its precision must still be rolled back.
         let visible = Rc::new(Cell::new(len - 3));
-        let input = GrowingInput {
-            data,
-            visible: visible.clone(),
-            position: 0
-        };
+        let input = GrowingInput::new(data, Rc::clone(&visible));
         let mut decoder =
             JpegDecoder::new_with_options(input, DecoderOptions::default().set_strict_mode(false));
         decoder.decode_headers().unwrap();
@@ -2165,11 +2332,7 @@ mod tests {
             .filter_map(|(offset, bytes)| (bytes == [0xFF, 0xDA]).then_some(offset))
             .collect();
         let visible = Rc::new(Cell::new(scans[0] + 11));
-        let input = GrowingInput {
-            data,
-            visible: visible.clone(),
-            position: 0
-        };
+        let input = GrowingInput::new(data, Rc::clone(&visible));
         let mut decoder =
             JpegDecoder::new_with_options(input, DecoderOptions::default().set_strict_mode(false));
         decoder.decode_headers().unwrap();

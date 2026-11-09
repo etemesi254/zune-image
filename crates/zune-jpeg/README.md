@@ -149,6 +149,8 @@ The signal persists across whole-image replays on the same session, including
 retries after invalid output buffers. Recreating a session after completion or
 changing options clears the signal. Pull completion remains sticky until a new
 sequence starts.
+Progressive raw suspension replays scans from the start rather than retaining
+fine checkpoints, avoiding full coefficient-plane clones.
 
 ## Goals
 
