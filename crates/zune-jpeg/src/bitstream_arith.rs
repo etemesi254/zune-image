@@ -147,7 +147,7 @@ static STATE_MACHINE: [(u16, u8, u8, u8); 113] = [
     (0x504F, 111, 107, 0),
     (0x5A10, 110, 111, 1),
     (0x5522, 112, 109, 0),
-    (0x59EB, 112, 111, 1),
+    (0x59EB, 112, 111, 1)
 ];
 
 /// A statistics entry; used to dynamically estimate the local probability of a decision
@@ -155,7 +155,7 @@ static STATE_MACHINE: [(u16, u8, u8, u8); 113] = [
 struct StatisticsEntry {
     qe_index: u8,
     /// MPS (more probable symbol) register, either false=0 or true=1
-    mps: bool,
+    mps:      bool
 }
 
 #[derive(Default, Clone, Copy)]
@@ -167,7 +167,7 @@ struct DCLeadingBins {
     /// For first size threshold, + case
     sp: StatisticsEntry,
     /// For first size threshold, - case
-    sn: StatisticsEntry,
+    sn: StatisticsEntry
 }
 
 #[derive(Clone, Copy)]
@@ -177,23 +177,23 @@ pub(crate) struct ArithDCTables {
     /// Entries: -large, -small, zero-ish, +small, +large
     leading: [DCLeadingBins; 5],
     /// X1..X15 for sz < 2^i
-    x: [StatisticsEntry; 15],
+    x:       [StatisticsEntry; 15],
     /// M2..M15 magnitude bits
-    m: [StatisticsEntry; 14],
+    m:       [StatisticsEntry; 14],
 
     pub(crate) l: u8,
-    pub(crate) u: u8,
+    pub(crate) u: u8
 }
 
 impl Default for ArithDCTables {
     fn default() -> Self {
         Self {
             leading: [DCLeadingBins::default(); 5],
-            x: [StatisticsEntry::default(); 15],
-            m: [StatisticsEntry::default(); 14],
+            x:       [StatisticsEntry::default(); 15],
+            m:       [StatisticsEntry::default(); 14],
             // L=0, U=1 per F.1.4.4.1.4
-            l: 0,
-            u: 1,
+            l:       0,
+            u:       1
         }
     }
 }
@@ -201,16 +201,16 @@ impl Default for ArithDCTables {
 #[derive(Default, Clone, Copy)]
 struct ACLeadingBins {
     /// For EOB decision
-    se: StatisticsEntry,
+    se:    StatisticsEntry,
     /// For "value zero" decision
-    s0: StatisticsEntry,
+    s0:    StatisticsEntry,
     /// Has multiple roles (first size threshold, x1, refinement bits)
-    spnx1: StatisticsEntry,
+    spnx1: StatisticsEntry
 }
 
 #[derive(Clone, Copy)]
 pub(crate) struct ArithACTables {
-    v: [ACLeadingBins; 63],
+    v:    [ACLeadingBins; 63],
     /// X2..X15 for sz < 2^i, at <= Kx
     x_lo: [StatisticsEntry; 14],
     /// M2..M15 magnitude bits,
@@ -220,19 +220,19 @@ pub(crate) struct ArithACTables {
     /// M2..M15 magnitude bits
     m_hi: [StatisticsEntry; 14],
 
-    pub(crate) kx: u8,
+    pub(crate) kx: u8
 }
 
 impl Default for ArithACTables {
     fn default() -> Self {
         Self {
-            v: [ACLeadingBins::default(); 63],
+            v:    [ACLeadingBins::default(); 63],
             x_lo: [StatisticsEntry::default(); 14],
             m_lo: [StatisticsEntry::default(); 14],
             x_hi: [StatisticsEntry::default(); 14],
             m_hi: [StatisticsEntry::default(); 14],
             // Kx=5 by default per F.1.4.4.2.1
-            kx: 5,
+            kx:   5
         }
     }
 }
@@ -265,7 +265,7 @@ pub(crate) struct BitStreamArithmetic {
 impl BitStreamArithmetic {
     fn init_dec<T>(&mut self, reader: &mut ZReader<T>) -> Result<(), DecodeErrors>
     where
-        T: ZByteReaderTrait,
+        T: ZByteReaderTrait
     {
         self.a = 0x10000;
         self.c = 0;
@@ -281,7 +281,7 @@ impl BitStreamArithmetic {
 
     fn byte_in<T>(&mut self, reader: &mut ZReader<T>) -> Result<(), DecodeErrors>
     where
-        T: ZByteReaderTrait,
+        T: ZByteReaderTrait
     {
         let b = if self.marker.is_some() || self.seen_eoi {
             // When a marker is present, the decoder is repeatedly fed zero bytes.
@@ -345,7 +345,7 @@ impl BitStreamArithmetic {
 
     fn renorm_d<T>(&mut self, reader: &mut ZReader<T>) -> Result<(), DecodeErrors>
     where
-        T: ZByteReaderTrait,
+        T: ZByteReaderTrait
     {
         loop {
             if self.ct == 0 {
@@ -363,10 +363,10 @@ impl BitStreamArithmetic {
 
     /// Decode the next bit, using the provided context index
     fn decode_bit<T>(
-        &mut self, context: &mut StatisticsEntry, reader: &mut ZReader<T>,
+        &mut self, context: &mut StatisticsEntry, reader: &mut ZReader<T>
     ) -> Result<u8, DecodeErrors>
     where
-        T: ZByteReaderTrait,
+        T: ZByteReaderTrait
     {
         if !self.initialized {
             self.init_dec(reader)?;
@@ -404,10 +404,10 @@ impl BitStreamArithmetic {
     #[inline(always)]
     fn decode_dc<T>(
         &mut self, reader: &mut ZReader<T>, dc_table: &mut ArithDCTables, dc_prediction: &mut i32,
-        last_dc_diff: &mut i32,
+        last_dc_diff: &mut i32
     ) -> Result<bool, DecodeErrors>
     where
-        T: ZByteReaderTrait,
+        T: ZByteReaderTrait
     {
         let prev_dc_difference: i32 = *last_dc_diff;
         let lthresh = i32::from(if dc_table.l == 0 { 0 } else { 1u16 << (dc_table.l - 1) });
@@ -439,10 +439,10 @@ impl BitStreamArithmetic {
     }
 
     fn decode_v_dc<T>(
-        &mut self, size_class: usize, dc_table: &mut ArithDCTables, reader: &mut ZReader<T>,
+        &mut self, size_class: usize, dc_table: &mut ArithDCTables, reader: &mut ZReader<T>
     ) -> Result<i32, DecodeErrors>
     where
-        T: ZByteReaderTrait,
+        T: ZByteReaderTrait
     {
         let ss = &mut dc_table.leading[size_class].ss;
         let sign_bit = self.decode_bit(ss, reader)?;
@@ -473,7 +473,7 @@ impl BitStreamArithmetic {
                     if j >= 15 {
                         return Err(DecodeErrors::ArithmeticDecode(
                             "Arithmetic decoding of DC coefficient difference overflowed"
-                                .to_string(),
+                                .to_string()
                         ));
                     }
                 }
@@ -500,10 +500,10 @@ impl BitStreamArithmetic {
     }
 
     fn decode_v_ac<T>(
-        &mut self, pos: u8, k_low: bool, ac_table: &mut ArithACTables, reader: &mut ZReader<T>,
+        &mut self, pos: u8, k_low: bool, ac_table: &mut ArithACTables, reader: &mut ZReader<T>
     ) -> Result<i32, DecodeErrors>
     where
-        T: ZByteReaderTrait,
+        T: ZByteReaderTrait
     {
         assert!((1..=63).contains(&pos));
 
@@ -538,7 +538,7 @@ impl BitStreamArithmetic {
                     j += 1;
                     if j >= 14 {
                         return Err(DecodeErrors::ArithmeticDecode(
-                            "Arithmetic decoding of AC coefficient value overflowed".to_string(),
+                            "Arithmetic decoding of AC coefficient value overflowed".to_string()
                         ));
                     }
                 }
@@ -593,7 +593,7 @@ impl BitStream for BitStreamArithmetic {
 
     #[inline(always)]
     fn get_dc_table(
-        tables: &mut EntropyTables, dc_pos: usize,
+        tables: &mut EntropyTables, dc_pos: usize
     ) -> Result<&mut Self::DCEntropyTable, DecodeErrors> {
         tables.dc_arithmetic.get_mut(dc_pos).ok_or_else(|| {
             DecodeErrors::Format(format!(
@@ -604,7 +604,7 @@ impl BitStream for BitStreamArithmetic {
 
     #[inline(always)]
     fn get_ac_table(
-        tables: &mut EntropyTables, ac_pos: usize,
+        tables: &mut EntropyTables, ac_pos: usize
     ) -> Result<&mut Self::ACEntropyTable, DecodeErrors> {
         tables.ac_arithmetic.get_mut(ac_pos).ok_or_else(|| {
             DecodeErrors::Format(format!(
@@ -615,7 +615,7 @@ impl BitStream for BitStreamArithmetic {
 
     #[inline(always)]
     fn get_dc_ac_tables(
-        tables: &mut EntropyTables, dc_pos: usize, ac_pos: usize,
+        tables: &mut EntropyTables, dc_pos: usize, ac_pos: usize
     ) -> Result<(&mut Self::DCEntropyTable, &mut Self::ACEntropyTable), DecodeErrors> {
         Ok((
             tables.dc_arithmetic.get_mut(dc_pos).ok_or_else(|| {
@@ -627,7 +627,7 @@ impl BitStream for BitStreamArithmetic {
                 DecodeErrors::Format(format!(
                     "No arithmetic coding conditioning table for AC component:{ac_pos}"
                 ))
-            })?,
+            })?
         ))
     }
 
@@ -761,7 +761,9 @@ impl BitStream for BitStreamArithmetic {
         match snapshot {
             crate::bitstream::BitstreamStateSnapshot::Arithmetic(s) => self.restore_state(s),
             crate::bitstream::BitstreamStateSnapshot::None => {}
-            crate::bitstream::BitstreamStateSnapshot::Huffman(_) => unreachable!("Arithmetic stream given Huffman snapshot"),
+            crate::bitstream::BitstreamStateSnapshot::Huffman(_) => {
+                unreachable!("Arithmetic stream given Huffman snapshot")
+            }
         }
     }
 
@@ -775,7 +777,7 @@ impl BitStream for BitStreamArithmetic {
     #[inline(always)]
     fn refill<T>(&mut self, _reader: &mut ZReader<T>) -> Result<bool, DecodeErrors>
     where
-        T: ZByteReaderTrait,
+        T: ZByteReaderTrait
     {
         // This optimization not implemented for arithmetic coding.
         return Ok(true);
@@ -799,10 +801,10 @@ impl BitStream for BitStreamArithmetic {
     fn decode_mcu_block<T>(
         &mut self, reader: &mut ZReader<T>, dc_table: &mut ArithDCTables,
         ac_table: &mut ArithACTables, qt_table: &[i32; DCT_BLOCK], block: &mut [i32; 64],
-        dc_prediction: &mut i32, last_dc_diff: &mut i32,
+        dc_prediction: &mut i32, last_dc_diff: &mut i32
     ) -> Result<u16, DecodeErrors>
     where
-        T: ZByteReaderTrait,
+        T: ZByteReaderTrait
     {
         self.decode_dc(reader, dc_table, dc_prediction, last_dc_diff)?;
         block[0] = dc_prediction.wrapping_mul(qt_table[0]);
@@ -823,7 +825,7 @@ impl BitStream for BitStreamArithmetic {
                     pos += 1;
                     if pos >= 64 {
                         return Err(DecodeErrors::ArithmeticDecode(
-                            "Overrun while decoding MCU, did not find end of block".to_string(),
+                            "Overrun while decoding MCU, did not find end of block".to_string()
                         ));
                     }
                 } else {
@@ -848,10 +850,10 @@ impl BitStream for BitStreamArithmetic {
     /// either. Still returns the index of the last component read.
     fn discard_mcu_block<T>(
         &mut self, reader: &mut ZReader<T>, dc_table: &mut ArithDCTables,
-        ac_table: &mut ArithACTables, last_dc_diff: &mut i32,
+        ac_table: &mut ArithACTables, last_dc_diff: &mut i32
     ) -> Result<u16, DecodeErrors>
     where
-        T: ZByteReaderTrait,
+        T: ZByteReaderTrait
     {
         let mut block = [0i32; 64];
         let qt_table = [0i32; DCT_BLOCK];
@@ -863,7 +865,7 @@ impl BitStream for BitStreamArithmetic {
             &qt_table,
             &mut block,
             &mut dc_prediction,
-            last_dc_diff,
+            last_dc_diff
         )
     }
 
@@ -884,15 +886,15 @@ impl BitStream for BitStreamArithmetic {
 
     #[inline]
     fn decode_prog_dc_refine<T>(
-        &mut self, reader: &mut ZReader<T>, block: &mut i16,
+        &mut self, reader: &mut ZReader<T>, block: &mut i16
     ) -> Result<(), DecodeErrors>
     where
-        T: ZByteReaderTrait,
+        T: ZByteReaderTrait
     {
         // G1.3.1: least significant bits encoded with fixed probability estimate.
         let mut fixed_prob = StatisticsEntry {
             qe_index: 0,
-            mps: false,
+            mps:      false
         };
         if self.decode_bit(&mut fixed_prob, reader)? == 1 {
             *block = block.wrapping_add(self.successive_low_mask);
@@ -902,10 +904,10 @@ impl BitStream for BitStreamArithmetic {
     }
 
     fn decode_mcu_ac_first<T>(
-        &mut self, reader: &mut ZReader<T>, ac_table: &mut ArithACTables, block: &mut [i16; 64],
+        &mut self, reader: &mut ZReader<T>, ac_table: &mut ArithACTables, block: &mut [i16; 64]
     ) -> Result<bool, DecodeErrors>
     where
-        T: ZByteReaderTrait,
+        T: ZByteReaderTrait
     {
         let bit = self.successive_low_mask;
 
@@ -948,10 +950,10 @@ impl BitStream for BitStreamArithmetic {
 
     #[allow(clippy::too_many_lines, clippy::op_ref)]
     fn decode_mcu_ac_refine<T>(
-        &mut self, reader: &mut ZReader<T>, ac_table: &mut ArithACTables, block: &mut [i16; 64],
+        &mut self, reader: &mut ZReader<T>, ac_table: &mut ArithACTables, block: &mut [i16; 64]
     ) -> Result<bool, DecodeErrors>
     where
-        T: ZByteReaderTrait,
+        T: ZByteReaderTrait
     {
         let bit = self.successive_low_mask;
 
@@ -1006,7 +1008,7 @@ impl BitStream for BitStreamArithmetic {
             if first_bit {
                 let mut ss = StatisticsEntry {
                     qe_index: 0,
-                    mps: false,
+                    mps:      false
                 };
                 let dss = self.decode_bit(&mut ss, reader)?;
                 let sign: i16 = if dss == 0 { 1 } else { -1 };
@@ -1067,12 +1069,12 @@ mod tests {
         let decode_output: [u8; 32] = [
             0x00, 0x02, 0x00, 0x51, 0x00, 0x00, 0x00, 0xC0, 0x03, 0x52, 0x87, 0x2A, 0xAA, 0xAA,
             0xAA, 0xAA, 0x82, 0xC0, 0x20, 0x00, 0xFC, 0xD7, 0x9E, 0xF6, 0x74, 0xEA, 0xAB, 0xF7,
-            0x69, 0x7E, 0xE7, 0x4C,
+            0x69, 0x7E, 0xE7, 0x4C
         ];
         let compressed: [u8; 32] = [
             0x65, 0x5B, 0x51, 0x44, 0xF7, 0x96, 0x9D, 0x51, 0x78, 0x55, 0xBF, 0xFF, 0x00, 0xFC,
             0x51, 0x84, 0xC7, 0xCE, 0xF9, 0x39, 0x00, 0x28, 0x7D, 0x46, 0x70, 0x8E, 0xCB, 0xC0,
-            0xF6, 0xFF, 0xD9, 0x00,
+            0xF6, 0xFF, 0xD9, 0x00
         ];
 
         let input = std::io::Cursor::new(&compressed);
@@ -1081,7 +1083,7 @@ mod tests {
         let mut reader = ZReader::new(input);
         let mut context = StatisticsEntry {
             qe_index: 0,
-            mps: false,
+            mps:      false
         };
 
         for i in 0..256 {

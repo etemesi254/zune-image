@@ -274,7 +274,7 @@ mod tests {
 
     #[test]
     fn test_transpose() {
-        #[allow(clippy::cast_possible_wrap,clippy::cast_possible_truncation)]
+        #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
         fn get_val(i: usize, j: usize) -> i32 {
             ((i * 8) / (j + 1)) as i32
         }

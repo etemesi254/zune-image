@@ -7,7 +7,9 @@
  */
 
 #[cfg(target_arch = "aarch64")]
-use core::arch::aarch64::{vdupq_n_s16, vld1q_s16, vaddq_s16, vmulq_s16, vshrq_n_s16, vzip1q_s16, vzip2q_s16, vst1q_s16};
+use core::arch::aarch64::{
+    vaddq_s16, vdupq_n_s16, vld1q_s16, vmulq_s16, vshrq_n_s16, vst1q_s16, vzip1q_s16, vzip2q_s16
+};
 
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]

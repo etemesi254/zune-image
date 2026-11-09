@@ -1407,7 +1407,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         }
                         if let McuDecodeOutput::Scaled(scaled) = output {
                             scaled.write_block(
-                                position, j, i * component.vertical_sample + k, &tmp,
+                                position,
+                                j,
+                                i * component.vertical_sample + k,
+                                &tmp
                             )?;
                             continue;
                         }
@@ -1431,7 +1434,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
             // process that width up until it's impossible
             match output {
-                McuDecodeOutput::Scaled(_) => {},
+                McuDecodeOutput::Scaled(_) => {}
                 McuDecodeOutput::Pixels(pixels) => self.post_process(
                     pixels,
                     width * self.options.jpeg_get_out_colorspace().num_components(),

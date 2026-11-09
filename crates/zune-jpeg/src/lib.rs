@@ -357,6 +357,8 @@ mod marker;
 mod mcu;
 mod mcu_prog;
 mod misc;
+#[cfg(test)]
+mod recovery_tests;
 mod scaled;
 mod unsafe_utils;
 mod unsafe_utils_avx2;

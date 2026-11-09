@@ -77,12 +77,10 @@ pub fn upsample_vertical(
 pub fn upsample_hv(
     input: &[i16], in_near: &[i16], in_far: &[i16], scratch_space: &mut [i16], output: &mut [i16]
 ) {
-
     assert_eq!(input.len() * 4, output.len());
 
     assert!(input.len() * 2 <= scratch_space.len());
     let scratch_space = &mut scratch_space[..input.len() * 2];
-
 
     let mut t = [0];
     upsample_vertical(input, in_near, in_far, &mut t, scratch_space);
@@ -123,7 +121,9 @@ pub fn upsample_generic(
     if difference > 0 {
         // nearest neighbour
         for (input, chunk_output) in input.iter().zip(output.chunks_exact_mut(difference)) {
-            for x in chunk_output.iter_mut() { *x = *input; }
+            for x in chunk_output.iter_mut() {
+                *x = *input;
+            }
         }
     }
 }

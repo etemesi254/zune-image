@@ -5,10 +5,14 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-#![allow(clippy::cast_sign_loss,clippy::cast_possible_wrap,clippy::cast_possible_truncation)]
+#![allow(
+    clippy::cast_sign_loss,
+    clippy::cast_possible_wrap,
+    clippy::cast_possible_truncation
+)]
 use alloc::{format, vec};
-use core::convert::TryInto;
 use core::cmp::min;
+use core::convert::TryInto;
 
 use zune_core::colorspace::ColorSpace;
 
@@ -82,13 +86,7 @@ pub(crate) fn color_convert(
             );
         }
         (ColorSpace::YCCK, ColorSpace::CMYK) => {
-            color_convert_ycck_to_cmyk(
-                unprocessed,
-                width,
-                padded_width,
-                color_convert_16,
-                output
-            );
+            color_convert_ycck_to_cmyk(unprocessed, width, padded_width, color_convert_16, output);
         }
         (ColorSpace::CMYK, ColorSpace::RGB) => {
             color_convert_cymk_to_rgb::<3>(unprocessed, width, padded_width, output);
@@ -293,7 +291,11 @@ fn color_convert_ycck_to_cmyk(
         .zip(rgb.chunks_exact(width * 3))
         .zip(mcu_block[3].chunks_exact(padded_width))
     {
-        for ((pix, src), k) in pix_w.chunks_exact_mut(4).zip(rgb_w.chunks_exact(3)).zip(k_w) {
+        for ((pix, src), k) in pix_w
+            .chunks_exact_mut(4)
+            .zip(rgb_w.chunks_exact(3))
+            .zip(k_w)
+        {
             pix[0] = 255 - src[0];
             pix[1] = 255 - src[1];
             pix[2] = 255 - src[2];
@@ -611,12 +613,13 @@ pub(crate) fn upsample(
 
             if has_vertical_sample {
                 let length = component.first_row_upsample_dest.len();
-                let start = dest_coeff
-                    .len()
-                    .checked_sub(length)
-                    .ok_or(DecodeErrors::FormatStatic(
-                        "Generic upsample destination is too small",
-                    ))?;
+                let start =
+                    dest_coeff
+                        .len()
+                        .checked_sub(length)
+                        .ok_or(DecodeErrors::FormatStatic(
+                            "Generic upsample destination is too small"
+                        ))?;
                 component
                     .first_row_upsample_dest
                     .copy_from_slice(&dest_coeff[start..]);
