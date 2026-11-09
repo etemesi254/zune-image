@@ -112,18 +112,18 @@ macro_rules! decode_huff {
 /// entropy data.
 #[derive(Clone, Copy)]
 pub(crate) struct HuffmanBitstreamState {
-    pub(crate) buffer: u64,
-    pub(crate) aligned_buffer: u64,
-    pub(crate) bits_left: u8,
-    pub(crate) marker: Option<Marker>,
-    pub(crate) marker_bits: Option<u8>,
+    pub(crate) buffer:                  u64,
+    pub(crate) aligned_buffer:          u64,
+    pub(crate) bits_left:               u8,
+    pub(crate) marker:                  Option<Marker>,
+    pub(crate) marker_bits:             Option<u8>,
     pub(crate) marker_padding_consumed: bool,
-    pub(crate) overread_by: usize,
-    pub(crate) zeros_past_end: usize,
-    pub(crate) exhausted: bool,
-    pub(crate) stuffed_past_end: bool,
-    pub(crate) seen_eoi: bool,
-    pub(crate) eob_run: i32,
+    pub(crate) overread_by:             usize,
+    pub(crate) zeros_past_end:          usize,
+    pub(crate) exhausted:               bool,
+    pub(crate) stuffed_past_end:        bool,
+    pub(crate) seen_eoi:                bool,
+    pub(crate) eob_run:                 i32
 }
 
 /// Type-erased bitstream state snapshot stored in `ScanCheckpoint`.
@@ -137,7 +137,7 @@ pub(crate) enum BitstreamStateSnapshot {
     Arithmetic(crate::bitstream_arith::ArithBitstreamState),
     /// No bitstream state (checkpoint at scan start / RST boundary where
     /// the bitstream is freshly reset).
-    None,
+    None
 }
 
 /// A common `BitStream` interface abstracting both Huffman and Arithmetic bitstream decoding
@@ -158,13 +158,13 @@ pub(crate) trait BitStream {
     fn set_strict(&mut self, _strict: bool) {}
 
     fn get_dc_table(
-        tables: &mut EntropyTables, dc_pos: usize,
+        tables: &mut EntropyTables, dc_pos: usize
     ) -> Result<&mut Self::DCEntropyTable, DecodeErrors>;
     fn get_ac_table(
-        tables: &mut EntropyTables, ac_pos: usize,
+        tables: &mut EntropyTables, ac_pos: usize
     ) -> Result<&mut Self::ACEntropyTable, DecodeErrors>;
     fn get_dc_ac_tables(
-        tables: &mut EntropyTables, dc_pos: usize, ac_pos: usize,
+        tables: &mut EntropyTables, dc_pos: usize, ac_pos: usize
     ) -> Result<(&mut Self::DCEntropyTable, &mut Self::ACEntropyTable), DecodeErrors>;
 
     fn reset_arith_tables(tables: &mut EntropyTables);
@@ -177,40 +177,40 @@ pub(crate) trait BitStream {
     fn decode_mcu_block<T>(
         &mut self, reader: &mut ZReader<T>, dc_table: &mut Self::DCEntropyTable,
         ac_table: &mut Self::ACEntropyTable, qt_table: &[i32; DCT_BLOCK], block: &mut [i32; 64],
-        dc_prediction: &mut i32, last_dc_diff: &mut i32,
+        dc_prediction: &mut i32, last_dc_diff: &mut i32
     ) -> Result<u16, DecodeErrors>
     where
         T: ZByteReaderTrait;
 
     fn discard_mcu_block<T>(
         &mut self, reader: &mut ZReader<T>, dc_table: &mut Self::DCEntropyTable,
-        ac_table: &mut Self::ACEntropyTable, last_dc_diff: &mut i32,
+        ac_table: &mut Self::ACEntropyTable, last_dc_diff: &mut i32
     ) -> Result<u16, DecodeErrors>
     where
         T: ZByteReaderTrait;
 
     fn decode_prog_dc_first<T>(
         &mut self, reader: &mut ZReader<T>, dc_table: &mut Self::DCEntropyTable, block: &mut i16,
-        dc_prediction: &mut i32, last_dc_diff: &mut i32,
+        dc_prediction: &mut i32, last_dc_diff: &mut i32
     ) -> Result<(), DecodeErrors>
     where
         T: ZByteReaderTrait;
 
     fn decode_prog_dc_refine<T>(
-        &mut self, reader: &mut ZReader<T>, block: &mut i16,
+        &mut self, reader: &mut ZReader<T>, block: &mut i16
     ) -> Result<(), DecodeErrors>
     where
         T: ZByteReaderTrait;
 
     fn decode_mcu_ac_first<T>(
         &mut self, reader: &mut ZReader<T>, ac_table: &mut Self::ACEntropyTable,
-        block: &mut [i16; 64],
+        block: &mut [i16; 64]
     ) -> Result<bool, DecodeErrors>
     where
         T: ZByteReaderTrait;
 
     fn decode_mcu_ac_refine<T>(
-        &mut self, reader: &mut ZReader<T>, table: &mut Self::ACEntropyTable, block: &mut [i16; 64],
+        &mut self, reader: &mut ZReader<T>, table: &mut Self::ACEntropyTable, block: &mut [i16; 64]
     ) -> Result<bool, DecodeErrors>
     where
         T: ZByteReaderTrait;
@@ -332,7 +332,7 @@ impl BitStreamHuffman {
         }
         if self.strict {
             return Err(DecodeErrors::FormatStatic(
-                "AC coefficient run past the end of the block",
+                "AC coefficient run past the end of the block"
             ));
         }
         Ok(63)
@@ -398,10 +398,10 @@ impl BitStreamHuffman {
     )]
     #[inline(always)]
     fn decode_dc<T>(
-        &mut self, reader: &mut ZReader<T>, dc_table: &HuffmanTable, dc_prediction: &mut i32,
+        &mut self, reader: &mut ZReader<T>, dc_table: &HuffmanTable, dc_prediction: &mut i32
     ) -> Result<bool, DecodeErrors>
     where
-        T: ZByteReaderTrait,
+        T: ZByteReaderTrait
     {
         let (mut symbol, r);
 
@@ -427,10 +427,10 @@ impl BitStreamHuffman {
     /// Like `decode_dc` but we do not need the result of the component, we only want to remove it
     /// from the bitstream of the MCU.
     fn discard_dc<T>(
-        &mut self, reader: &mut ZReader<T>, dc_table: &HuffmanTable,
+        &mut self, reader: &mut ZReader<T>, dc_table: &HuffmanTable
     ) -> Result<bool, DecodeErrors>
     where
-        T: ZByteReaderTrait,
+        T: ZByteReaderTrait
     {
         let mut symbol;
 
@@ -458,7 +458,7 @@ impl BitStream for BitStreamHuffman {
 
     #[inline(always)]
     fn get_dc_table(
-        tables: &mut EntropyTables, dc_pos: usize,
+        tables: &mut EntropyTables, dc_pos: usize
     ) -> Result<&mut Self::DCEntropyTable, DecodeErrors> {
         let dc_table = tables
             .dc_huffman
@@ -478,7 +478,7 @@ impl BitStream for BitStreamHuffman {
 
     #[inline(always)]
     fn get_ac_table(
-        tables: &mut EntropyTables, ac_pos: usize,
+        tables: &mut EntropyTables, ac_pos: usize
     ) -> Result<&mut Self::ACEntropyTable, DecodeErrors> {
         let ac_table = tables
             .ac_huffman
@@ -497,7 +497,7 @@ impl BitStream for BitStreamHuffman {
     }
     #[inline(always)]
     fn get_dc_ac_tables(
-        tables: &mut EntropyTables, dc_pos: usize, ac_pos: usize,
+        tables: &mut EntropyTables, dc_pos: usize, ac_pos: usize
     ) -> Result<(&mut Self::DCEntropyTable, &mut Self::ACEntropyTable), DecodeErrors> {
         let dc_table = tables
             .dc_huffman
@@ -637,18 +637,18 @@ impl BitStream for BitStreamHuffman {
     #[inline(always)]
     fn save_state(&self) -> HuffmanBitstreamState {
         HuffmanBitstreamState {
-            buffer: self.buffer,
-            aligned_buffer: self.aligned_buffer,
-            bits_left: self.bits_left,
-            marker: self.marker,
-            marker_bits: self.marker_bits,
+            buffer:                  self.buffer,
+            aligned_buffer:          self.aligned_buffer,
+            bits_left:               self.bits_left,
+            marker:                  self.marker,
+            marker_bits:             self.marker_bits,
             marker_padding_consumed: self.marker_padding_consumed,
-            overread_by: self.overread_by,
-            zeros_past_end: self.zeros_past_end,
-            exhausted: self.exhausted,
-            stuffed_past_end: self.stuffed_past_end,
-            seen_eoi: self.seen_eoi,
-            eob_run: self.eob_run,
+            overread_by:             self.overread_by,
+            zeros_past_end:          self.zeros_past_end,
+            exhausted:               self.exhausted,
+            stuffed_past_end:        self.stuffed_past_end,
+            seen_eoi:                self.seen_eoi,
+            eob_run:                 self.eob_run
         }
     }
 
@@ -679,7 +679,7 @@ impl BitStream for BitStreamHuffman {
             BitstreamStateSnapshot::Huffman(s) => self.restore_state(s),
             BitstreamStateSnapshot::None => {}
             #[cfg(feature = "arith")]
-            _ => unreachable!("Huffman stream given arithmetic snapshot"),
+            _ => unreachable!("Huffman stream given arithmetic snapshot")
         }
     }
 
@@ -693,7 +693,7 @@ impl BitStream for BitStreamHuffman {
     #[inline(always)] // to many call sites? ( perf improvement by 4%)
     fn refill<T>(&mut self, reader: &mut ZReader<T>) -> Result<bool, DecodeErrors>
     where
-        T: ZByteReaderTrait,
+        T: ZByteReaderTrait
     {
         /// Macro version of a single byte refill.
         /// Arguments
@@ -755,7 +755,7 @@ impl BitStream for BitStreamHuffman {
 
                             if let Some(Marker::UNKNOWN(_)) = marker {
                                 return Err(DecodeErrors::Format(
-                                    "Unknown marker in bit stream".to_string(),
+                                    "Unknown marker in bit stream".to_string()
                                 ));
                             }
                             if next_byte == 0xD9 {
@@ -855,10 +855,10 @@ impl BitStream for BitStreamHuffman {
     fn decode_mcu_block<T>(
         &mut self, reader: &mut ZReader<T>, dc_table: &mut HuffmanTable,
         ac_table: &mut HuffmanTable, qt_table: &[i32; DCT_BLOCK], block: &mut [i32; 64],
-        dc_prediction: &mut i32, _last_dc_diff: &mut i32,
+        dc_prediction: &mut i32, _last_dc_diff: &mut i32
     ) -> Result<u16, DecodeErrors>
     where
-        T: ZByteReaderTrait,
+        T: ZByteReaderTrait
     {
         // Get fast AC table as a reference before we enter the hot path
         let ac_lookup = ac_table.ac_lookup.as_ref().unwrap();
@@ -871,7 +871,7 @@ impl BitStream for BitStreamHuffman {
         }
         if self.strict && self.bits_left < 1 && self.marker.is_some() {
             return Err(DecodeErrors::Format(
-                "No more bytes left in stream before marker".to_string(),
+                "No more bytes left in stream before marker".to_string()
             ));
         }
         // decode DC, dc prediction will contain the value
@@ -932,10 +932,10 @@ impl BitStream for BitStreamHuffman {
     /// either. Still returns the index of the last component read.
     fn discard_mcu_block<T>(
         &mut self, reader: &mut ZReader<T>, dc_table: &mut HuffmanTable,
-        ac_table: &mut HuffmanTable, _last_dc_diff: &mut i32,
+        ac_table: &mut HuffmanTable, _last_dc_diff: &mut i32
     ) -> Result<u16, DecodeErrors>
     where
-        T: ZByteReaderTrait,
+        T: ZByteReaderTrait
     {
         // Get fast AC table as a reference before we enter the hot path
         let ac_lookup = ac_table.ac_lookup.as_ref().unwrap();
@@ -998,10 +998,10 @@ impl BitStream for BitStreamHuffman {
     #[inline]
     fn decode_prog_dc_first<T>(
         &mut self, reader: &mut ZReader<T>, dc_table: &mut HuffmanTable, block: &mut i16,
-        dc_prediction: &mut i32, _last_dc_diff: &mut i32,
+        dc_prediction: &mut i32, _last_dc_diff: &mut i32
     ) -> Result<(), DecodeErrors>
     where
-        T: ZByteReaderTrait,
+        T: ZByteReaderTrait
     {
         self.decode_dc(reader, dc_table, dc_prediction)?;
         *block = (*dc_prediction as i16).wrapping_mul(self.successive_low_mask);
@@ -1009,10 +1009,10 @@ impl BitStream for BitStreamHuffman {
     }
     #[inline]
     fn decode_prog_dc_refine<T>(
-        &mut self, reader: &mut ZReader<T>, block: &mut i16,
+        &mut self, reader: &mut ZReader<T>, block: &mut i16
     ) -> Result<(), DecodeErrors>
     where
-        T: ZByteReaderTrait,
+        T: ZByteReaderTrait
     {
         // refinement scan
         if self.bits_left < 1 {
@@ -1021,7 +1021,7 @@ impl BitStream for BitStreamHuffman {
             // So let's confirm again that refill worked
             if self.bits_left < 1 {
                 return Err(DecodeErrors::Format(
-                    "Marker found where not expected in refine bit".to_string(),
+                    "Marker found where not expected in refine bit".to_string()
                 ));
             }
         }
@@ -1034,10 +1034,10 @@ impl BitStream for BitStreamHuffman {
     }
 
     fn decode_mcu_ac_first<T>(
-        &mut self, reader: &mut ZReader<T>, ac_table: &mut HuffmanTable, block: &mut [i16; 64],
+        &mut self, reader: &mut ZReader<T>, ac_table: &mut HuffmanTable, block: &mut [i16; 64]
     ) -> Result<bool, DecodeErrors>
     where
-        T: ZByteReaderTrait,
+        T: ZByteReaderTrait
     {
         let fast_ac = ac_table.ac_lookup.as_ref().unwrap();
         let bit = self.successive_low_mask;
@@ -1092,10 +1092,10 @@ impl BitStream for BitStreamHuffman {
     }
     #[allow(clippy::too_many_lines, clippy::op_ref)]
     fn decode_mcu_ac_refine<T>(
-        &mut self, reader: &mut ZReader<T>, table: &mut HuffmanTable, block: &mut [i16; 64],
+        &mut self, reader: &mut ZReader<T>, table: &mut HuffmanTable, block: &mut [i16; 64]
     ) -> Result<bool, DecodeErrors>
     where
-        T: ZByteReaderTrait,
+        T: ZByteReaderTrait
     {
         let bit = self.successive_low_mask;
 
@@ -1151,7 +1151,7 @@ impl BitStream for BitStreamHuffman {
                                 self.refill(reader)?;
                                 if self.bits_left < 1 && self.marker.is_some() {
                                     return Err(DecodeErrors::Format(
-                                        "Marker found where not expected in refine bit".to_string(),
+                                        "Marker found where not expected in refine bit".to_string()
                                     ));
                                 }
                             }
