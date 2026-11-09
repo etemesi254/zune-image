@@ -1265,7 +1265,9 @@ mod marker_padding_tests {
         assert!(stream.consumed_marker_padding());
         stream.restore_state(checkpoint);
         assert!(!stream.consumed_marker_padding());
-        stream.get_bits(9);
+        stream.get_bits(8);
+        assert!(!stream.consumed_marker_padding());
+        stream.get_bits(1);
         assert!(stream.consumed_marker_padding());
         stream.reset();
         assert!(!stream.consumed_marker_padding());
