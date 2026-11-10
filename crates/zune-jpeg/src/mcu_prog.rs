@@ -742,7 +742,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             } else {
                 [(0, 0); MAX_COMPONENTS]
             },
-            dc_seen: self.capture_progressive_dc_seen(),
+            dc_seen:         self.capture_progressive_dc_seen(),
             bitstream_state: stream.snapshot_state()
         })
     }
@@ -977,8 +977,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     {
                         return Err(self.suspend_progressive_mcu(stream, transaction, i, j, error));
                     }
-                    if self.progressive_fine_checkpoints_enabled::<B>()
-                        && stream.overread_by() > 0
+                    if self.progressive_fine_checkpoints_enabled::<B>() && stream.overread_by() > 0
                     {
                         return Err(self.suspend_progressive_mcu(
                             stream,
@@ -1071,9 +1070,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         ));
                     }
                 }
-                if self.progressive_fine_checkpoints_enabled::<B>()
-                    && stream.overread_by() > 0
-                {
+                if self.progressive_fine_checkpoints_enabled::<B>() && stream.overread_by() > 0 {
                     return Err(self.suspend_progressive_mcu(
                         stream,
                         transaction,
@@ -1127,13 +1124,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         if let Some(original) = original {
                             *data = original;
                         }
-                        return Err(self.suspend_progressive_mcu(
-                            stream,
-                            transaction,
-                            i,
-                            j,
-                            error
-                        ));
+                        return Err(self.suspend_progressive_mcu(stream, transaction, i, j, error));
                     }
                 };
                 if !decoded {
@@ -1141,9 +1132,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     // libjpeg's no-op handling for the remaining MCUs.
                     return Ok(());
                 }
-                if self.progressive_fine_checkpoints_enabled::<B>()
-                    && stream.overread_by() > 0
-                {
+                if self.progressive_fine_checkpoints_enabled::<B>() && stream.overread_by() > 0 {
                     if let Some(original) = original {
                         *data = original;
                     }
@@ -1331,9 +1320,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         }
                     }
                 }
-                if self.progressive_fine_checkpoints_enabled::<B>()
-                    && stream.overread_by() > 0
-                {
+                if self.progressive_fine_checkpoints_enabled::<B>() && stream.overread_by() > 0 {
                     return Err(self.suspend_progressive_mcu(
                         stream,
                         transaction,
@@ -1359,7 +1346,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     }
 
     fn handle_rst_main_inner<B: BitStream>(
-        &mut self, stream: &mut B,
+        &mut self, stream: &mut B
     ) -> Result<bool, DecodeErrors> {
         if self.todo == 0 {
             stream.refill(&mut self.stream)?;
