@@ -36,10 +36,10 @@ and the first differing coordinate and values. Padding is excluded.
 status. `check` exits nonzero if **any** logical sample differs; there is no
 blanket tolerance of two.
 
-Current `dev` can report IDCT rounding differences on the textured fixtures.
-That is a finding, not a tool-test failure. The explicit `check` command exposes
-these differences; it must not be a default merge gate until the corresponding
-decoder corrections land.
+With the raw-output parity corrections now in `dev`, all four bundled fixtures
+match the native reference exactly. `report` remains diagnostic for other
+supported inputs; `check` explicitly enforces exact equality. Neither command
+is a default merge gate.
 
 To inspect other supported complete inputs, append their paths:
 
