@@ -336,6 +336,8 @@ mod decoder;
 pub mod errors;
 mod headers;
 mod huffman;
+#[cfg(test)]
+mod huffman_recovery_tests;
 #[cfg(not(fuzzing))]
 mod idct;
 #[cfg(fuzzing)]
