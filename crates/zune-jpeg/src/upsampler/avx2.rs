@@ -48,9 +48,9 @@ unsafe fn upsample_horizontal_filtered<const SHIFT: i32, const EVEN: i16, const 
         // SAFETY: The input is 18 * 16 bit long, so the loads are safe.
         let (v_prev, v_curr, v_next) = unsafe {
             (
-                _mm256_loadu_si256(in_ptr.add(0) as *const __m256i),
-                _mm256_loadu_si256(in_ptr.add(1) as *const __m256i),
-                _mm256_loadu_si256(in_ptr.add(2) as *const __m256i),
+                _mm256_loadu_si256(in_ptr.add(0).cast()),
+                _mm256_loadu_si256(in_ptr.add(1).cast()),
+                _mm256_loadu_si256(in_ptr.add(2).cast()),
             )
         };
 
@@ -68,8 +68,8 @@ unsafe fn upsample_horizontal_filtered<const SHIFT: i32, const EVEN: i16, const 
 
         // SAFETY: The output is 32 * 16 bit long, so the stores are safe.
         unsafe {
-            _mm256_storeu_si256(out_ptr as *mut __m256i, v_final_1);
-            _mm256_storeu_si256(out_ptr.add(16) as *mut __m256i, v_final_2);
+            _mm256_storeu_si256(out_ptr.cast(), v_final_1);
+            _mm256_storeu_si256(out_ptr.add(16).cast(), v_final_2);
         }
     };
 
@@ -132,9 +132,9 @@ unsafe fn upsample_vertical_filtered<const ROUND: bool>(
         // SAFETY: Inputs are all 16 * 16 bit long, so the loads are safe.
         let (v_in, v_near, v_far) = unsafe {
             (
-                _mm256_loadu_si256(input.as_ptr() as *const __m256i),
-                _mm256_loadu_si256(in_near.as_ptr() as *const __m256i),
-                _mm256_loadu_si256(in_far.as_ptr() as *const __m256i),
+                _mm256_loadu_si256(input.as_ptr().cast()),
+                _mm256_loadu_si256(in_near.as_ptr().cast()),
+                _mm256_loadu_si256(in_far.as_ptr().cast()),
             )
         };
 
@@ -150,8 +150,8 @@ unsafe fn upsample_vertical_filtered<const ROUND: bool>(
 
         // SAFETY: Outputs are 16 * 16 bit long, so the stores are safe.
         unsafe {
-            _mm256_storeu_si256(out_top.as_mut_ptr() as *mut __m256i, v_out_top);
-            _mm256_storeu_si256(out_bottom.as_mut_ptr() as *mut __m256i, v_out_bottom);
+            _mm256_storeu_si256(out_top.as_mut_ptr().cast(), v_out_top);
+            _mm256_storeu_si256(out_bottom.as_mut_ptr().cast(), v_out_bottom);
         }
     };
 
