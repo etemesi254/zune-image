@@ -3388,17 +3388,18 @@ where
         // below can freely mutate `self`. When headers haven't completed
         // yet, `scan_plan` is `None` and we just run header decoding below.
         struct ScanPlan {
-            scan_start_position:   usize,
-            scan_start_height:     u16,
+            scan_start_position:    usize,
+            scan_start_height:      u16,
             scan_start_expects_dnl: bool,
-            outer_append_snapshot: HeaderAppendStateSnapshot,
-            outer_sos_snapshot:    SosParamsSnapshot,
-            outer_header_snapshot: ScanHeaderStateSnapshot,
+            outer_append_snapshot:  HeaderAppendStateSnapshot,
+            outer_sos_snapshot:     SosParamsSnapshot,
+            outer_qt_tables:        [Option<[i32; 64]>; MAX_COMPONENTS],
+            outer_header_snapshot:  Option<ScanHeaderStateSnapshot>,
             /// Snapshots taken from the checkpoint (if any) so the seek and
             /// SOS-restore steps below do not need to touch `scan_state`.
-            checkpoint_view:       Option<CheckpointView>,
-            progressive_view:      Option<ProgressiveCheckpointView>,
-            progressive_fine_view: Option<ProgressiveFineCheckpointView>
+            checkpoint_view:        Option<CheckpointView>,
+            progressive_view:       Option<ProgressiveCheckpointView>,
+            progressive_fine_view:  Option<ProgressiveFineCheckpointView>
         }
         #[derive(Clone, Copy)]
         struct CheckpointView {
@@ -3427,43 +3428,51 @@ where
             todo:            usize,
             dc_predictions:  [(i32, i32); MAX_COMPONENTS]
         }
-        let scan_plan = self.scan_state.as_deref().map(|state| ScanPlan {
-            scan_start_position:   state.scan_start_position,
-            scan_start_height:     state.scan_start_height,
-            scan_start_expects_dnl: state.scan_start_expects_dnl,
-            outer_append_snapshot: state.append_snapshot,
-            outer_sos_snapshot:    state.sos_snapshot,
-            outer_header_snapshot: state.header_snapshot.clone(),
-            checkpoint_view:       state.scan_checkpoint.as_deref().map(|checkpoint| {
-                CheckpointView {
-                    append_snapshot: checkpoint.append_snapshot,
-                    sos_snapshot:    checkpoint.sos_snapshot,
-                    stream_position: checkpoint.stream_position,
-                    todo:            checkpoint.todo,
-                    pixels_written:  checkpoint.pixels_written,
-                    dc_predictions:  checkpoint.dc_predictions
-                }
-            }),
-            progressive_view:      state.progressive_checkpoint.as_deref().map(|checkpoint| {
-                ProgressiveCheckpointView {
-                    append_snapshot: checkpoint.append_snapshot,
-                    sos_snapshot:    checkpoint.sos_snapshot,
-                    header_snapshot: checkpoint.header_snapshot.clone(),
-                    stream_position: checkpoint.stream_position,
-                    completed_scans: checkpoint.completed_scans
-                }
-            }),
-            progressive_fine_view: state.progressive_fine_checkpoint.as_deref().map(|checkpoint| {
-                ProgressiveFineCheckpointView {
-                    append_snapshot: checkpoint.append_snapshot,
-                    sos_snapshot:    checkpoint.sos_snapshot,
-                    stream_position: checkpoint.stream_position,
-                    completed_scans: checkpoint.completed_scans,
-                    displayed_scans: checkpoint.displayed_scans,
-                    todo:            checkpoint.todo,
-                    dc_predictions:  checkpoint.dc_predictions
-                }
-            })
+        let scan_plan = self.scan_state.as_deref().map(|state| {
+            // Sequential stripe resumes retain the entropy tables. Copy only the
+            // quantization tables instead of cloning all eight Huffman tables.
+            let needs_outer_header = state.scan_checkpoint.is_none()
+                || state.progressive_checkpoint.is_some()
+                || state.progressive_fine_checkpoint.is_some();
+            ScanPlan {
+                scan_start_position:    state.scan_start_position,
+                scan_start_height:      state.scan_start_height,
+                scan_start_expects_dnl: state.scan_start_expects_dnl,
+                outer_append_snapshot:  state.append_snapshot,
+                outer_sos_snapshot:     state.sos_snapshot,
+                outer_qt_tables:        state.header_snapshot.qt_tables,
+                outer_header_snapshot:  needs_outer_header.then(|| state.header_snapshot.clone()),
+                checkpoint_view:        state.scan_checkpoint.as_deref().map(|checkpoint| {
+                    CheckpointView {
+                        append_snapshot: checkpoint.append_snapshot,
+                        sos_snapshot:    checkpoint.sos_snapshot,
+                        stream_position: checkpoint.stream_position,
+                        todo:            checkpoint.todo,
+                        pixels_written:  checkpoint.pixels_written,
+                        dc_predictions:  checkpoint.dc_predictions
+                    }
+                }),
+                progressive_view:       state.progressive_checkpoint.as_deref().map(|checkpoint| {
+                    ProgressiveCheckpointView {
+                        append_snapshot: checkpoint.append_snapshot,
+                        sos_snapshot:    checkpoint.sos_snapshot,
+                        header_snapshot: checkpoint.header_snapshot.clone(),
+                        stream_position: checkpoint.stream_position,
+                        completed_scans: checkpoint.completed_scans
+                    }
+                }),
+                progressive_fine_view:  state.progressive_fine_checkpoint.as_deref().map(
+                    |checkpoint| ProgressiveFineCheckpointView {
+                        append_snapshot: checkpoint.append_snapshot,
+                        sos_snapshot:    checkpoint.sos_snapshot,
+                        stream_position: checkpoint.stream_position,
+                        completed_scans: checkpoint.completed_scans,
+                        displayed_scans: checkpoint.displayed_scans,
+                        todo:            checkpoint.todo,
+                        dc_predictions:  checkpoint.dc_predictions
+                    }
+                )
+            }
         });
         if let Some(plan) = scan_plan {
             let ScanPlan {
@@ -3472,6 +3481,7 @@ where
                 scan_start_expects_dnl,
                 outer_append_snapshot,
                 outer_sos_snapshot,
+                outer_qt_tables,
                 outer_header_snapshot,
                 checkpoint_view,
                 progressive_view,
@@ -3527,7 +3537,7 @@ where
             if let Some(view) = progressive_fine_view {
                 let header_snapshot = progressive_view
                     .as_ref()
-                    .map_or(&outer_header_snapshot, |view| &view.header_snapshot);
+                    .map_or_else(|| outer_header_snapshot.as_ref().unwrap(), |view| &view.header_snapshot);
                 self.restore_scan_header_state(header_snapshot);
                 self.stream.set_position(view.stream_position)?;
                 self.progressive_completed_scans = view.completed_scans;
@@ -3562,7 +3572,7 @@ where
                     comp.dc_diff = dc_diff;
                 }
             } else {
-                self.restore_scan_header_state(&outer_header_snapshot);
+                self.restore_scan_header_state(outer_header_snapshot.as_ref().unwrap());
                 self.stream.set_position(scan_start_position)?;
                 self.pixels_decoded = 0;
                 if self.is_progressive {
@@ -3584,7 +3594,7 @@ where
             // Components take their quantization tables once, from the tables in
             // effect at the first SOS (`setup_component_params`). A DQT between
             // later scans must not change them when resuming from a later checkpoint.
-            self.qt_tables = outer_header_snapshot.qt_tables;
+            self.qt_tables = outer_qt_tables;
             if checkpoint_view.is_none() && !had_progressive_view {
                 // First-SOS replay restarts progressive coefficient assembly;
                 // scan-boundary retries restore `todo` in `parse_entropy_coded_data`.
@@ -4103,6 +4113,8 @@ impl ImageInfo {
 
 #[cfg(test)]
 mod extended_xmp_tests {
+    use alloc::vec;
+
     use zune_core::bytestream::ZCursor;
 
     use super::{ExtendedXmpSegment, HeaderAppendStateSnapshot, JpegDecoder};
@@ -4200,6 +4212,9 @@ mod extended_xmp_tests {
 
 #[cfg(test)]
 mod planar_layout_helpers {
+    use alloc::vec;
+    use alloc::vec::Vec;
+
     use zune_core::bytestream::ZCursor;
     use zune_core::colorspace::ColorSpace;
     use zune_core::options::DecoderOptions;
@@ -4397,6 +4412,124 @@ mod planar_layout_helpers {
                 "component {index} exceeded one-iMCU-row scratch bound"
             );
             assert!(stripe_buffers[index] < layout[index].byte_size);
+        }
+    }
+
+    #[test]
+    fn zrl_zero_ac_blocks_match_scalar() {
+        fn jpeg_with_zero_ac(dc: i16, zero_runs: usize) -> Vec<u8> {
+            let mut jpeg = vec![0xff, 0xd8, 0xff, 0xdb, 0, 67, 0];
+            jpeg.extend_from_slice(&[255; 64]);
+            jpeg.extend_from_slice(&[
+                0xff, 0xc0, 0, 11, 8, 0, 8, 0, 8, 1, 1, 0x11, 0, 0xff, 0xc4, 0, 39, 0, 1
+            ]);
+            jpeg.extend_from_slice(&[0; 15]);
+            jpeg.extend_from_slice(&[9, 0x10, 1, 1]);
+            jpeg.extend_from_slice(&[0; 14]);
+            jpeg.extend_from_slice(&[0xf0, 0, 0xff, 0xda, 0, 8, 1, 1, 0, 0, 63, 0]);
+
+            // DC category 9 has code 0; ZRL has code 0 and EOB has code 10.
+            let amplitude = if dc > 0 { dc } else { 511 + dc } as u16;
+            let mut bits = vec![0_u8];
+            bits.extend((0..9).rev().map(|shift| ((amplitude >> shift) & 1) as u8));
+            bits.extend(core::iter::repeat(0).take(zero_runs));
+            bits.extend_from_slice(&[1, 0]);
+            while bits.len() % 8 != 0 {
+                bits.push(1);
+            }
+            for byte in bits.chunks_exact(8) {
+                let byte = byte.iter().fold(0, |value, bit| (value << 1) | bit);
+                jpeg.push(byte);
+                if byte == 0xff {
+                    jpeg.push(0);
+                }
+            }
+            jpeg.extend_from_slice(&[0xff, 0xd9]);
+            jpeg
+        }
+
+        for dc in [-300, 300] {
+            for zero_runs in 0..=3 {
+                let data = jpeg_with_zero_ac(dc, zero_runs);
+                for colorspace in [ColorSpace::Luma, ColorSpace::RGB, ColorSpace::RGBA] {
+                    let channels = colorspace.num_components();
+                    let sample = if dc > 0 { 255 } else { 0 };
+                    let mut expected = vec![sample; 64 * channels];
+                    if channels == 4 {
+                        for pixel in expected.chunks_exact_mut(4) {
+                            pixel[3] = 255;
+                        }
+                    }
+                    for use_simd in [false, true] {
+                        let options = DecoderOptions::default()
+                            .set_use_unsafe(use_simd)
+                            .jpeg_set_out_colorspace(colorspace);
+                        let mut decoder =
+                            JpegDecoder::new_with_options(ZCursor::new(&data), options);
+                        assert_eq!(
+                            decoder.decode().unwrap(),
+                            expected,
+                            "DC {dc}, ZRL count {zero_runs}, {colorspace:?}, SIMD {use_simd}"
+                        );
+
+                        let mut decoder =
+                            JpegDecoder::new_with_options(ZCursor::new(&data), options);
+                        let mut scanlines = decoder.scanline_output();
+                        assert_eq!(scanlines.start().unwrap(), ScanlineStatus::Ready);
+                        let row_bytes = 8 * channels;
+                        let mut row = vec![0xa5; row_bytes + 7];
+                        for reference in expected.chunks_exact(row_bytes) {
+                            assert_eq!(
+                                scanlines.read_scanlines(&mut row, row_bytes + 7).unwrap(),
+                                ScanlineReadStatus::RowsProcessed { rows: 1 }
+                            );
+                            assert_eq!(&row[..row_bytes], reference);
+                            assert!(row[row_bytes..].iter().all(|&value| value == 0xa5));
+                        }
+                        assert_eq!(scanlines.finish().unwrap(), ScanlineStatus::Complete);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn stripe_resume_matches_whole_image_for_scalar_and_simd() {
+        let fixtures: [&[u8]; 4] = [
+            include_bytes!("../../../test-images/jpeg/2029.jpg"),
+            include_bytes!("../../../test-images/jpeg/restart_cross_row_128x128.jpg"),
+            include_bytes!("../../../test-images/jpeg/non_interleaved_420_64x64.jpg"),
+            include_bytes!("../../../test-images/jpeg/progressive_420_webcodecs.jpg")
+        ];
+        for data in fixtures {
+            let mut reference = JpegDecoder::new_with_options(
+                ZCursor::new(data),
+                DecoderOptions::default().set_use_unsafe(false)
+            );
+            let expected = reference.decode().unwrap();
+            for use_simd in [false, true] {
+                let mut decoder = JpegDecoder::new_with_options(
+                    ZCursor::new(data),
+                    DecoderOptions::default().set_use_unsafe(use_simd)
+                );
+                let mut scanlines = decoder.scanline_output();
+                assert_eq!(scanlines.start().unwrap(), ScanlineStatus::Ready);
+                let row_bytes = scanlines.output_row_bytes().unwrap();
+                let height = scanlines.output_height().unwrap();
+                let stride = row_bytes + 7;
+                let mut row = vec![0xA5; stride];
+                let mut actual = Vec::with_capacity(expected.len());
+                for _ in 0..height {
+                    assert_eq!(
+                        scanlines.read_scanlines(&mut row, stride).unwrap(),
+                        ScanlineReadStatus::RowsProcessed { rows: 1 }
+                    );
+                    actual.extend_from_slice(&row[..row_bytes]);
+                    assert!(row[row_bytes..].iter().all(|&value| value == 0xA5));
+                }
+                assert_eq!(scanlines.finish().unwrap(), ScanlineStatus::Complete);
+                assert_eq!(actual, expected, "SIMD enabled: {use_simd}");
+            }
         }
     }
 
