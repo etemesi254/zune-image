@@ -1598,9 +1598,50 @@ fn calculate_expected_input(options: &EncoderOptions) -> Option<usize> {
     options
         .width()
         .checked_mul(options.depth().size_of())
-        .and_then(|x| x.checked_add(options.height()))
-        .and_then(|x| x.checked_add(options.width()))
-        .and_then(|x| x.checked_add(options.colorspace().num_components()))
+        .and_then(|x| x.checked_mul(options.height()))
+        .and_then(|x| x.checked_mul(options.colorspace().num_components()))
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::vec;
+    use alloc::vec::Vec;
+
+    use zune_core::bit_depth::BitDepth;
+    use zune_core::colorspace::ColorSpace;
+    use zune_core::options::EncoderOptions;
+
+    use super::*;
+
+    /// The input is one sample of each component a pixel, of the
+    /// depth's size, for each of width × height pixels: more or fewer
+    /// bytes are refused.
+    #[test]
+    fn the_input_is_width_by_height_pixels_of_samples() {
+        for (colorspace, depth) in [
+            (ColorSpace::Luma, BitDepth::Eight),
+            (ColorSpace::RGB, BitDepth::Eight),
+            (ColorSpace::RGBA, BitDepth::Sixteen)
+        ] {
+            let options = EncoderOptions::new(3, 2, colorspace, depth);
+            let size = 3 * 2 * colorspace.num_components() * depth.size_of();
+            assert_eq!(calculate_expected_input(&options), Some(size));
+            let encode = |len: usize| {
+                let data = vec![7_u8; len];
+                let mut out = Vec::new();
+                JxlSimpleEncoder::new(&data, options).encode(&mut out)
+            };
+            assert!(encode(size).is_ok(), "{colorspace:?}");
+            for len in [size - 1, size + 1] {
+                assert!(
+                    matches!(encode(len), Err(JxlEncodeErrors::LengthMismatch(..))),
+                    "{colorspace:?} {len}"
+                );
+            }
+        }
+        let huge = EncoderOptions::new(usize::MAX / 2, 3, ColorSpace::RGB, BitDepth::Eight);
+        assert_eq!(calculate_expected_input(&huge), None);
+    }
 }
 
 // #[test]
