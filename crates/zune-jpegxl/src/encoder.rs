@@ -1517,7 +1517,19 @@ fn prepare_header(frame: &mut FrameState, add_image_header: bool, is_last: bool)
         }
         if have_alpha {
             output.put_bits(2, 1); // extra channel
-            output.put_bits(1, 1); // all default (8 bit alpha)
+            if depth == BitDepth::Eight {
+                output.put_bits(1, 1); // all default (8 bit alpha)
+            } else {
+                // The alpha channel's samples are as deep as the color's.
+                output.put_bits(1, 0); // not all default
+                output.put_bits(2, 0); // type: alpha, enum value 0
+                output.put_bits(1, 0); // integer samples
+                output.put_bits(2, 0b11);
+                output.put_bits(6, (depth.bit_size() - 1) as u64);
+                output.put_bits(2, 0); // dim_shift 0
+                output.put_bits(2, 0); // no name
+                output.put_bits(1, 0); // not premultiplied
+            }
         } else {
             output.put_bits(2, 0); // no extra channel
         }
@@ -1641,6 +1653,59 @@ mod tests {
         }
         let huge = EncoderOptions::new(usize::MAX / 2, 3, ColorSpace::RGB, BitDepth::Eight);
         assert_eq!(calculate_expected_input(&huge), None);
+    }
+
+    /// The extra channel fields of a 2 × 2 RGBA image at `depth`'s
+    /// header, its bits read least significant first: `None` where it
+    /// is all_default, else its type, its bits per sample, dim_shift,
+    /// name length and premultiplication.
+    fn alpha_info(depth: BitDepth) -> Option<[u32; 5]> {
+        let data = vec![100_u8; 16 * depth.size_of()];
+        let options = EncoderOptions::new(2, 2, ColorSpace::RGBA, depth);
+        let mut out = Vec::new();
+        JxlSimpleEncoder::new(&data, options)
+            .encode(&mut out)
+            .unwrap();
+        let mut at = 0;
+        let mut read = |count: usize| {
+            let mut value = 0;
+            for i in 0..count {
+                value |= u32::from((out[at / 8] >> (at % 8)) & 1) << i;
+                at += 1;
+            }
+            value
+        };
+        // Signature, size and the metadata up to its bit depth.
+        for _ in 0..16 + 1 + 11 + 3 + 11 + 1 + 1 + 1 {
+            read(1);
+        }
+        if read(2) == 3 {
+            assert_eq!(read(6) + 1, depth.bit_size() as u32, "bits");
+        }
+        read(1);
+        assert_eq!(read(2), 1, "one extra channel");
+        if read(1) == 1 {
+            return None;
+        }
+        let kind = match read(2) {
+            2 => 2 + read(4),
+            3 => 18 + read(6),
+            v => v
+        };
+        assert_eq!(read(1), 0, "integer samples");
+        let per_sample = match read(2) {
+            0 => 8,
+            1 => 10,
+            2 => 12,
+            _ => read(6) + 1
+        };
+        Some([kind, per_sample, read(2), read(2), read(1)])
+    }
+
+    #[test]
+    fn alpha_is_as_deep_as_the_colors() {
+        assert_eq!(alpha_info(BitDepth::Eight), None);
+        assert_eq!(alpha_info(BitDepth::Sixteen), Some([0, 16, 0, 0, 0]));
     }
 }
 
