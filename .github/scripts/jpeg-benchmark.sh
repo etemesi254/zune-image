@@ -11,7 +11,6 @@ head=$(realpath "$2")
 mkdir -p "$3"
 report=$(realpath "$3")
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-critcmp=$(command -v "${CRITCMP:-critcmp}")
 base_sha=$4
 head_sha=$5
 
@@ -23,6 +22,10 @@ finish() {
         if [[ -d "$report/targets/$variant/criterion" ]]; then
             mkdir -p "$report/raw/$variant"
             cp -a "$report/targets/$variant/criterion" "$report/raw/$variant/" || status=1
+            if [[ -n "${critcmp:-}" && ! -s "$report/$variant.json" ]]; then
+                "$critcmp" --target-dir "$report/targets/$variant" --export "$variant" \
+                    > "$report/$variant.json" 2> "$report/$variant/partial-export.log"
+            fi
         fi
     done
     printf 'exit_status=%s\n' "$status" > "$report/status.txt"
@@ -30,6 +33,7 @@ finish() {
 }
 trap finish EXIT
 
+critcmp=$(command -v "${CRITCMP:-critcmp}")
 [[ "$base" != "$head" ]] || { echo "checkouts must be isolated" >&2; exit 1; }
 for sha in "$base_sha" "$head_sha"; do
     [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "not an exact commit SHA: $sha" >&2; exit 1; }
@@ -53,7 +57,7 @@ export RUSTFLAGS="${JPEG_RUSTFLAGS:--C target-cpu=native}"
 export CARGO_INCREMENTAL=0 CARGO_TERM_COLOR=never
 # Ignore caller-provided cache wrappers and Criterion output overrides.
 unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER CARGO_ENCODED_RUSTFLAGS CRITERION_HOME
-filter=${JPEG_BENCH_FILTER:-jpeg:}
+filter=${JPEG_BENCH_FILTER:-zune-jpeg}
 flags=(
     "$filter" --sample-size "${JPEG_SAMPLE_SIZE:-20}"
     --warm-up-time "${JPEG_WARM_UP_TIME:-1}"

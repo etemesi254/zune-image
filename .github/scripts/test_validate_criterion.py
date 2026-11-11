@@ -8,7 +8,7 @@ import unittest
 import uuid
 from pathlib import Path
 
-from validate_criterion import compare
+from validate_criterion import compare, load_export
 
 
 CASE = "jpeg: smoke/zune-jpeg"
@@ -161,6 +161,63 @@ class PipelineTests(unittest.TestCase):
         )
         self.assertNotEqual(completed.returncode, 0)
         self.assertIn("exit status 9", (self.root / "pipeline.log").read_text())
+
+    @unittest.skipUnless(shutil.which("critcmp") or os.environ.get("CRITCMP"), "critcmp is not installed")
+    def test_benchmark_failure_retains_raw_and_partial_export(self):
+        base, head = self.root / "checkout-base", self.root / "checkout-head"
+        base.mkdir()
+        for suffix in (
+            "", "_horizontal_subsampling", "_vertical_subsampling", "_hv_subsampling",
+            "_prog", "_prog_h_sampling", "_prog_v_sampling", "_prog_hv_sampling",
+        ):
+            fixture = base / f"test-images/jpeg/benchmarks/speed_bench{suffix}.jpg"
+            fixture.parent.mkdir(parents=True, exist_ok=True)
+            fixture.write_bytes(b"fixture")
+        (base / "test-images/jpeg/four_components.jpg").write_bytes(b"fixture")
+        (base / "Cargo.lock").write_text("# test lockfile\n")
+        subprocess.run(["git", "init", "-q", str(base)], check=True)
+        subprocess.run(["git", "-C", str(base), "add", "."], check=True)
+        subprocess.run(
+            ["git", "-C", str(base), "-c", "user.name=Test", "-c", "user.email=test@example.com",
+             "commit", "-qm", "test fixture"],
+            check=True,
+        )
+        subprocess.run(["git", "clone", "-q", "--no-hardlinks", str(base), str(head)], check=True)
+        sha = subprocess.check_output(["git", "-C", str(base), "rev-parse", "HEAD"], text=True).strip()
+        tools = self.root / "tools"
+        tools.mkdir()
+        cargo = tools / "cargo"
+        cargo.write_text(
+            f"#!{sys.executable}\n"
+            "import json, os, pathlib, sys\n"
+            "if '-V' in sys.argv:\n"
+            "    print('cargo test stub'); sys.exit(0)\n"
+            "variant = sys.argv[sys.argv.index('--save-baseline') + 1]\n"
+            "case = next(iter(json.load(open(os.environ['JPEG_TEST_EXPORT']))['benchmarks'].values()))\n"
+            "root = pathlib.Path(os.environ['CARGO_TARGET_DIR']) / 'criterion' / 'smoke' / variant\n"
+            "root.mkdir(parents=True)\n"
+            "(root / 'benchmark.json').write_text(json.dumps(case['criterion_benchmark_v1']))\n"
+            "(root / 'estimates.json').write_text(json.dumps(case['criterion_estimates_v1']))\n"
+            "print('simulated benchmark failure after partial results')\n"
+            "sys.exit(23)\n"
+        )
+        cargo.chmod(0o755)
+        runner = Path(__file__).with_name("jpeg-benchmark.sh")
+        completed = subprocess.run(
+            ["bash", str(runner), str(base), str(head), str(self.report), sha, sha],
+            env={
+                **os.environ,
+                "PATH": str(tools) + os.pathsep + os.environ["PATH"],
+                "CRITCMP": os.environ.get("CRITCMP") or shutil.which("critcmp"),
+                "JPEG_TEST_EXPORT": str(self.base),
+            },
+            capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(completed.returncode, 23, completed.stdout + completed.stderr)
+        self.assertEqual((self.report / "status.txt").read_text(), "exit_status=23\n")
+        self.assertTrue(list((self.report / "raw/base").glob("**/estimates.json")))
+        self.assertEqual(load_export(self.report / "base.json", "base"), {CASE})
+        self.assertIn("simulated benchmark failure", (self.report / "base/benchmark.log").read_text())
 
 
 if __name__ == "__main__":

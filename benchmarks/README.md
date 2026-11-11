@@ -13,8 +13,16 @@ Benchmarking is done via `criterion`
 ## JPEG CI reports
 
 `.github/workflows/criterion_benchmarks.yml` explicitly runs
-`cargo bench --locked -p zune-benches --bench decode_jpeg`. This is the Criterion
-target; `decode_jpeg_colorspaces` is a standalone timing program and
+`cargo bench --locked -p zune-benches --bench decode_jpeg -- zune-jpeg`.
+This explicitly selects eleven one-shot zune-jpeg cases: baseline/progressive
+sampling, grayscale and intrinsics/scalar decoding. Auxiliary DRI/retry/row
+benchmarks and mozjpeg controls are not part of this workload. In particular,
+the existing DRI retry harness assumes that an 80%-visible permissive decode
+cannot complete; that assertion is not valid at the current base. It must not
+be confused with a failure of benchmark reporting or suppressed with `tee`.
+
+`decode_jpeg` is the Criterion target; `decode_jpeg_colorspaces` is a standalone
+timing program and
 `decode_jpeg_allocations` is an allocation-assertion program. Neither produces
 Criterion baselines, so they are not inputs to this report.
 
@@ -41,6 +49,8 @@ read permissions and publish job summaries/artifacts, not PR comments.
 Artifacts are uploaded even on failure: exports, raw Criterion files,
 comparison, validation/error logs, exact SHAs, fixture hashes, lockfiles and
 toolchain/flags. Build binaries are excluded.
+If a benchmark fails after producing some measurements, its raw results and
+best-effort partial export are retained, but the job still fails.
 
 To reproduce with two isolated checkouts and a fresh report directory:
 
@@ -51,8 +61,8 @@ RUSTUP_TOOLCHAIN=1.89.0 bash .github/scripts/jpeg-benchmark.sh \
   /path/to/base-checkout /path/to/head-checkout ./jpeg-report BASE_SHA HEAD_SHA
 ```
 
-Default sampling is 20 samples, 1 second warmup, 2 seconds measurement and
-10,000 resamples per case. For a short pipeline smoke test, set
+The default case filter is `zune-jpeg`. Sampling is 20 samples, 1 second warmup,
+2 seconds measurement and 10,000 resamples per case. For a short pipeline smoke test, set
 `JPEG_BENCH_FILTER='jpeg: HV sampling/zune-jpeg'`, `JPEG_SAMPLE_SIZE=10`,
 `JPEG_WARM_UP_TIME=0.05`, `JPEG_MEASUREMENT_TIME=0.05` and
 `JPEG_NRESAMPLES=1000`. These short samples verify reporting, not performance.
