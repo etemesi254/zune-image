@@ -88,7 +88,7 @@ I'll compare this with `flate2` with `miniz-oxide` backend.
 | feature                 | `zune-inflate` | `flate2`          |
 |-------------------------|----------------|-------------------|
 | zlib decompression      | yes            | yes               |
-| delfate decompression   | yes            | yes               |
+| deflate decompression   | yes            | yes               |
 | gzip                    | yes            | yes               |
 | compression             | soon           | yes               |
 | streaming decompression | no             | yes               |
