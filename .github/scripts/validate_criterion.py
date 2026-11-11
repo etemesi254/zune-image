@@ -9,17 +9,25 @@ from pathlib import Path
 
 
 def number(value, context, *, positive=False):
+    try:
+        finite = math.isfinite(value)
+    except (TypeError, OverflowError):
+        finite = False
     if (
         isinstance(value, bool)
         or not isinstance(value, (int, float))
-        or not math.isfinite(value)
+        or not finite
         or (value <= 0 if positive else value < 0)
     ):
         raise ValueError(f"{context}: expected a finite {'positive' if positive else 'nonnegative'} number")
 
 
+def reject_nonfinite(value):
+    raise ValueError(f"nonfinite JSON constant: {value}")
+
+
 def load_export(path, baseline):
-    data = json.loads(Path(path).read_text())
+    data = json.loads(Path(path).read_text(), parse_constant=reject_nonfinite)
     if not isinstance(data, dict) or data.get("name") != baseline:
         raise ValueError(f"{path}: expected named baseline {baseline!r}")
     cases = data.get("benchmarks")

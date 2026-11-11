@@ -121,12 +121,12 @@ class PipelineTests(unittest.TestCase):
         self.rejected("expected named baseline")
 
     def test_zero_and_nonfinite_measurements(self):
-        for timing in (0, -1, float("nan"), float("inf"), True):
+        for timing in (0, -1, float("nan"), float("inf"), 10 ** 400, True):
             with self.subTest(timing=timing):
                 value = export("base")
                 value["benchmarks"][CASE]["criterion_estimates_v1"]["mean"]["point_estimate"] = timing
                 self.write(self.base, value)
-                self.rejected("finite positive")
+                self.rejected("finite positive|nonfinite JSON")
 
     def test_comparator_failure_preserves_diagnostics(self):
         self.fake_comparator("import sys\nprint('broken comparator', file=sys.stderr)\nsys.exit(7)")
