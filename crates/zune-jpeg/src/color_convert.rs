@@ -71,7 +71,8 @@ pub(crate) type ColorConvertRowPtr = unsafe fn(&[i16], &[i16], &[i16], &mut [u8]
 #[derive(Clone, Copy)]
 pub(crate) struct ColorConvert16 {
     pub(crate) block: ColorConvert16Ptr,
-    pub(crate) row:   Option<ColorConvertRowPtr>
+    // Selected under the same CPU/options policy as block, never inferred from its address.
+    pub(crate) row: Option<ColorConvertRowPtr>
 }
 
 impl ColorConvert16 {

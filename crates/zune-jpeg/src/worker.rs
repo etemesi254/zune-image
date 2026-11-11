@@ -443,7 +443,11 @@ mod color_row_tests {
     use super::*;
     use crate::color_convert::choose_ycbcr_to_rgb_convert_func;
 
-    #[cfg(all(feature = "std", feature = "x86", any(target_arch = "x86", target_arch = "x86_64")))]
+    #[cfg(all(
+        feature = "std",
+        feature = "x86",
+        any(target_arch = "x86", target_arch = "x86_64")
+    ))]
     #[test]
     fn configured_row_dispatch_executes_for_eligible_widths() {
         use core::cell::Cell;
