@@ -249,3 +249,102 @@ fn read_ahead_marker_does_not_drop_final_scan_row() {
         "final eight rows differ from the libjpeg-turbo reference"
     );
 }
+
+/// `(restart interval, scans, single-component scans)` read from the marker stream.
+fn restart_scan_layout(bytes: &[u8]) -> (usize, usize, usize) {
+    let mut position = 2;
+    let mut restart_interval = 0;
+    let mut scans = 0;
+    let mut single_component_scans = 0;
+    while position + 1 < bytes.len() {
+        if bytes[position] != 0xFF {
+            position += 1;
+            continue;
+        }
+        let marker = bytes[position + 1];
+        position += 2;
+        if marker == 0xD9 {
+            break;
+        }
+        if marker == 0xD8 || marker == 0x01 || (0xD0..=0xD7).contains(&marker) {
+            continue;
+        }
+        if position + 2 > bytes.len() {
+            break;
+        }
+        let length = (usize::from(bytes[position]) << 8) | usize::from(bytes[position + 1]);
+        if length < 2 || position + length > bytes.len() {
+            break;
+        }
+        let segment = &bytes[position + 2..position + length];
+        match marker {
+            0xDD => restart_interval = (usize::from(segment[0]) << 8) | usize::from(segment[1]),
+            0xDA => {
+                scans += 1;
+                if segment.first() == Some(&1) {
+                    single_component_scans += 1;
+                }
+                position += length;
+                // Skip entropy-coded data, including stuffed bytes and RST markers.
+                while position + 1 < bytes.len() {
+                    if bytes[position] == 0xFF {
+                        let next = bytes[position + 1];
+                        if next == 0x00 || (0xD0..=0xD7).contains(&next) {
+                            position += 2;
+                            continue;
+                        }
+                        break;
+                    }
+                    position += 1;
+                }
+                continue;
+            }
+            _ => {}
+        }
+        position += length;
+    }
+    (restart_interval, scans, single_component_scans)
+}
+
+#[test]
+fn restart_interval_resets_at_each_non_interleaved_scan() {
+    // 333x257 4:2:2, optimized Huffman tables, DRI 4, one component per SOS. The luma scan's
+    // data-unit count is not a multiple of 4, so a countdown carried into the chroma scans
+    // shifts every later RST boundary.
+    let test_data =
+        include_bytes!("../../../test-images/jpeg/restart_non_interleaved_422_333x257.jpg");
+    assert_eq!(
+        restart_scan_layout(test_data),
+        (4, 3, 3),
+        "fixture must be non-interleaved with a restart interval"
+    );
+
+    let mut decoder = JpegDecoder::new(ZCursor::new(test_data));
+    let pixels = decoder.decode().expect("Failed to decode JPEG with per-scan restarts");
+    let info = decoder.info().expect("Failed to get image info");
+    assert_eq!((info.width, info.height), (333, 257));
+    assert_eq!(pixels.len(), 333 * 257 * 3);
+
+    // Compare against the exact source the encoder was given (a gradient, so the reference is
+    // generated rather than stored). libjpeg-turbo decodes this fixture at 1.41 mean absolute
+    // error; the leaked countdown put zune at 38.9 before the reset.
+    let mut source = Vec::with_capacity(pixels.len());
+    for y in 0..257u32 {
+        for x in 0..333u32 {
+            source.push((x * 255 / 332) as u8);
+            source.push((y * 255 / 256) as u8);
+            source.push(((x ^ y) & 0xFF) as u8);
+        }
+    }
+    let total_error: u64 = pixels
+        .iter()
+        .zip(source.iter())
+        .map(|(decoded, expected)| u64::from(decoded.abs_diff(*expected)))
+        .sum();
+    let mean_absolute_error = total_error as f64 / pixels.len() as f64;
+    assert!(
+        mean_absolute_error < 4.0,
+        "mean absolute error {mean_absolute_error:.2} against the source; restart countdown \
+         leaked across scans (libjpeg-turbo: 1.41)"
+    );
+}
