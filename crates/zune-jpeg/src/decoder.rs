@@ -3964,13 +3964,16 @@ where
         for comp in &mut self.components {
             let hs = self.h_max / comp.horizontal_sample;
             let vs = self.v_max / comp.vertical_sample;
+            // Native fancy H/HV needs three visible samples, not three padded samples.
+            let visible_width =
+                (usize::from(self.info.width) * comp.horizontal_sample).div_ceil(self.h_max);
 
             let samp_factor = match (hs, vs) {
                 (1, 1) => {
                     comp.sample_ratio = SampleRatios::None;
                     upsample_no_op
                 }
-                (2, 1) => {
+                (2, 1) if visible_width > 2 => {
                     comp.sample_ratio = SampleRatios::H;
                     choose_horizontal_samp_function(&self.options)
                 }
@@ -3978,7 +3981,7 @@ where
                     comp.sample_ratio = SampleRatios::V;
                     choose_v_samp_function(&self.options)
                 }
-                (2, 2) => {
+                (2, 2) if visible_width > 2 => {
                     comp.sample_ratio = SampleRatios::HV;
                     choose_hv_samp_function(&self.options)
                 }

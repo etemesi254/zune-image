@@ -2742,6 +2742,21 @@ fn scan_resume_small_chunks() {
 fn baseline_interleaved_incremental_parity() {
     assert_incremental_decode_matrix(&[
         (
+            "narrow_422",
+            include_bytes!("../../../test-images/jpeg/fancy_narrow_422_4x3.jpg"),
+            1
+        ),
+        (
+            "narrow_420",
+            include_bytes!("../../../test-images/jpeg/fancy_narrow_420_2x3.jpg"),
+            1
+        ),
+        (
+            "narrow_420_multiple_stripes",
+            include_bytes!("../../../test-images/jpeg/fancy_narrow_420_4x67.jpg"),
+            1
+        ),
+        (
             "synthetic_image",
             include_bytes!("../../../test-images/jpeg/synthetic_image.jpg"),
             37
