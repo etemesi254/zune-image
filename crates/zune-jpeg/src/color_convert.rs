@@ -57,7 +57,8 @@ use zune_core::options::DecoderOptions;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[cfg(feature = "x86")]
 pub use crate::color_convert::avx::{
-    ycbcr_to_bgr_avx2, ycbcr_to_bgra_avx2, ycbcr_to_rgb_avx2, ycbcr_to_rgba_avx2
+    ycbcr_to_bgr_avx2, ycbcr_to_bgra_avx2, ycbcr_to_rgb_avx2, ycbcr_to_rgb_row_avx2,
+    ycbcr_to_rgba_avx2, ycbcr_to_rgba_row_avx2
 };
 use crate::decoder::ColorConvert16Ptr;
 
@@ -181,7 +182,7 @@ mod tests {
                 core::array::from_fn(|index| (index * 17) as i16),
                 core::array::from_fn(|index| (255 - index * 13) as i16),
                 core::array::from_fn(|index| (index * 11) as i16)
-            )
+            ),
         ];
         let mut state = 0xC0FF_EE12_u32;
         for _ in 0..256 {
@@ -199,8 +200,7 @@ mod tests {
     }
 
     fn assert_converter_matches_scalar(
-        vector: ColorConvert16Ptr, scalar: ColorConvert16Ptr, output_size: usize,
-        has_alpha: bool
+        vector: ColorConvert16Ptr, scalar: ColorConvert16Ptr, output_size: usize, has_alpha: bool
     ) {
         const OFFSET: usize = 7;
         const GUARD: usize = 11;
