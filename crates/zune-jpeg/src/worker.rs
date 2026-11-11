@@ -383,6 +383,7 @@ fn color_convert_ycbcr(
             continue;
         }
 
+        #[cfg(all(feature = "x86", any(target_arch = "x86", target_arch = "x86_64")))]
         if let Some(convert_row) = color_convert_16.row {
             // SAFETY: Configured together with the block converter after the AVX2 policy check.
             unsafe {
@@ -442,7 +443,7 @@ mod color_row_tests {
     use super::*;
     use crate::color_convert::choose_ycbcr_to_rgb_convert_func;
 
-    #[cfg(feature = "std")]
+    #[cfg(all(feature = "std", feature = "x86", any(target_arch = "x86", target_arch = "x86_64")))]
     #[test]
     fn configured_row_dispatch_executes_for_eligible_widths() {
         use core::cell::Cell;
