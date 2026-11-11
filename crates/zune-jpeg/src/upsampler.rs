@@ -183,6 +183,57 @@ mod tests {
     use super::*;
 
     #[test]
+    fn narrow_chroma_policy_uses_visible_width() {
+        use zune_core::bytestream::ZCursor;
+
+        use crate::components::SampleRatios;
+        use crate::worker::upsample;
+        use crate::JpegDecoder;
+
+        for (jpeg, vertical) in [
+            (
+                &include_bytes!("../../../test-images/jpeg/fancy_narrow_422_4x3.jpg")[..],
+                1
+            ),
+            (
+                &include_bytes!("../../../test-images/jpeg/fancy_narrow_420_2x3.jpg")[..],
+                2
+            )
+        ] {
+            for width in 1..=6 {
+                for options in [DecoderOptions::new_safe(), DecoderOptions::new_fast()] {
+                    let mut decoder = JpegDecoder::new_with_options(ZCursor::new(jpeg), options);
+                    decoder.decode_headers().unwrap();
+                    decoder.info.width = width;
+                    crate::misc::setup_component_params(&mut decoder).unwrap();
+                    decoder.set_upsampling();
+                    let component = &mut decoder.components[1];
+                    if width > 4 {
+                        assert_eq!(
+                            component.sample_ratio,
+                            if vertical == 1 { SampleRatios::H } else { SampleRatios::HV }
+                        );
+                        continue;
+                    }
+                    assert_eq!(component.sample_ratio, SampleRatios::Generic(2, vertical));
+                    component.width_stride = 8;
+                    component.raw_coeff = (0_i16..64).collect();
+                    component.setup_upsample_scanline();
+                    upsample(component, 1, 0, &mut [], false).unwrap();
+                    for y in 0..8 * vertical {
+                        for x in 0..16 {
+                            assert_eq!(
+                                component.upsample_dest[y * 16 + x],
+                                component.raw_coeff[(y / vertical) * 8 + x / 2]
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn native_fancy_upsampling_rounding() {
         let mut horizontal = [0; 6];
         scalar::upsample_horizontal(&[2, 0, 2], &[], &[], &mut [], &mut horizontal);
