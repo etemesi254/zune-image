@@ -2952,16 +2952,23 @@ fn baseline_scan_eof_respects_lenient_and_incremental_modes() {
 }
 
 #[test]
-fn baseline_multi_sos_lenient_eof_preserves_neutral_output() {
+fn baseline_multi_sos_lenient_eof_recovers_available_data() {
     let data = include_bytes!("../../../test-images/jpeg/tiny_non_interleaved_444.jpg");
     let cutoffs = [sos_data_start(data, 0) + 4, sos_data_start(data, 2) + 3];
 
-    for cutoff in cutoffs {
+    for (cutoff, expected) in cutoffs
+        .into_iter()
+        .zip([fnv1a(&vec![128; 16 * 16 * 3]), 0x4dc1_f675_3e30_f1f5])
+    {
         let pixels = decode_with_mode(&data[..cutoff], false, false)
             .expect("non-strict one-shot decode should accept a truncated component scan");
-        assert!(
-            pixels.iter().all(|byte| *byte == 128),
-            "cutoff {cutoff}: incomplete component scans should produce neutral output"
+        assert_eq!(pixels.len(), 16 * 16 * 3);
+        // Missing components retain the neutral placeholder; completed component
+        // data before final EOF matches the production libjpeg-turbo reference.
+        assert_eq!(
+            fnv1a(&pixels),
+            expected,
+            "cutoff {cutoff}: preserve neutral or recoverable component data"
         );
     }
 }
