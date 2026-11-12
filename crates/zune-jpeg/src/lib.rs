@@ -70,6 +70,18 @@
 //! assert_eq!(scanlines.finish().unwrap(), ScanlineStatus::Complete);
 //! ```
 //!
+//! ## Reduced-IDCT output
+//!
+//! Select a [`JpegScale`] with [`JpegDecoder::into_scaled`] before starting pixel
+//! decoding. All reduced ratios `n/8`, for `n` from 1 through 7, are supported.
+//! Multiply coded dimensions by [`JpegScale::numerator`] before rounding division
+//! by [`JpegScale::denominator`]. This produces
+//! native reduced-IDCT samples, not a resized full-size image. Output dimensions
+//! are rounded up; component-specific IDCT sizes account for chroma subsampling.
+//! [`ScaledJpegDecoder`] retains reduced planes across incremental retries and
+//! publishes converted pixels only after reconstruction completes. Existing
+//! full-size, raw-plane, and scanline APIs keep their original geometry.
+//!
 //! ## Incremental input
 //!
 //! `JpegDecoder` can be retried on the same decoder when the underlying reader can
@@ -326,6 +338,7 @@ pub use crate::decoder::{
     ScanlineReadStatus, ScanlineStatus
 };
 pub use crate::marker::Marker;
+pub use crate::scaled::{JpegScale, ScaledJpegDecoder};
 mod bitstream;
 #[cfg(feature = "arith")]
 mod bitstream_arith;
@@ -344,6 +357,7 @@ mod marker;
 mod mcu;
 mod mcu_prog;
 mod misc;
+mod scaled;
 mod unsafe_utils;
 mod unsafe_utils_avx2;
 mod unsafe_utils_neon;

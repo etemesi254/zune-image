@@ -43,7 +43,8 @@ struct McuWidthContext<'a, B: BitStream> {
     // Full-image coefficient buffers for multi-SOS baseline scans.
     progressive:    &'a mut [Vec<i16>; MAX_COMPONENTS],
     // True when decoding the final data-unit row of the current scan.
-    is_last_row:    bool
+    is_last_row:    bool,
+    scaled:        Option<&'a mut crate::scaled::ScaledOutput>
 }
 
 impl<T: ZByteReaderTrait> JpegDecoder<T> {
@@ -106,7 +107,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     #[inline(never)]
     fn decode_mcu_ycbcr_baseline_inner<B: BitStream>(
         &mut self, output: &mut McuDecodeOutput<'_, '_>,
-        progressive_mcus: &mut [Vec<i16>; MAX_COMPONENTS], upsampler_scratch_space: &mut Vec<i16>,
+        progressive_mcus: &mut [Vec<i16>; MAX_COMPONENTS], upsampler_scratch_space: &mut Vec<i16>
     ) -> Result<(), DecodeErrors> {
         setup_component_params(self)?;
 
@@ -396,6 +397,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         stream: &mut stream,
                         progressive: &mut *progressive_mcus,
                         is_last_row: i + 1 >= scan_mcu_height,
+                        scaled: match output {
+                            McuDecodeOutput::Scaled(scaled) => Some(&mut **scaled),
+                            _ => None,
+                        },
                     };
                     if all_components_in_first_scan {
                         self.decode_mcu_width::<false, B>(&mut mcu_width_context)
@@ -458,6 +463,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                                     self.copy_raw_planes_for_mcu_stripe(i, raw_planes)?;
                                 }
                                 McuDecodeOutput::Scanlines(_) => return Err(e),
+                                McuDecodeOutput::Scaled(_) => {},
                             }
                         } else if let Some(pixels) = output.pixels_mut() {
                             pixels.fill(128);
@@ -557,6 +563,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     }
 
                     match output {
+                        McuDecodeOutput::Scaled(_) => {},
                         McuDecodeOutput::Pixels(pixels) => {
                             let output_stride =
                                 width * self.options.jpeg_get_out_colorspace().num_components();
@@ -804,7 +811,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             }
         }
 
-        if !all_components_in_first_scan {
+        if !all_components_in_first_scan && !matches!(output, McuDecodeOutput::Scaled(_)) {
             self.finish_baseline_decoding(progressive_mcus, mcu_width, output)?;
         }
 
@@ -985,6 +992,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
             // process that whole stripe of MCUs
             match output {
+                McuDecodeOutput::Scaled(_) => {},
                 McuDecodeOutput::Pixels(pixels) => self.post_process(
                     pixels,
                     width * self.options.jpeg_get_out_colorspace().num_components(),
@@ -1218,6 +1226,19 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         if component_samples_needed {
                             // tmp was only written partially, note that len is in ZigZag order.
                             clobber_more_than_4x4 = len > 10;
+
+                            if let Some(scaled) = context.scaled.as_deref_mut() {
+                                let (block_x, block_y) = if PROGRESSIVE || !SAMPLED {
+                                    (j, mcu_row)
+                                } else {
+                                    (
+                                        j * component.horizontal_sample + h_samp,
+                                        mcu_row * component.vertical_sample + v_samp,
+                                    )
+                                };
+                                scaled.write_block(k, block_x, block_y, tmp)?;
+                                continue;
+                            }
 
                             let idct_position = if PROGRESSIVE {
                                 // For non-interleaved, j indexes data units directly
