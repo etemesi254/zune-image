@@ -48,6 +48,8 @@ resized full-size pixels. Dimensions are ceil-rounded, and each component uses
 the IDCT size appropriate for its sampling factors. Only 1/2, 1/4, and 1/8 are
 supported. Read coded metadata from `JpegDecoder` before calling `into_scaled`;
 existing full-size, raw-plane, and scanline APIs keep their original geometry.
+Components arriving in separate or mixed scans retain the same reduced-plane
+geometry, including sampled subset scans and partial edge MCUs.
 
 Scaled output is frame-buffered, not a bounded-memory scanline API. For growing
 input, call `scaled.set_incremental_mode(true)` before decoding and keep the

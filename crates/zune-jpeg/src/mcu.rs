@@ -1489,14 +1489,6 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                                 self.baseline_seen_components[k] = true;
                             }
                             if let Some(scaled) = context.scaled.as_deref_mut() {
-                                let (block_x, block_y) = if PROGRESSIVE || !SAMPLED {
-                                    (j, mcu_row)
-                                } else {
-                                    (
-                                        j * component.horizontal_sample + h_samp,
-                                        mcu_row * component.vertical_sample + v_samp
-                                    )
-                                };
                                 scaled.write_block(k, block_x, block_y, tmp)?;
                                 continue;
                             }

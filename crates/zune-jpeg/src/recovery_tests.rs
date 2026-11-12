@@ -14,7 +14,17 @@ use zune_core::bytestream::ZCursor;
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::DecoderOptions;
 
-use crate::{JpegDecoder, RawImcuRowStatus};
+use crate::{JpegDecoder, JpegScale, RawImcuRowStatus};
+
+const SCALES: [JpegScale; 7] = [
+    JpegScale::Half,
+    JpegScale::Quarter,
+    JpegScale::Eighth,
+    JpegScale::ThreeEighths,
+    JpegScale::FiveEighths,
+    JpegScale::ThreeQuarters,
+    JpegScale::SevenEighths
+];
 
 // Small generated sequential streams with a unit DC step in spatial samples.
 fn frame(width: u16, height: u16, components: &[(u8, u8)]) -> Vec<u8> {
@@ -96,6 +106,171 @@ fn options(strict: bool) -> DecoderOptions {
     DecoderOptions::default()
         .set_strict_mode(strict)
         .jpeg_set_out_colorspace(ColorSpace::RGB)
+}
+
+#[test]
+fn scaled_sampled_subset_scan_keeps_each_luma_block() {
+    let mut data = frame(16, 16, &[(1, 0x22), (2, 0x11), (3, 0x11)]);
+    scan(
+        &mut data,
+        &[1, 2],
+        &[
+            (16, false),
+            (16, false),
+            (16, false),
+            (16, false),
+            (0, false)
+        ]
+    );
+    scan(&mut data, &[3], &[(0, false)]);
+    data.extend_from_slice(&[0xff, 0xd9]);
+
+    for scale in SCALES {
+        for use_simd in [false, true] {
+            for format in [
+                ColorSpace::RGB,
+                ColorSpace::RGBA,
+                ColorSpace::BGR,
+                ColorSpace::BGRA
+            ] {
+                let options = options(true)
+                    .set_use_unsafe(use_simd)
+                    .jpeg_set_out_colorspace(format);
+                let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&data), options)
+                    .into_scaled(scale)
+                    .unwrap();
+                let (width, height) = decoder.dimensions();
+                let size = decoder.output_buffer_size().unwrap();
+                let mut pixels = vec![0xa5; size + 7];
+                assert!(matches!(
+                    decoder.decode_into(&mut pixels[..size - 1]),
+                    Err(crate::errors::DecodeErrors::TooSmallOutput(..))
+                ));
+                assert!(pixels.iter().all(|&pixel| pixel == 0xa5));
+                decoder.decode_into(&mut pixels).unwrap();
+                assert_eq!(decoder.buffered_output_rows(), Some(16));
+                for (index, pixel) in pixels[..size]
+                    .chunks_exact(format.num_components())
+                    .enumerate()
+                {
+                    let block = usize::from(index % width >= width / 2)
+                        + 2 * usize::from(index / width >= height / 2);
+                    let value = 128 + 16 * u8::try_from(block + 1).unwrap();
+                    assert_eq!(
+                        &pixel[..3],
+                        &[value; 3],
+                        "{scale:?}, {format:?}, pixel={index}"
+                    );
+                    if pixel.len() == 4 {
+                        assert_eq!(pixel[3], 255);
+                    }
+                }
+                let expected = pixels.clone();
+                pixels[..size].fill(0);
+                decoder.decode_into(&mut pixels).unwrap();
+                assert_eq!(pixels, expected);
+                assert_eq!(&pixels[size..], &[0xa5; 7]);
+            }
+        }
+    }
+}
+
+fn sampled_scan_jpeg(width: u16, height: u16, sampling: [u8; 3], scans: &[&[u8]]) -> Vec<u8> {
+    let components = [(1, sampling[0]), (2, sampling[1]), (3, sampling[2])];
+    let mut data = frame(width, height, &components);
+    let h_max = usize::from(*sampling.iter().max_by_key(|&&s| s >> 4).unwrap() >> 4);
+    let v_max = usize::from(*sampling.iter().max_by_key(|&&s| s & 15).unwrap() & 15);
+    for &ids in scans {
+        let sampled = ids.len() > 1;
+        let first = usize::from(ids[0] - 1);
+        let columns = if sampled {
+            usize::from(width).div_ceil(h_max * 8)
+        } else {
+            (usize::from(width) * usize::from(sampling[first] >> 4)).div_ceil(h_max * 8)
+        };
+        let rows = if sampled {
+            usize::from(height).div_ceil(v_max * 8)
+        } else {
+            (usize::from(height) * usize::from(sampling[first] & 15)).div_ceil(v_max * 8)
+        };
+        let mut predictors = [0; 3];
+        let mut blocks = Vec::new();
+        for row in 0..rows {
+            for column in 0..columns {
+                for &id in ids {
+                    let component = usize::from(id - 1);
+                    let horizontal =
+                        if sampled { usize::from(sampling[component] >> 4) } else { 1 };
+                    let vertical = if sampled { usize::from(sampling[component] & 15) } else { 1 };
+                    for y in 0..vertical {
+                        for x in 0..horizontal {
+                            let dc = i32::try_from(
+                                (component * 13
+                                    + (column * horizontal + x) * 7
+                                    + (row * vertical + y) * 11)
+                                    % 65
+                            )
+                            .unwrap()
+                                - 32;
+                            blocks.push((dc - predictors[component], false));
+                            predictors[component] = dc;
+                        }
+                    }
+                }
+            }
+        }
+        scan(&mut data, ids, &blocks);
+    }
+    data.extend_from_slice(&[0xff, 0xd9]);
+    data
+}
+
+#[test]
+fn scaled_sampled_scans_match_separate_component_scans() {
+    for sampling in [
+        [0x11; 3],
+        [0x21, 0x11, 0x11],
+        [0x12, 0x11, 0x11],
+        [0x22, 0x11, 0x11],
+        [0x11, 0x22, 0x11]
+    ] {
+        for (width, height) in [(1, 1), (9, 9), (19, 17), (33, 35)] {
+            let separate = sampled_scan_jpeg(width, height, sampling, &[&[1], &[2], &[3]]);
+            for scale in SCALES {
+                for use_simd in [false, true] {
+                    for format in [ColorSpace::RGB, ColorSpace::BGRA] {
+                        let options = options(true)
+                            .set_use_unsafe(use_simd)
+                            .jpeg_set_out_colorspace(format);
+                        let decode = |data: &[u8]| {
+                            let mut decoder =
+                                JpegDecoder::new_with_options(ZCursor::new(data), options)
+                                    .into_scaled(scale)
+                                    .unwrap();
+                            let size = decoder.output_buffer_size().unwrap();
+                            let mut pixels = vec![0xa5; size + 7];
+                            decoder.decode_into(&mut pixels).unwrap();
+                            assert_eq!(&pixels[size..], &[0xa5; 7]);
+                            assert_eq!(decoder.buffered_output_rows(), Some(usize::from(height)));
+                            pixels
+                        };
+                        let expected = decode(&separate);
+                        for scans in [
+                            [&[1, 2][..], &[3][..]],
+                            [&[3, 1][..], &[2][..]],
+                            [&[3][..], &[2, 1][..]]
+                        ] {
+                            let data = sampled_scan_jpeg(width, height, sampling, &scans);
+                            assert_eq!(
+                                decode(&data), expected,
+                                "{sampling:?}, {width}x{height}, {scale:?}, {scans:?}, {format:?}, simd={use_simd}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[test]
@@ -441,6 +616,59 @@ mod growing {
             scan_with_codes(&mut data, &[1], &[(0, false); 16], zero_is_ac);
             data.extend_from_slice(&[0xFF, 0xD9]);
             assert_retry(data);
+        }
+    }
+
+    #[test]
+    fn scaled_sampled_subset_scan_retries_without_publishing_partial_pixels() {
+        for sampling in [[0x21, 0x11, 0x11], [0x12, 0x11, 0x11], [0x22, 0x11, 0x11]] {
+            let data = sampled_scan_jpeg(33, 35, sampling, &[&[1, 2], &[3]]);
+            let separate = sampled_scan_jpeg(33, 35, sampling, &[&[1], &[2], &[3]]);
+            for scale in SCALES {
+                let mut reference =
+                    JpegDecoder::new_with_options(ZCursor::new(&separate), options(true))
+                        .into_scaled(scale)
+                        .unwrap();
+                let size = reference.output_buffer_size().unwrap();
+                let mut expected = vec![0xa5; size + 7];
+                reference.decode_into(&mut expected).unwrap();
+                let visible = Rc::new(Cell::new(data.len()));
+                let input = GrowingInput {
+                    data:     data.clone(),
+                    visible:  Rc::clone(&visible),
+                    position: 0
+                };
+                let mut decoder = JpegDecoder::new_with_options(input, options(true))
+                    .into_scaled(scale)
+                    .unwrap();
+                decoder.set_incremental_mode(true);
+                let mut output = vec![0xa5; size + 7];
+                let mut suspensions = 0;
+                for end in 0..=data.len() {
+                    visible.set(end);
+                    match decoder.decode_into(&mut output) {
+                        Ok(()) => {
+                            assert_eq!(end, data.len());
+                            assert_eq!(output, expected);
+                            assert_eq!(decoder.buffered_output_rows(), Some(35));
+                            break;
+                        }
+                        Err(error) => {
+                            assert!(
+                                error.is_recoverable_eof(),
+                                "{scale:?}, byte={end}: {error:?}"
+                            );
+                            assert!(end < data.len());
+                            assert!(output.iter().all(|&byte| byte == 0xa5));
+                            suspensions += 1;
+                        }
+                    }
+                }
+                assert!(suspensions > 0);
+                output[..size].fill(0);
+                decoder.decode_into(&mut output).unwrap();
+                assert_eq!(output, expected);
+            }
         }
     }
 
