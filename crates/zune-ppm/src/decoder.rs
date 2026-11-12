@@ -252,6 +252,12 @@ where
             let value_size = get_bytes_until_whitespace(&mut self.reader, &mut byte_header)?;
             let value = &byte_header[..value_size];
 
+            if value.starts_with(b"ENDHDR") {
+                // the raster starts right after the whitespace ending this line
+                break 'infinite;
+            }
+            skip_spaces(&mut self.reader)?;
+
             match value {
                 // Notice the explicit space,
                 // It's needed
@@ -330,15 +336,11 @@ where
                     seen_tuple_type = true;
                 }
                 _ => {
-                    if value.starts_with(b"ENDHDR") {
-                        break 'infinite;
-                    } else {
-                        let msg = format!(
-                            "Unknown/unsupported header declaration {}",
-                            String::from_utf8_lossy(value)
-                        );
-                        return Err(PPMDecodeErrors::InvalidHeader(msg));
-                    }
+                    let msg = format!(
+                        "Unknown/unsupported header declaration {}",
+                        String::from_utf8_lossy(value)
+                    );
+                    return Err(PPMDecodeErrors::InvalidHeader(msg));
                 }
             }
         }
@@ -400,8 +402,8 @@ where
         skip_spaces(&mut self.reader)?;
         // read max value
         let max_value = self.get_integer()?;
-        // skip ascii space
-        skip_spaces(&mut self.reader)?;
+        // skip the single whitespace before the raster
+        skip_header_end(&mut self.reader)?;
 
         if max_value > usize::from(u16::MAX) {
             let msg = format!("MAX value {max_value} greater than 65535");
@@ -647,10 +649,31 @@ where
     Ok(())
 }
 
+/// Skip the single whitespace character (or comment) that ends the header.
+///
+/// The raster starts right after it, and its first bytes may themselves
+/// look like whitespace or a comment, so they must not be skipped
+fn skip_header_end<T>(byte_stream: &mut ZReader<T>) -> Result<(), PPMDecodeErrors>
+where
+    T: ZByteReaderTrait
+{
+    if !byte_stream.eof()? {
+        let mut byte = byte_stream.read_u8();
+
+        if byte == b'#' {
+            // skip the whole comment
+            while byte != b'\n' && !byte_stream.eof()? {
+                byte = byte_stream.read_u8();
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Return a reference to all bytes preceding a whitespace.
 ///
 /// # Note
-/// This skips all whitespaces after it finds one. That is the desired implementation
+/// This consumes the first whitespace it finds, but not any whitespace after it
 ///
 /// # Panics
 /// If end < start
@@ -669,8 +692,6 @@ fn get_bytes_until_whitespace<T: ZByteReaderTrait>(
         if byte.is_ascii_whitespace() {
             // mark where the text ends
             end = z.position()?;
-            // skip any proceeding whitespace
-            skip_spaces(z)?;
             break;
         }
         // push the byte read
