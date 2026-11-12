@@ -2368,6 +2368,8 @@ where
     /// After a successful buffered decode, incremental consumers can publish this
     /// prefix instead of displaying the previous completed scan's full-frame preview.
     /// Every progressive DC component must be present before publication.
+    /// Synthetic EOF or marker padding does not advance the current scan's prefix.
+    /// A later restart cannot make a gap in that prefix publishable.
     /// DC smoothing requires two future iMCU rows until a real EOI is seen.
     /// Buffered sequential images cannot publish before EOI or after corruption
     /// halted input before EOI.

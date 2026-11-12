@@ -378,9 +378,9 @@ fn raw_subset_scan_does_not_publish_never_seen_components() {
 
 #[cfg(feature = "std")]
 mod growing {
+    use alloc::rc::Rc;
     use std::cell::Cell;
     use std::io::{self, BufRead, Read, Seek, SeekFrom};
-    use std::rc::Rc;
 
     use super::*;
 

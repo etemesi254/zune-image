@@ -127,6 +127,12 @@ decoder and output buffer until `decode_into()` returns `Ok(())`. Do not append
 preview bytes to the final output stream; they are a display surface separate
 from the stable prefix reported by `decoded_output_bytes()`.
 
+After successful buffered decoding, `buffered_output_rows()` separately reports
+the current scan's publishable coded-row prefix. EOF lookahead and marker padding
+may still support best-effort reconstruction, but do not advance that prefix.
+Real buffered bits and coded EOB runs remain valid even if lookahead reaches EOF.
+The bound stays in original coded-image rows when reduced output is requested.
+
 ```Rust
 use zune_core::bytestream::ZCursor;
 use zune_jpeg::JpegDecoder;
