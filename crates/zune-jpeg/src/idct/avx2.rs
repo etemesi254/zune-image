@@ -59,7 +59,7 @@ macro_rules! permute_store {
                 .unwrap()
                 .as_mut_ptr()
                 .cast(),
-            _mm256_extractf128_si256::<0>(c),
+            _mm256_extractf128_si256::<0>(c)
         );
         $index += $stride;
         // second vector
@@ -69,7 +69,7 @@ macro_rules! permute_store {
                 .unwrap()
                 .as_mut_ptr()
                 .cast(),
-            _mm256_extractf128_si256::<1>(c),
+            _mm256_extractf128_si256::<1>(c)
         );
         $index += $stride;
     };
@@ -139,7 +139,7 @@ pub unsafe fn idct_avx2(in_vector: &mut [i32; 64], out_vector: &mut [i16], strid
                         .unwrap()
                         .as_mut_ptr()
                         .cast(),
-                    $value,
+                    $value
                 );
                 $pos += stride;
             };
@@ -181,10 +181,10 @@ pub unsafe fn idct_avx2(in_vector: &mut [i32; 64], out_vector: &mut [i16], strid
             let mut t3 = p1 + row2 * 6270;
 
             let mut t0 = YmmRegister {
-                mm256: _mm256_slli_epi32((row0 + row4).mm256, CONST_BITS),
+                mm256: _mm256_slli_epi32((row0 + row4).mm256, CONST_BITS)
             };
             let mut t1 = YmmRegister {
-                mm256: _mm256_slli_epi32((row0 - row4).mm256, CONST_BITS),
+                mm256: _mm256_slli_epi32((row0 - row4).mm256, CONST_BITS)
             };
 
             let x0 = t0 + t3 + $SCALE_BITS;
@@ -228,13 +228,13 @@ pub unsafe fn idct_avx2(in_vector: &mut [i32; 64], out_vector: &mut [i16], strid
     // Process rows
     dct_pass!(PASS1_ROUND, PASS1_SHIFT);
     transpose(
-        &mut row0, &mut row1, &mut row2, &mut row3, &mut row4, &mut row5, &mut row6, &mut row7,
+        &mut row0, &mut row1, &mut row2, &mut row3, &mut row4, &mut row5, &mut row6, &mut row7
     );
 
     // process columns
     dct_pass!(SCALE_BITS, OUTPUT_SHIFT);
     transpose(
-        &mut row0, &mut row1, &mut row2, &mut row3, &mut row4, &mut row5, &mut row6, &mut row7,
+        &mut row0, &mut row1, &mut row2, &mut row3, &mut row4, &mut row5, &mut row6, &mut row7
     );
     // Pack and write the values back to the array
     permute_store!((row0.mm256), (row1.mm256), pos, out_vector, stride);
@@ -242,7 +242,6 @@ pub unsafe fn idct_avx2(in_vector: &mut [i32; 64], out_vector: &mut [i16], strid
     permute_store!((row4.mm256), (row5.mm256), pos, out_vector, stride);
     permute_store!((row6.mm256), (row7.mm256), pos, out_vector, stride);
 }
-
 
 #[target_feature(enable = "avx2")]
 #[allow(
@@ -310,7 +309,7 @@ pub unsafe fn idct_avx2_4x4(in_vector: &mut [i32; 64], out_vector: &mut [i16], s
     }
 
     transpose(
-        &mut row0, &mut row1, &mut row2, &mut row3, &mut row4, &mut row5, &mut row6, &mut row7,
+        &mut row0, &mut row1, &mut row2, &mut row3, &mut row4, &mut row5, &mut row6, &mut row7
     );
 
     {
@@ -355,7 +354,7 @@ pub unsafe fn idct_avx2_4x4(in_vector: &mut [i32; 64], out_vector: &mut [i16], s
     }
 
     transpose(
-        &mut row0, &mut row1, &mut row2, &mut row3, &mut row4, &mut row5, &mut row6, &mut row7,
+        &mut row0, &mut row1, &mut row2, &mut row3, &mut row4, &mut row5, &mut row6, &mut row7
     );
 
     let mut pos = 0;

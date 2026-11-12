@@ -36,54 +36,54 @@ pub type UpSampler = fn(
 #[derive(Clone)]
 pub(crate) struct Components {
     /// The type of component that has the metadata below, can be Y,Cb or Cr
-    pub component_id: ComponentID,
+    pub component_id:              ComponentID,
     /// Sub-sampling ratio of this component in the x-plane
-    pub vertical_sample: usize,
+    pub vertical_sample:           usize,
     /// Sub-sampling ratio of this component in the y-plane
-    pub horizontal_sample: usize,
+    pub horizontal_sample:         usize,
     /// DC huffman table position
-    pub dc_huff_table: usize,
+    pub dc_huff_table:             usize,
     /// AC huffman table position for this element.
-    pub ac_huff_table: usize,
+    pub ac_huff_table:             usize,
     /// Quantization table number
     pub quantization_table_number: u8,
     /// Specifies quantization table to use with this component
-    pub quantization_table: [i32; 64],
+    pub quantization_table:        [i32; 64],
     /// dc prediction for the component
-    pub dc_pred: i32,
+    pub dc_pred:                   i32,
     /// most recent difference in dc prediction for the component
-    pub dc_diff: i32,
+    pub dc_diff:                   i32,
     /// Successive-approximation bits from accepted progressive scans, in zigzag order.
-    pub progressive_bits: [i8; 64],
+    pub progressive_bits:          [i8; 64],
     /// Precision before the most recent scan touching this component.
     pub progressive_previous_bits: [i8; 10],
     /// At least one DC coefficient is backed by accepted entropy data.
-    pub progressive_dc_seen: bool,
+    pub progressive_dc_seen:       bool,
     /// An up-sampling function, can be basic or SSE, depending
     /// on the platform
-    pub up_sampler: UpSampler,
+    pub up_sampler:                UpSampler,
     /// How pixels do we need to go to get to the next line?
-    pub width_stride: usize,
+    pub width_stride:              usize,
     /// Component ID for progressive
-    pub id: u8,
+    pub id:                        u8,
     /// Whether we need to decode this image component.
-    pub needed: bool,
+    pub needed:                    bool,
     /// Upsample scanline
-    pub raw_coeff: Vec<i16>,
+    pub raw_coeff:                 Vec<i16>,
     /// Upsample destination, stores a scanline worth of sub sampled data
-    pub upsample_dest: Vec<i16>,
+    pub upsample_dest:             Vec<i16>,
     /// previous row, used to handle MCU boundaries
-    pub row_up: Vec<i16>,
+    pub row_up:                    Vec<i16>,
     /// current row, used to handle MCU boundaries again
-    pub row: Vec<i16>,
-    pub first_row_upsample_dest: Vec<i16>,
-    pub idct_pos: usize,
-    pub x: usize,
-    pub w2: usize,
-    pub y: usize,
-    pub sample_ratio: SampleRatios,
+    pub row:                       Vec<i16>,
+    pub first_row_upsample_dest:   Vec<i16>,
+    pub idct_pos:                  usize,
+    pub x:                         usize,
+    pub w2:                        usize,
+    pub y:                         usize,
+    pub sample_ratio:              SampleRatios,
     // a very annoying bug
-    pub fix_an_annoying_bug: usize
+    pub fix_an_annoying_bug:       usize
 }
 
 impl Components {
@@ -239,7 +239,7 @@ pub enum SampleRatios {
 }
 
 impl SampleRatios {
-    #[must_use] 
+    #[must_use]
     pub fn sample(self) -> usize {
         match self {
             SampleRatios::HV => 4,

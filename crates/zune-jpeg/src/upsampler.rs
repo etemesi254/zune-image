@@ -169,7 +169,7 @@ pub fn choose_v_samp_function(options: &DecoderOptions) -> UpSampler {
 /// Upsample nothing
 pub fn upsample_no_op(
     _input: &[i16], _in_ref: &[i16], _in_near: &[i16], _scratch_space: &mut [i16],
-    _output: &mut [i16],
+    _output: &mut [i16]
 ) {
 }
 
@@ -213,7 +213,7 @@ mod tests {
                 |a: &[i16], b: &[i16], c: &[i16], d: &mut [i16], e: &mut [i16]| {
                     // SAFETY: Test guarded behind `target_feature`
                     unsafe { avx2::upsample_vertical_avx2(a, b, c, d, e) }
-                },
+                }
             )
         }
 
@@ -223,7 +223,7 @@ mod tests {
                 |a: &[i16], b: &[i16], c: &[i16], d: &mut [i16], e: &mut [i16]| {
                     // SAFETY: Test guarded behind `target_feature`
                     unsafe { avx2::upsample_horizontal_avx2(a, b, c, d, e) }
-                },
+                }
             )
         }
 
@@ -233,7 +233,7 @@ mod tests {
                 |a: &[i16], b: &[i16], c: &[i16], d: &mut [i16], e: &mut [i16]| {
                     // SAFETY: Test guarded behind `target_feature`
                     unsafe { avx2::upsample_hv_avx2(a, b, c, d, e) }
-                },
+                }
             )
         }
     }
@@ -250,7 +250,7 @@ mod tests {
                 |a: &[i16], b: &[i16], c: &[i16], d: &mut [i16], e: &mut [i16]| {
                     // SAFETY: Test guarded behind `target_feature`
                     unsafe { neon::upsample_vertical_neon(a, b, c, d, e) }
-                },
+                }
             );
         }
 
@@ -260,7 +260,7 @@ mod tests {
                 |a: &[i16], b: &[i16], c: &[i16], d: &mut [i16], e: &mut [i16]| {
                     // SAFETY: Test guarded behind `target_feature`
                     unsafe { neon::upsample_horizontal_neon(a, b, c, d, e) }
-                },
+                }
             );
         }
 
@@ -270,7 +270,7 @@ mod tests {
                 |a: &[i16], b: &[i16], c: &[i16], d: &mut [i16], e: &mut [i16]| {
                     // SAFETY: Test guarded behind `target_feature`
                     unsafe { neon::upsample_hv_neon(a, b, c, d, e) }
-                },
+                }
             );
         }
     }
@@ -342,14 +342,14 @@ mod tests {
             &in_near,
             &in_far,
             &mut scratch_scalar,
-            &mut output_scalar,
+            &mut output_scalar
         );
         upsampler(
             &input,
             &in_near,
             &in_far,
             &mut scratch_fast,
-            &mut output_fast,
+            &mut output_fast
         );
 
         assert_eq!(output_scalar, output_fast);

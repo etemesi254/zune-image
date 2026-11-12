@@ -12,11 +12,7 @@ const LANES: usize = 16;
 type V = Simd<i16, LANES>;
 
 pub fn upsample_horizontal_simd(
-    input: &[i16],
-    in_near: &[i16],
-    in_far: &[i16],
-    scratch: &mut [i16],
-    output: &mut [i16],
+    input: &[i16], in_near: &[i16], in_far: &[i16], scratch: &mut [i16], output: &mut [i16]
 ) {
     assert_eq!(input.len() * 2, output.len());
     assert!(input.len() > 2);
@@ -72,11 +68,7 @@ pub fn upsample_horizontal_simd(
 }
 
 pub fn upsample_vertical_simd(
-    input: &[i16],
-    in_near: &[i16],
-    in_far: &[i16],
-    _scratch_space: &mut [i16],
-    output: &mut [i16],
+    input: &[i16], in_near: &[i16], in_far: &[i16], _scratch_space: &mut [i16], output: &mut [i16]
 ) {
     assert_eq!(input.len() * 2, output.len());
     assert_eq!(in_near.len(), input.len());
@@ -125,17 +117,17 @@ pub fn upsample_vertical_simd(
             in_near.try_into().unwrap(),
             in_far.try_into().unwrap(),
             out_top.try_into().unwrap(),
-            out_bottom.try_into().unwrap(),
+            out_bottom.try_into().unwrap()
         );
     }
 
     // Upsample the remainder. This may have some overlap, but that's fine.
     // Edition upgrade will fix this nested awfulness.
     if let Some(rest) = input.last_chunk::<16>() {
-        if let Some( rest_near) = in_near.last_chunk::<16>() {
-            if let Some( rest_far) = in_far.last_chunk::<16>() {
-                if let Some( rest_top) = out_top.last_chunk_mut::<16>() {
-                    if let Some(  rest_bottom) = out_bottom.last_chunk_mut::<16>() {
+        if let Some(rest_near) = in_near.last_chunk::<16>() {
+            if let Some(rest_far) = in_far.last_chunk::<16>() {
+                if let Some(rest_top) = out_top.last_chunk_mut::<16>() {
+                    if let Some(rest_bottom) = out_bottom.last_chunk_mut::<16>() {
                         upsample16(rest, rest_near, rest_far, rest_top, rest_bottom);
                     }
                 }
@@ -145,17 +137,12 @@ pub fn upsample_vertical_simd(
 }
 
 pub fn upsample_hv_simd(
-    input: &[i16],
-    in_near: &[i16],
-    in_far: &[i16],
-    scratch_space: &mut [i16],
-    output: &mut [i16],
+    input: &[i16], in_near: &[i16], in_far: &[i16], scratch_space: &mut [i16], output: &mut [i16]
 ) {
     assert_eq!(input.len() * 4, output.len());
-    
+
     assert!(input.len() * 2 <= scratch_space.len());
     let scratch_space = &mut scratch_space[..input.len() * 2];
-
 
     upsample_vertical_simd(input, in_near, in_far, &mut [], scratch_space);
 
