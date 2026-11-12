@@ -11,17 +11,17 @@
 //! Verifies that `is_recoverable_eof()` is reported on truncated input
 //! and that retrying with more data produces correct output.
 
-use zune_core::bytestream::{ZByteReaderTrait, ZCursor};
-use zune_core::colorspace::ColorSpace;
-use zune_core::options::DecoderOptions;
-use zune_jpeg::errors::DecodeErrors;
-use zune_jpeg::{JpegDecoder, NeverCancel, RawDecodeSession, RawImcuRowStatus};
-
 use std::cell::{Cell, RefCell};
 use std::io::{BufRead, Cursor, Read, Seek, SeekFrom};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+
+use zune_core::bytestream::{ZByteReaderTrait, ZCursor};
+use zune_core::colorspace::ColorSpace;
+use zune_core::options::DecoderOptions;
+use zune_jpeg::errors::DecodeErrors;
+use zune_jpeg::{JpegDecoder, JpegScale, NeverCancel, RawDecodeSession, RawImcuRowStatus};
 
 /// A cursor over a byte slice with an adjustable visibility limit.
 ///
@@ -33,6 +33,38 @@ struct GrowableCursor<'a> {
     position: usize,
     limit:    Rc<Cell<usize>>,
     seek_log: Option<Rc<RefCell<Vec<usize>>>>
+}
+
+#[test]
+fn scaled_output_retries_without_publishing_partial_pixels() {
+    let fixtures: [&[u8]; 3] = [
+        include_bytes!("../../../test-images/jpeg/non_interleaved_444_64x64.jpg"),
+        include_bytes!("../../../test-images/jpeg/non_interleaved_420_64x64.jpg"),
+        include_bytes!("../../../test-images/jpeg/progressive_restart_420.jpg")
+    ];
+    for data in fixtures {
+        for scale in [JpegScale::Half, JpegScale::Quarter, JpegScale::Eighth] {
+            let limit = Rc::new(Cell::new(data.len()));
+            let source = GrowableCursor::new(data, Rc::clone(&limit));
+            let mut decoder = JpegDecoder::new(source).into_scaled(scale).unwrap();
+            decoder.set_incremental_mode(true);
+            let length = decoder.output_buffer_size().unwrap();
+            let mut output = vec![0xa5; length];
+            limit.set(data.len() / 2);
+            let error = decoder.decode_into(&mut output).unwrap_err();
+            assert!(error.is_recoverable_eof(), "{error:?}");
+            assert!(output.iter().all(|&byte| byte == 0xa5));
+            limit.set(data.len());
+            decoder.decode_into(&mut output).unwrap();
+
+            let mut reference = JpegDecoder::new(ZCursor::new(data))
+                .into_scaled(scale)
+                .unwrap();
+            let mut expected = vec![0; length];
+            reference.decode_into(&mut expected).unwrap();
+            assert_eq!(output, expected);
+        }
+    }
 }
 
 impl<'a> GrowableCursor<'a> {
@@ -2710,6 +2742,21 @@ fn scan_resume_small_chunks() {
 fn baseline_interleaved_incremental_parity() {
     assert_incremental_decode_matrix(&[
         (
+            "narrow_422",
+            include_bytes!("../../../test-images/jpeg/fancy_narrow_422_4x3.jpg"),
+            1
+        ),
+        (
+            "narrow_420",
+            include_bytes!("../../../test-images/jpeg/fancy_narrow_420_2x3.jpg"),
+            1
+        ),
+        (
+            "narrow_420_multiple_stripes",
+            include_bytes!("../../../test-images/jpeg/fancy_narrow_420_4x67.jpg"),
+            1
+        ),
+        (
             "synthetic_image",
             include_bytes!("../../../test-images/jpeg/synthetic_image.jpg"),
             37
@@ -2934,11 +2981,13 @@ fn baseline_scan_eof_respects_lenient_and_incremental_modes() {
         lenient.iter().any(|byte| *byte != 0),
         "lenient truncated decode should produce best-effort pixels"
     );
-    // Completed rows use accurate IDCT reconstruction. The row that consumed
+// Completed rows use accurate IDCT and native fancy-filter reconstruction.
+    // Restoring only the old filters reproduces the prior 0x64ae_c14a_eaa3_e181.
+    // The row that consumed
     // padding past the end of the input, and every later row, stay neutral.
     assert_eq!(
         fnv1a(&lenient),
-        0x64ae_c14a_eaa3_e181,
+        0x3e64_e016_c32e_6859,
         "lenient output should match accurate-IDCT completed rows plus neutral filler"
     );
 
@@ -2964,6 +3013,30 @@ fn baseline_multi_sos_lenient_eof_preserves_neutral_output() {
             "cutoff {cutoff}: incomplete component scans should produce neutral output"
         );
     }
+}
+
+#[test]
+fn dnl_preserves_visible_chroma_edges_before_height_is_known() {
+    let base = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let expected = decode_oneshot(base);
+    let sof = list_jpeg_markers(base)
+        .into_iter()
+        .find(|(_, marker, _)| *marker == 0xC0)
+        .expect("fixture has sequential Huffman SOF")
+        .0;
+    let height = u16::from_be_bytes([base[sof + 5], base[sof + 6]]);
+    let eoi = base
+        .windows(2)
+        .rposition(|marker| marker == [0xFF, 0xD9])
+        .unwrap();
+    let mut data = base.to_vec();
+    data[sof + 5..sof + 7].fill(0);
+    data.splice(
+        eoi..eoi,
+        [0xFF, 0xDC, 0, 4, (height >> 8) as u8, height as u8]
+    );
+    let actual = decode_oneshot(&data);
+    assert_pixels_match(&actual, &expected, "DNL chroma edges", data.len());
 }
 
 #[test]

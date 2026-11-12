@@ -487,7 +487,8 @@ pub struct JpegDecoder<T> {
 pub(crate) enum McuDecodeOutput<'planes, 'buf> {
     Pixels(&'planes mut [u8]),
     RawPlanes(RawPlanesSink<'planes, 'buf>),
-    Scanlines(ConvertedScanlineSink<'planes>)
+    Scanlines(ConvertedScanlineSink<'planes>),
+    Scaled(&'planes mut crate::scaled::ScaledOutput)
 }
 
 impl McuDecodeOutput<'_, '_> {
@@ -499,7 +500,7 @@ impl McuDecodeOutput<'_, '_> {
         match self {
             Self::Pixels(pixels) => Some(pixels),
             Self::Scanlines(sink) => Some(sink.pixels),
-            Self::RawPlanes(_) => None
+            Self::RawPlanes(_) | Self::Scaled(_) => None
         }
     }
 
@@ -507,21 +508,21 @@ impl McuDecodeOutput<'_, '_> {
         match self {
             Self::RawPlanes(sink) => sink.requested_stripe,
             Self::Scanlines(sink) => Some(sink.requested_stripe),
-            Self::Pixels(_) => None
+            Self::Pixels(_) | Self::Scaled(_) => None
         }
     }
 
     pub(crate) const fn requested_raw_stripe(&self) -> Option<usize> {
         match self {
             Self::RawPlanes(sink) => sink.requested_stripe,
-            Self::Pixels(_) | Self::Scanlines(_) => None
+            Self::Pixels(_) | Self::Scanlines(_) | Self::Scaled(_) => None
         }
     }
 
     pub(crate) const fn requests_raw_output(&self) -> bool {
         match self {
             Self::RawPlanes(_) => true,
-            Self::Pixels(_) | Self::Scanlines(_) => false
+            Self::Pixels(_) | Self::Scanlines(_) | Self::Scaled(_) => false
         }
     }
 
@@ -1103,7 +1104,9 @@ where
 
         let (rows_written, source_complete) = match output {
             McuDecodeOutput::Scanlines(sink) => (sink.rows_written, sink.source_complete),
-            McuDecodeOutput::Pixels(_) | McuDecodeOutput::RawPlanes(_) => unreachable!()
+            McuDecodeOutput::Pixels(_)
+            | McuDecodeOutput::RawPlanes(_)
+            | McuDecodeOutput::Scaled(_) => unreachable!()
         };
         if let Err(error) = decode_result {
             if error.is_recoverable_eof() {
@@ -1346,7 +1349,9 @@ where
 
         let sink = match output {
             McuDecodeOutput::RawPlanes(sink) => sink,
-            McuDecodeOutput::Pixels(_) | McuDecodeOutput::Scanlines(_) => unreachable!()
+            McuDecodeOutput::Pixels(_)
+            | McuDecodeOutput::Scanlines(_)
+            | McuDecodeOutput::Scaled(_) => unreachable!()
         };
         if sink.source_complete {
             self.decoder.raw_pull_state.buffered_source_complete = true;
@@ -3383,22 +3388,22 @@ where
     ///
     ///
     #[allow(clippy::too_many_lines)]
-    fn prepare_for_scan_decode(&mut self) -> Result<(), DecodeErrors> {
+    pub(crate) fn prepare_for_scan_decode(&mut self) -> Result<(), DecodeErrors> {
         // Pull the scan-resume state out into owned locals so the restore
         // below can freely mutate `self`. When headers haven't completed
         // yet, `scan_plan` is `None` and we just run header decoding below.
         struct ScanPlan {
-            scan_start_position:   usize,
-            scan_start_height:     u16,
+            scan_start_position:    usize,
+            scan_start_height:      u16,
             scan_start_expects_dnl: bool,
-            outer_append_snapshot: HeaderAppendStateSnapshot,
-            outer_sos_snapshot:    SosParamsSnapshot,
-            outer_header_snapshot: ScanHeaderStateSnapshot,
+            outer_append_snapshot:  HeaderAppendStateSnapshot,
+            outer_sos_snapshot:     SosParamsSnapshot,
+            outer_header_snapshot:  ScanHeaderStateSnapshot,
             /// Snapshots taken from the checkpoint (if any) so the seek and
             /// SOS-restore steps below do not need to touch `scan_state`.
-            checkpoint_view:       Option<CheckpointView>,
-            progressive_view:      Option<ProgressiveCheckpointView>,
-            progressive_fine_view: Option<ProgressiveFineCheckpointView>
+            checkpoint_view:        Option<CheckpointView>,
+            progressive_view:       Option<ProgressiveCheckpointView>,
+            progressive_fine_view:  Option<ProgressiveFineCheckpointView>
         }
         #[derive(Clone, Copy)]
         struct CheckpointView {
@@ -3619,7 +3624,7 @@ where
         Ok(())
     }
 
-    fn decode_mcu_output_with_success_cleanup(
+    pub(crate) fn decode_mcu_output_with_success_cleanup(
         &mut self, output: &mut McuDecodeOutput<'_, '_>
     ) -> Result<(), DecodeErrors> {
         match self.decode_mcu_output(output) {
@@ -3682,6 +3687,22 @@ where
 
         let mut output = McuDecodeOutput::Pixels(out);
         self.decode_mcu_output_with_success_cleanup(&mut output)
+    }
+
+    /// Select true reduced-IDCT output without changing coded image metadata.
+    ///
+    /// The returned decoder owns independent reduced component planes and
+    /// preserves them across incremental retries. Select the scale before
+    /// starting any pixel, scanline, or raw-plane decode.
+    pub fn into_scaled(
+        self, scale: crate::JpegScale
+    ) -> Result<crate::ScaledJpegDecoder<T>, DecodeErrors> {
+        if self.scan_decode_attempted {
+            return Err(DecodeErrors::FormatStatic(
+                "select output scaling before starting scan decoding"
+            ));
+        }
+        crate::ScaledJpegDecoder::new(self, scale)
     }
 
     fn decode_mcu_output(
@@ -3943,13 +3964,16 @@ where
         for comp in &mut self.components {
             let hs = self.h_max / comp.horizontal_sample;
             let vs = self.v_max / comp.vertical_sample;
+            // Native fancy H/HV needs three visible samples, not three padded samples.
+            let visible_width =
+                (usize::from(self.info.width) * comp.horizontal_sample).div_ceil(self.h_max);
 
             let samp_factor = match (hs, vs) {
                 (1, 1) => {
                     comp.sample_ratio = SampleRatios::None;
                     upsample_no_op
                 }
-                (2, 1) => {
+                (2, 1) if visible_width > 2 => {
                     comp.sample_ratio = SampleRatios::H;
                     choose_horizontal_samp_function(&self.options)
                 }
@@ -3957,7 +3981,7 @@ where
                     comp.sample_ratio = SampleRatios::V;
                     choose_v_samp_function(&self.options)
                 }
-                (2, 2) => {
+                (2, 2) if visible_width > 2 => {
                     comp.sample_ratio = SampleRatios::HV;
                     choose_hv_samp_function(&self.options)
                 }
