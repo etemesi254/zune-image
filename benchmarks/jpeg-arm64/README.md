@@ -4,11 +4,19 @@ This opt-in, artifact-only workflow benchmarks **standalone zune-jpeg on native
 Linux ARM64**. It does not post PR comments, change SIMD defaults, or establish
 Skia/Blink/browser, Mac M2/M4, Windows ARM64, or RSS results.
 
-Add the `arm64-benchmark` label to a PR to run it, including on drafts. The
+Add the `arm64-benchmark` label to a PR, or create it with the title prefix
+`[Investigation][ARM64]`, to run it, including on drafts. The title opt-in lets
+external contributors start an explicitly marked investigation without label
+management permissions. The
 baseline is the immutable PR base SHA, not a later-moving `dev`. Once installed
 on the repository's default branch, `workflow_dispatch` also accepts a pinned
 control SHA or ordinary branch/tag name. Use a control containing prerequisite
 optimizations: do not credit unrelated base/head differences to a new experiment.
+
+An infrastructure-only investigation against `dev` has unchanged decoder
+source and makes no optimization claim. A later Z3 kernel experiment must use
+a documented control containing all applicable prerequisite performance PRs;
+this initial CI run must not be substituted for that experiment's baseline.
 
 Before the new workflow is on the default branch, the existing **Benchmark
 Regression** dispatcher can invoke it from the draft ref without merging or
