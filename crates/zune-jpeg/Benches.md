@@ -77,3 +77,31 @@ Benchmarks may not reflect real world usage(threads, other I/O machine bottlenec
 [jpeg-decoder]:https://github.com/image-rs/jpeg-decoder
 
 [rayon]:https://github.com/rayon-rs/rayon
+
+## Scoped ARM64 color-conversion measurement (Z3, 2026-11-13)
+
+Native Linux Neoverse-N2, Rust 1.89.0, generic ARM64/musl release, default
+features, thin LTO and one codegen unit. Control: refreshed dev
+`fa80e24b` plus PRs #525 (`5dbe923c`) and #526 (`b5ad1d9c`).
+Invocation counters established NEON block conversion, not AVX2 row dispatch.
+Only the reached NEON fixed-point color helper was simplified; IDCT,
+upsampling, output bounds and SIMD policy are unchanged.
+
+The primary metric equally weights 96 public RGB/RGBA/BGRA whole-image and
+16-row converted-scanline workloads over two real-image scenes, odd 257x193
+and 1025x769 sizes, and 4:4:4/4:2:2/4:2:0/4:4:0. Construction, setup,
+allocations and destruction are timed. Each of two process sessions used
+30 identical-control A/A pairs and 30 counterbalanced A/B pairs, eight
+decodes per workload batch, and paired process-level bootstrap intervals.
+
+| Session | Mean elapsed-time reduction | Paired 95% CI | A/A noise margin |
+| --- | --- | --- | --- |
+| 1 | 6.96% | 6.84% to 7.08% | 0.69% |
+| 2 | 7.06% | 6.97% to 7.15% | 0.47% |
+
+All 96 individual autodispatch workloads and the forced-scalar aggregate
+passed their separately calibrated protection gates in both sessions.
+Forced scalar was about 0.16-0.17% slower, within its protected noise bounds.
+This is one-device crate evidence, not a universal ARM64 or browser claim.
+Mac M2/M4 and Windows ARM64 remain unmeasured. Skia's separate x86-only
+direct-packed-output performance gate is not changed by this kernel.
