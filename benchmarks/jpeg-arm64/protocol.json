@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "scope": "Native Linux ARM64 standalone zune-jpeg; no browser or other ARM64-platform claim",
+  "primary": "Complete-image Scan36, source output (RGB for YCbCr/native RGB, Luma for gray, CMYK for CMYK), resident and growing input; 32 equal cases, each image 1/16 and source mode 1/2",
+  "aggregation": "Process T is geometric mean ns/image across primary cases; gain=1-T_candidate/T_control; summary=median process-pair gain",
+  "cases": 416,
+  "primary_cases": 32,
+  "images": 16,
+  "protected": "Every individual case, including RGB/RGBA/BGRA Into/Scan36, source scalar Into/Scan36, one-row, raw/YUV, grayscale/native RGB/CMYK and decode()",
+  "boundary": "Fresh decoder, construction, headers, destination allocation, all retries/rows/finish and destruction. Preloaded input; no output hashing/capture inside timing.",
+  "growing": "Expose min(4096,length), reveal 16384 only on requested input; no I/O sleeps",
+  "build": {
+    "rust": "1.89.0",
+    "profile": "release opt-level3 debug2 codegen-units16 LTOoff",
+    "rustflags": "-C target-cpu=generic -C force-frame-pointers=yes",
+    "features": "default(std,x86,neon) plus arith; scalar uses set_use_unsafe(false), with actual call-entry verification",
+    "affinity": "Lowest CPU in the runner's allowed affinity set; same for every child"
+  },
+  "timing": {
+    "sessions": 2,
+    "pairs": 30,
+    "counterbalance": "15AB/15BA per phase, shuffled seed 530000+session",
+    "case_order": "Identical within pair, seed 5300000+session*1000+pair",
+    "iterations": "Fixed per-image counts in corpus.tsv; one untimed warmup per case/process",
+    "minimum_batch_ns": 100000,
+    "quiet_gap_seconds": 300,
+    "noise": "P95 linear-interpolated abs(1-T_B/T_A) of labeled identical-control process pairs, primary and each protected case separately",
+    "CI": "10000 percentile-bootstrap resamples of process pairs, shared indices across cases, seed 535300+session"
+  },
+  "keep": "Primary lower95CI>N in BOTH sessions and every protected upper95slowdownCI<=its own N in BOTH, with verified native execution/dispatch/correctness. Unchanged decoder source is never reported KEEP.",
+  "profiling": "Own-child GDB, 1000 actual stack samples for each Into/Scan36 x auto/scalar; capped named implementation-entry counts separately, never pointer equality",
+  "reporting": "Green CI means valid collection/validation only, not a gain. Within-noise results are INCONCLUSIVE; incomplete/empty/error data fails the job. No rerunning populated phases.",
+  "smoke": "Explicit local smoke only: two pairs, one session, one iteration, no minimum-duration or gain gate; always marked non-performance evidence."
+}

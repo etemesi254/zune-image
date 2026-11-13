@@ -1,0 +1,17 @@
+name	group	path	width	height	kind	formats	iterations	sha256
+small-444	small	non_interleaved_444_64x64.jpg	64	64	ycbcr	RGB|RGBA|BGRA	128	e9df951403a07352aec20ebc1f116746430f44451228ba8f6683d83645ce53c4
+small-422	small	non_interleaved_422_64x64.jpg	64	64	ycbcr	RGB|RGBA|BGRA	128	1e056357d27f5b0fcf29a3b0b644298a32575b7b58aebe7012b3944604c5a7d5
+small-420	small	non_interleaved_420_64x64.jpg	64	64	ycbcr	RGB|RGBA|BGRA	128	1256bf4a1cf0a1ad2dcd7a2341515781fb3770dba929bf8df7bd05de1518e682
+small-440	small	non_interleaved_440_64x64.jpg	64	64	ycbcr	RGB|RGBA|BGRA	128	677cfd374645fa00f46e2cc99e6290996fe25e4d4873e0383e01a87501fa1ba4
+large-444	large	medium_no_samp_2500x1786.jpg	2500	1786	ycbcr	RGB|RGBA|BGRA	2	2f4b3ae39177451c0dd42638d6c0d039efb4e52221e05aea0e3a6bf75126ecb6
+large-422	large	medium_horiz_samp_2500x1786.jpg	2500	1786	ycbcr	RGB|RGBA|BGRA	2	f0cffabfd50c436ba5a7c873b5e070c9d1dc82bff9a5ec1464dd2081e176dcf8
+large-440	large	medium_vertical_samp_2500x1786.jpg	2500	1786	ycbcr	RGB|RGBA|BGRA	2	fb0280a38033f5e9876e90a06d0d547431bee69fe4a3c8a95eda6a7e7955ea7e
+large-420	large	benchmarks/speed_bench_hv_subsampling.jpg	7680	4320	ycbcr	RGB|RGBA|BGRA	1	0e32b75da592d5bc94baefe38e5d6df7811959e42953cb2368bb44dd5f1e38f4
+odd-420-photo	odd	2029.jpg	388	477	ycbcr	RGB|RGBA|BGRA	8	fe44e67b4b46f67a3ce818e4c416268df4d172bd1babb42148bbbe7cbaec992e
+odd-422-restart	odd	restart_non_interleaved_422_333x257.jpg	333	257	ycbcr	RGB|RGBA|BGRA	8	92e265eb6b8d8c0ceaa75d8c24b74320d38745db79cdc18909a751bcd7c6bdde
+odd-444-progressive	odd	progressive_444_65x67.jpg	65	67	ycbcr	RGB|RGBA|BGRA	64	f71459e7d2c7ee657c3162720407237b4c65f8eefbe2652ab916dcd86f5b7876
+odd-440-progressive	odd	progressive_440_65x65.jpg	65	65	ycbcr	RGB|RGBA|BGRA	64	e93d482bdcd27cbb8b33937a3362f8f73610f6509217af9500ed2a8bf2d2c61c
+gray-progressive	special	down_sampled_grayscale_prog.jpg	900	675	gray	Luma|RGB|RGBA	2	8df37a1eb2ed28e8d0586261b08a1da090a5fd8f61ca8580c43943122478be4f
+gray-restart	special	restart_cross_row_128x128.jpg	128	128	gray	Luma|RGB|RGBA	64	6eb83ea6df2fc1ec00b97b7e170210658bee1cc2491ce2843cbe94e88d5457e4
+native-rgb	special	app14/baseline_rgb.jpg	32	32	rgb	RGB	128	adbfd762f06f5dc5fe63c0e4820bef08cd7ed2c2f2369b4bcee1071449f32049
+cmyk	special	app14/baseline_cmyk.jpg	32	32	cmyk	CMYK|RGB|RGBA	128	8601ce28b059e8032046800fd9c421185370bf927e02947a2c51c6911ee2031a

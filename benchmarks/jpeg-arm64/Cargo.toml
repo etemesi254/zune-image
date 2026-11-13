@@ -1,0 +1,19 @@
+[package]
+name = "jpeg-arm64-benchmark"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[features]
+allocation-count = []
+
+[dependencies]
+zune-jpeg = { path = "../../crates/zune-jpeg", features = ["arith"] }
+
+[profile.release]
+opt-level = 3
+debug = 2
+codegen-units = 16
+lto = false

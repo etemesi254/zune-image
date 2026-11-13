@@ -1,0 +1,101 @@
+name: Native ARM64 JPEG benchmarks
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+    paths:
+      - ".github/workflows/jpeg_arm64_benchmarks.yml"
+      - "benchmarks/jpeg-arm64/**"
+      - "crates/zune-jpeg/**"
+      - "crates/zune-core/**"
+      - "test-images/jpeg/**"
+  workflow_dispatch:
+    inputs:
+      baseline_ref:
+        description: "Pinned control commit or branch; both builds run on the same native runner"
+        type: string
+        default: dev
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  native:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'arm64-benchmark')
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+      RUST_BACKTRACE: 1
+      PYTHONDONTWRITEBYTECODE: "1"
+      BASELINE_REF: ${{ github.event.pull_request.base.sha || inputs.baseline_ref }}
+    steps:
+      - name: Set isolated benchmark directory
+        run: echo "ARM_BENCH_ROOT=${RUNNER_TEMP}/jpeg-arm64-benchmark" >> "${GITHUB_ENV}"
+      - uses: actions/checkout@v6
+        with:
+          path: candidate
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Validate baseline input
+        run: python3 candidate/benchmarks/jpeg-arm64/tools/run.py check-ref --ref "${BASELINE_REF}"
+      - uses: actions/checkout@v6
+        with:
+          path: baseline
+          ref: ${{ env.BASELINE_REF }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.89.0"
+          targets: aarch64-unknown-none
+      - name: Install missing profiler only
+        run: |
+          if ! command -v gdb; then
+            sudo apt-get update
+            sudo apt-get install --yes gdb
+          fi
+      - name: Test benchmark validation
+        working-directory: candidate/benchmarks/jpeg-arm64/tools
+        run: python3 -m unittest -v test_run.py
+      - name: Build identical harnesses and seal native inputs
+        run: >-
+          python3 candidate/benchmarks/jpeg-arm64/tools/run.py prepare
+          --work "${ARM_BENCH_ROOT}" --baseline "${GITHUB_WORKSPACE}/baseline"
+          --candidate "${GITHUB_WORKSPACE}/candidate"
+      - name: Verify nonempty complete JPEGs and exact scalar/control pixels
+        run: python3 candidate/benchmarks/jpeg-arm64/tools/run.py validate --work "${ARM_BENCH_ROOT}"
+      - name: Native JPEG correctness and generic/no-std coverage
+        working-directory: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CARGO_TARGET_DIR="${ARM_BENCH_ROOT}/correctness-target"
+          log="${ARM_BENCH_ROOT}/artifacts/native-correctness.log"
+          run_check() {
+            "$@" >> "${log}" 2>&1 || { tail -100 "${log}"; exit 1; }
+          }
+          run_check cargo +1.89.0 test -p zune-jpeg --features arith --locked
+          run_check cargo +1.89.0 test --release -p zune-jpeg --features arith --locked
+          run_check cargo +1.89.0 test --release -p zune-jpeg --no-default-features --features std,arith --locked
+          run_check cargo +1.89.0 check -p zune-jpeg --no-default-features --features arith --target aarch64-unknown-none --locked
+          touch "${ARM_BENCH_ROOT}/artifacts/native-correctness-complete"
+      - name: Verify implementation calls and profile before timing
+        run: python3 candidate/benchmarks/jpeg-arm64/tools/run.py profile --work "${ARM_BENCH_ROOT}"
+      - name: Measure allocations separately
+        run: python3 candidate/benchmarks/jpeg-arm64/tools/run.py allocations --work "${ARM_BENCH_ROOT}"
+      - name: Run frozen paired noise and comparison sessions
+        run: python3 candidate/benchmarks/jpeg-arm64/tools/run.py measure --work "${ARM_BENCH_ROOT}"
+      - name: Upload raw evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jpeg-arm64-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.ARM_BENCH_ROOT }}/artifacts
+          if-no-files-found: error
+          retention-days: 14
