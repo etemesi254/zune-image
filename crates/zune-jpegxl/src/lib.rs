@@ -92,5 +92,6 @@ pub use errors::JxlEncodeErrors;
 mod bit_depth;
 mod bit_writer;
 mod color_convert;
+mod color_encoding;
 mod encoder;
 mod errors;

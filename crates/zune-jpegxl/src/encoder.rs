@@ -14,8 +14,11 @@ use core::marker::PhantomData;
 
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::{ZByteWriterTrait, ZWriter};
+use zune_core::colorspace::{ColorCharacteristics, ColorPrimaries};
 use zune_core::log::{log_enabled, trace, Level};
 use zune_core::options::EncoderOptions;
+
+use crate::color_encoding::ColorEncoding;
 
 use crate::bit_depth::{JxlBitEncoder, MoreThan14Bits, UpTo8Bits};
 use crate::bit_writer::{
@@ -42,6 +45,7 @@ const K_MAX_NUM_SYMBOLS: usize = if K_NUM_RAW_SYMBOLS + 1 < K_NUM_LZ77 {
 
 pub(crate) struct FrameState {
     option: EncoderOptions,
+    color_encoding: ColorEncoding,
     header: BitWriter,
     group_data: Vec<[BitWriter; 4]>,
     current_bit_writer: usize,
@@ -96,6 +100,8 @@ pub(crate) struct FrameState {
 /// }
 /// ```
 pub struct JxlSimpleEncoder<'a> {
+    color_trc: ColorCharacteristics,
+    color_primaries: Option<ColorPrimaries>,
     data: &'a [u8],
     options: EncoderOptions,
 }
@@ -1043,7 +1049,41 @@ impl<'a> JxlSimpleEncoder<'a> {
     /// - data: Raw pixel data
     /// - options: Encoder options for the raw pixels, this include the width, height colorspace, depth etc
     pub fn new(data: &'a [u8], options: EncoderOptions) -> JxlSimpleEncoder<'a> {
-        JxlSimpleEncoder { data, options }
+        JxlSimpleEncoder {
+            data,
+            options,
+            color_trc: ColorCharacteristics::sRGB,
+            color_primaries: None,
+        }
+    }
+
+    /// Set the transfer function the image header names, sRGB's by
+    /// default.
+    ///
+    /// The samples are written as given: this says how a decoder should
+    /// read them. sRGB, Rec. 709, linear, PQ, HLG and SMPTE 428 are
+    /// written by name, and gamma 2.2 and 2.8 as a gamma. Any other
+    /// makes [`encode`](Self::encode) fail, JPEG XL having no name for
+    /// it.
+    pub fn set_color_characteristics(&mut self, color_trc: ColorCharacteristics) -> &mut Self {
+        self.color_trc = color_trc;
+        self
+    }
+
+    /// Set the primaries and white point the image header names for
+    /// an RGB image, sRGB's and D65 by default; a grayscale image takes
+    /// the white point alone.
+    ///
+    /// The samples are written as given. Each primary and the white
+    /// point is read as its CIE x and y, `z` unused, as a PNG's `cHRM`
+    /// gives them. sRGB's, BT.2100's and P3's primaries, and the D65,
+    /// DCI and E white points, are written by name, and any others as
+    /// their chromaticities. sRGB's primaries and transfer function
+    /// with D65 are written as the header's `all_default`, as before
+    /// these options.
+    pub fn set_color_primaries(&mut self, color_primaries: ColorPrimaries) -> &mut Self {
+        self.color_primaries = Some(color_primaries);
+        self
     }
 
     /// Encode a jxl image producing the raw encoded
@@ -1092,6 +1132,7 @@ impl<'a> JxlSimpleEncoder<'a> {
         if !SUPPORTED_COLORSPACES.contains(&colorspace) {
             return Err(JxlEncodeErrors::UnsupportedColorspace(colorspace));
         }
+        let color_encoding = ColorEncoding::of(self.color_trc, self.color_primaries.as_ref())?;
         if width == 0 {
             return Err(JxlEncodeErrors::ZeroDimension("width"));
         }
@@ -1303,6 +1344,7 @@ impl<'a> JxlSimpleEncoder<'a> {
 
             Ok(FrameState {
                 option: self.options,
+                color_encoding,
                 header: BitWriter::new(),
                 group_data,
                 current_bit_writer: 0,
@@ -1359,6 +1401,7 @@ impl<'a> JxlSimpleEncoder<'a> {
 
             Ok(FrameState {
                 option: self.options,
+                color_encoding,
                 header: BitWriter::new(),
                 group_data,
                 current_bit_writer: 0,
@@ -1537,17 +1580,14 @@ fn prepare_header(frame: &mut FrameState, add_image_header: bool, is_last: bool)
         // TODO: Support XYB
         output.put_bits(1, 0); // not xyb
 
-        if colorspace.num_components() > 2 {
+        let rgb = colorspace.num_components() > 2;
+        if rgb && frame.color_encoding == ColorEncoding::SRGB {
             output.put_bits(1, 1); // color_encoding.all_default (sRGB)
         } else {
             output.put_bits(1, 0); // color_encoding.all_default false
-            output.put_bits(1, 0); // color_encoding.want_icc false
-            output.put_bits(2, 1); // grayscale
-            output.put_bits(2, 1); // D65
-            output.put_bits(1, 0); // no gamma transfer function
-            output.put_bits(2, 0b10); // tf: 2 + u(4)
-            output.put_bits(4, 11); // tf of sRGB
-            output.put_bits(2, 1); // relative rendering intent
+            frame
+                .color_encoding
+                .write(rgb, &mut |count, bits| output.put_bits(count, bits));
         }
         output.put_bits(2, 0b00); // No extensions.
 
