@@ -27,7 +27,7 @@ use crate::bitstream::{BitStreamHuffman, BitstreamStateSnapshot};
 #[cfg(feature = "arith")]
 use crate::bitstream_arith::{ArithACTables, ArithDCTables, BitStreamArithmetic};
 use crate::cancel::{CancelCheck, Debounced, CANCEL_POLL_INTERVAL_MCUS};
-use crate::color_convert::choose_ycbcr_to_rgb_convert_func;
+use crate::color_convert::{choose_ycbcr_to_rgb_convert_func, ColorConvert16};
 use crate::components::{Components, SampleRatios};
 use crate::errors::{DecodeErrors, UnsupportedSchemes};
 #[cfg(feature = "arith")]
@@ -359,7 +359,7 @@ pub struct JpegDecoder<T> {
     pub(crate) idct_4x4_func:    IDCTPtr,
     pub(crate) idct_1x1_func:    IDCTPtr,
     // Color convert function which acts on 16 YCbCr values
-    pub(crate) color_convert_16: ColorConvert16Ptr,
+    pub(crate) color_convert_16: ColorConvert16,
     pub(crate) z_order:          [usize; MAX_COMPONENTS],
     /// restart markers
     pub(crate) restart_interval: usize,
@@ -2093,19 +2093,19 @@ where
         }
     }
 
-    // Refresh the conversion function selected by the configured output colorspace.
+    // Refresh block and row conversion together, including the RGB intermediate used by YCCK.
     fn set_color_convert_from_options(&mut self) {
         let out_colorspace = self.options.jpeg_get_out_colorspace();
-        if matches!(
+        let converter_colorspace = if matches!(
             out_colorspace,
             ColorSpace::BGR | ColorSpace::BGRA | ColorSpace::RGB | ColorSpace::RGBA
         ) {
-            self.color_convert_16 = choose_ycbcr_to_rgb_convert_func(
-                self.options.jpeg_get_out_colorspace(),
-                &self.options
-            )
-            .unwrap();
-        }
+            out_colorspace
+        } else {
+            ColorSpace::RGB
+        };
+        self.color_convert_16 =
+            choose_ycbcr_to_rgb_convert_func(converter_colorspace, &self.options).unwrap();
     }
 
     #[allow(clippy::redundant_field_names)]
@@ -4365,6 +4365,76 @@ mod planar_layout_helpers {
             let mut actual = JpegDecoder::new(ZCursor::new(data));
             actual.set_options(replacement);
             assert_eq!(actual.decode().unwrap(), expected, "{colorspace:?}");
+        }
+    }
+
+    #[test]
+    fn row_dispatch_refreshes_after_headers() {
+        let data = include_bytes!("../../../test-images/jpeg/non_interleaved_422_65x65.jpg");
+        for colorspace in [
+            ColorSpace::RGB,
+            ColorSpace::BGR,
+            ColorSpace::RGBA,
+            ColorSpace::BGRA
+        ] {
+            for use_simd in [false, true] {
+                let initial = DecoderOptions::default()
+                    .jpeg_set_out_colorspace(ColorSpace::RGB)
+                    .set_use_unsafe(!use_simd);
+                let replacement = initial
+                    .jpeg_set_out_colorspace(colorspace)
+                    .set_use_unsafe(use_simd);
+                let mut reference = JpegDecoder::new_with_options(ZCursor::new(data), replacement);
+                let expected = reference.decode().unwrap();
+                for scanline in [false, true] {
+                    let mut actual = JpegDecoder::new_with_options(ZCursor::new(data), initial);
+                    actual.decode_headers().unwrap();
+                    actual.set_options(replacement);
+                    let expected_row = crate::color_convert::choose_ycbcr_to_rgb_convert_func(
+                        colorspace,
+                        &replacement
+                    )
+                    .unwrap()
+                    .row
+                    .is_some();
+                    assert_eq!(actual.color_convert_16.row.is_some(), expected_row);
+                    if !scanline {
+                        assert_eq!(actual.decode().unwrap(), expected);
+                        continue;
+                    }
+                    let row_bytes = 65 * colorspace.num_components();
+                    let stride = row_bytes + 7;
+                    let mut row = vec![0xa5; stride];
+                    let mut sink = actual.scanline_output();
+                    for reference in expected.chunks_exact(row_bytes) {
+                        assert_eq!(
+                            sink.read_scanlines(&mut row, stride).unwrap(),
+                            ScanlineReadStatus::RowsProcessed { rows: 1 }
+                        );
+                        assert_eq!(&row[..row_bytes], reference);
+                        assert!(row[row_bytes..].iter().all(|&byte| byte == 0xa5));
+                    }
+                    assert_eq!(sink.finish().unwrap(), ScanlineStatus::Complete);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn row_dispatch_resets_for_cmyk_reconfiguration() {
+        let data = include_bytes!("../../../test-images/jpeg/four_components.jpg");
+        for use_simd in [false, true] {
+            let options = DecoderOptions::default().set_use_unsafe(use_simd);
+            let replacement = options.jpeg_set_out_colorspace(ColorSpace::CMYK);
+            let mut reference = JpegDecoder::new_with_options(ZCursor::new(data), replacement);
+            let expected = reference.decode().unwrap();
+            let mut actual = JpegDecoder::new_with_options(
+                ZCursor::new(data),
+                options.jpeg_set_out_colorspace(ColorSpace::RGBA)
+            );
+            actual.decode_headers().unwrap();
+            actual.set_options(replacement);
+            assert_eq!(actual.decode().unwrap(), expected);
         }
     }
 
