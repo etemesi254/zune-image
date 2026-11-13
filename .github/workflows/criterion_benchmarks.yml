@@ -5,6 +5,15 @@ on:
   push:
     branches: [ "dev" ]
   workflow_dispatch:
+    inputs:
+      native_arm64:
+        description: "Run the artifact-only native JPEG paired benchmark instead of the Criterion suite"
+        type: boolean
+        default: false
+      baseline_ref:
+        description: "Pinned control commit or branch for native ARM64 comparison"
+        type: string
+        default: dev
 
 permissions:
   contents: read
@@ -12,6 +21,7 @@ permissions:
 
 jobs:
   bench:
+    if: github.event_name != 'workflow_dispatch' || !inputs.native_arm64
     name: Criterion Bench (${{ matrix.os }})
     runs-on: ubuntu-latest
 
@@ -114,3 +124,10 @@ jobs:
               repo: context.repo.repo,
               body
             });
+  native_arm64:
+    if: github.event_name == 'workflow_dispatch' && inputs.native_arm64
+    permissions:
+      contents: read
+    uses: ./.github/workflows/jpeg_arm64_benchmarks.yml
+    with:
+      baseline_ref: ${{ inputs.baseline_ref }}

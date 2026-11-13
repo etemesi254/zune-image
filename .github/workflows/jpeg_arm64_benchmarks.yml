@@ -16,6 +16,12 @@ on:
         type: string
         default: dev
         required: true
+  workflow_call:
+    inputs:
+      baseline_ref:
+        description: "Pinned control for a native-only invocation from the benchmark dispatcher"
+        type: string
+        required: true
 
 permissions:
   contents: read

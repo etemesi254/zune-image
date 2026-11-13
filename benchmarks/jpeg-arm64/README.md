@@ -10,6 +10,18 @@ on the repository's default branch, `workflow_dispatch` also accepts a pinned
 control SHA or ordinary branch/tag name. Use a control containing prerequisite
 optimizations: do not credit unrelated base/head differences to a new experiment.
 
+Before the new workflow is on the default branch, the existing **Benchmark
+Regression** dispatcher can invoke it from the draft ref without merging or
+changing repository settings:
+
+```sh
+gh workflow run criterion_benchmarks.yml --ref CI_DRAFT_BRANCH \
+  -f native_arm64=true -f baseline_ref=PINNED_CONTROL_SHA
+```
+
+That explicit native-only mode skips the Criterion job and its PR comparison.
+Ordinary Criterion invocations retain their current behavior.
+
 ## What the workflow verifies
 
 * `ubuntu-24.04-arm`, ARM64 host identity, native AArch64 ELF binaries and pinned
