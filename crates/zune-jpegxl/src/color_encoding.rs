@@ -97,20 +97,10 @@ impl ColorEncoding {
     pub(crate) fn of(
         transfer: ColorCharacteristics, primaries: Option<&ColorPrimaries>,
     ) -> Result<ColorEncoding, JxlEncodeErrors> {
-        let transfer = match transfer {
-            ColorCharacteristics::Rec709 => Transfer::Value(1),
-            ColorCharacteristics::Linear => Transfer::Value(8),
-            ColorCharacteristics::sRGB => Transfer::Value(13),
-            ColorCharacteristics::PQ => Transfer::Value(16),
-            ColorCharacteristics::Smpte428 => Transfer::Value(17),
-            ColorCharacteristics::HLG => Transfer::Value(18),
-            ColorCharacteristics::Gamma2p2 => Transfer::Gamma(gamma(2.2)),
-            ColorCharacteristics::Gamma2p8 => Transfer::Gamma(gamma(2.8)),
-            _ => {
-                return Err(JxlEncodeErrors::Generic(
-                    "JPEG XL has no name for this transfer function",
-                ))
-            }
+        let Some(transfer) = Transfer::of(transfer) else {
+            return Err(JxlEncodeErrors::Generic(
+                "JPEG XL has no name for this transfer function",
+            ));
         };
         let Some(primaries) = primaries else {
             return Ok(ColorEncoding {
@@ -246,6 +236,24 @@ fn put_xy(put: &mut dyn FnMut(u8, u64), (x, y): Xy) {
 /// An enum value's bits as the codestream's `Enum` field codes it, a
 /// `U32(Val(0), Val(1), BitsOffset(4, 2), BitsOffset(6, 18))`: the
 /// selector's 2 bits, then any extra bits, each as `(count, value)`.
+impl Transfer {
+    /// How the header names `transfer`, or `None` where it has no name
+    /// or gamma for it.
+    pub(crate) fn of(transfer: ColorCharacteristics) -> Option<Transfer> {
+        Some(match transfer {
+            ColorCharacteristics::Rec709 => Transfer::Value(1),
+            ColorCharacteristics::Linear => Transfer::Value(8),
+            ColorCharacteristics::sRGB => Transfer::Value(13),
+            ColorCharacteristics::PQ => Transfer::Value(16),
+            ColorCharacteristics::Smpte428 => Transfer::Value(17),
+            ColorCharacteristics::HLG => Transfer::Value(18),
+            ColorCharacteristics::Gamma2p2 => Transfer::Gamma(gamma(2.2)),
+            ColorCharacteristics::Gamma2p8 => Transfer::Gamma(gamma(2.8)),
+            _ => return None
+        })
+    }
+}
+
 pub(crate) fn enum_bits(value: u32) -> [(u8, u64); 2] {
     match value {
         0 => [(2, 0), (0, 0)],
