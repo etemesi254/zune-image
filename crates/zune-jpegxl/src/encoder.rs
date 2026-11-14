@@ -1057,6 +1057,13 @@ impl<'a> JxlSimpleEncoder<'a> {
         }
     }
 
+    /// Whether the image header can name `color_trc`, so that
+    /// [`set_color_characteristics`](Self::set_color_characteristics)
+    /// with it lets [`encode`](Self::encode) succeed.
+    pub fn names_color_characteristics(color_trc: ColorCharacteristics) -> bool {
+        crate::color_encoding::Transfer::of(color_trc).is_some()
+    }
+
     /// Set the transfer function the image header names, sRGB's by
     /// default.
     ///
