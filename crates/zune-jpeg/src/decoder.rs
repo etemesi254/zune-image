@@ -4472,32 +4472,64 @@ mod planar_layout_helpers {
 
     #[test]
     fn final_scanline_incomplete_components_preserve_padding() {
-        let original = include_bytes!("../../../test-images/jpeg/non_interleaved_420_64x64.jpg");
-        let sos = original
-            .windows(2)
-            .enumerate()
-            .filter(|(_, bytes)| *bytes == [0xFF, 0xDA])
-            .nth(1)
-            .unwrap()
-            .0;
-        let length = usize::from(u16::from_be_bytes([original[sos + 2], original[sos + 3]]));
-        let mut decoder = JpegDecoder::new_with_options(
-            ZCursor::new(&original[..sos + 2 + length]),
-            DecoderOptions::default()
-                .set_strict_mode(false)
-                .jpeg_set_out_colorspace(ColorSpace::RGB)
-        );
-        let stride = 64 * 3 + 3;
-        let mut output = vec![0xA5; stride * 64];
-        let mut scanlines = decoder.scanline_output();
-        scanlines.set_input_complete();
-        let status = scanlines.read_scanlines(&mut output, stride).unwrap();
-        assert!(
-            matches!(status, ScanlineReadStatus::RowsProcessed { rows } if rows > 0 && rows <= 64)
-                || status == ScanlineReadStatus::NeedMoreInput
-        );
-        for row in output.chunks_exact(stride) {
-            assert_eq!(&row[64 * 3..], &[0xA5; 3]);
+        for original in [
+            include_bytes!("../../../test-images/jpeg/non_interleaved_420_64x64.jpg").as_slice(),
+            include_bytes!("../../../test-images/jpeg/restart_non_interleaved_422_333x257.jpg")
+                .as_slice()
+        ] {
+            let mut scans = original
+                .windows(2)
+                .enumerate()
+                .filter_map(|(offset, bytes)| (bytes == [0xFF, 0xDA]).then_some(offset));
+            let scan_start = |sos| {
+                let length =
+                    usize::from(u16::from_be_bytes([original[sos + 2], original[sos + 3]]));
+                sos + 2 + length
+            };
+            let entropy_start = scan_start(scans.next().unwrap());
+            let next_scan_start = scan_start(scans.next().unwrap());
+            for cut in [entropy_start + 1, next_scan_start] {
+                for color in [ColorSpace::RGB, ColorSpace::RGBA, ColorSpace::BGRA] {
+                    let mut decoder = JpegDecoder::new_with_options(
+                        ZCursor::new(&original[..cut]),
+                        DecoderOptions::default()
+                            .set_strict_mode(false)
+                            .jpeg_set_out_colorspace(color)
+                    );
+                    decoder.decode_headers().unwrap();
+                    let (width, height) = decoder.dimensions().unwrap();
+                    let row_bytes = width * color.num_components();
+                    let stride = row_bytes + 3;
+                    let size = stride * height;
+                    let mut output = vec![0xA5; size + 2];
+                    let mut scanlines = decoder.scanline_output();
+                    scanlines.set_input_complete();
+                    for _ in 0..2 {
+                        output.fill(0xA5);
+                        let before = scanlines.output_scanline();
+                        let rows = match scanlines
+                            .read_scanlines(&mut output[1..size + 1], stride)
+                            .unwrap()
+                        {
+                            ScanlineReadStatus::RowsProcessed { rows } => {
+                                assert!(rows > 0 && rows <= height - before);
+                                rows
+                            }
+                            ScanlineReadStatus::NeedMoreInput => 0,
+                            ScanlineReadStatus::Complete => {
+                                assert_eq!(before, height);
+                                0
+                            }
+                        };
+                        assert_eq!(scanlines.output_scanline(), before + rows);
+                        for row in output[1..size + 1].chunks_exact(stride) {
+                            assert_eq!(&row[row_bytes..], &[0xA5; 3]);
+                        }
+                        assert_eq!(output[0], 0xA5);
+                        assert!(output[1 + rows * stride..].iter().all(|&byte| byte == 0xA5));
+                    }
+                }
+            }
         }
     }
 

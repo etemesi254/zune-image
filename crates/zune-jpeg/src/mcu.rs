@@ -484,7 +484,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                                 }
                                 McuDecodeOutput::Scaled(_) => {},
                             }
-                        } else if let Some(pixels) = output.pixels_mut() {
+                        } else if let McuDecodeOutput::Pixels(pixels) = output {
                             pixels.fill(128);
                         }
                         return Ok(());
@@ -677,7 +677,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             // (this header used to be parsed during the row decode).
                             Err(e) if e.is_recoverable_eof() && !self.scan_eof_is_error() => {
                                 error!("{e}");
-                                if let Some(pixels) = output.pixels_mut() {
+                                if let McuDecodeOutput::Pixels(pixels) = output {
                                     pixels.fill(128);
                                 }
                                 return Ok(());
