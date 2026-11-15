@@ -1,12 +1,13 @@
-use alloc::{borrow::ToOwned, string::ToString, vec::Vec};
+use alloc::{string::ToString, vec, vec::Vec};
 use alloc::collections::BTreeMap;
 
 use zune_core::bytestream::{ZByteReaderTrait, ZReader, ZSeekFrom};
 use zune_core::colorspace::ColorSpace;
-use zune_core::log::trace;
+use zune_core::log::{trace, warn};
 use zune_core::options::DecoderOptions;
 
 use zune_isobmff::{BoxHeader, BoxSize};
+use crate::colour::{ColourInfo, Conversion};
 use crate::errors::HeicErrors;
 use crate::header_structs::{
     ColourInformation, FtypHeader, ItemProperty, MDatSection, MetaSection,
@@ -15,50 +16,133 @@ use crate::headers::{decode_ftyp, decode_meta};
 use crate::hevc_decoder::HevcDecoder;
 use crate::hevc_decoder::nal_parser::NalFraming;
 use crate::processor::HevcSample;
+use crate::transform::{self, CleanAperture, Transform};
+use crate::unci::{UnciColour, UnciHeader};
 use crate::utils::Lock;
 
 
-/// A HEIF/Heic Decoder Instance
+/// One coded image (the primary image, or one grid tile) and what zune-heic
+/// decoded from it; see [`HeifDecoder::decode_tiles_yuv`].
+#[cfg(feature = "dump-tiles")]
+pub struct DecodedTile {
+    /// The HEIF item id of the coded image
+    pub item_id: u32,
+    /// Its HEVC bitstream in Annex B form (VPS, SPS, PPS, then the slices),
+    /// ready for a stand-alone HEVC decoder
+    pub hevc:    Vec<u8>,
+    /// The decoded planes, Y then Cb and Cr, each cropped to the conformance
+    /// window: what `dec265 -o` writes for the same bitstream
+    pub yuv:     Vec<u8>
+}
+
+/// A HEIF/HEIC decoder.
+///
+/// Create one with [`new`](Self::new) or [`new_with_options`](Self::new_with_options)
+/// around anything that implements [`ZByteReaderTrait`] (e.g. a
+/// [`ZCursor`](zune_core::bytestream::ZCursor) over the file's bytes), then
+/// call [`decode`](Self::decode) or [`decode_into`](Self::decode_into).
+/// Information about the image (size, colorspace, metadata) is available
+/// after [`decode_headers`](Self::decode_headers), which the decode methods
+/// call themselves.
+///
+/// # Example
+/// ```no_run
+/// use zune_heic::HeifDecoder;
+/// use zune_heic::zune_core::bytestream::ZCursor;
+///
+/// let data = std::fs::read("image.heic").unwrap();
+/// let mut decoder = HeifDecoder::new(ZCursor::new(&data));
+/// let pixels = decoder.decode().unwrap();
+/// ```
 pub struct HeifDecoder<T> {
     pub(crate) stream: ZReader<T>,
     pub(crate) ftyp_section: Option<FtypHeader>,
     pub(crate) meta_section: Option<MetaSection>,
     pub(crate) mdat_section: Option<MDatSection>,
-    pub(crate) width: Option<u32>,
-    pub(crate) height: Option<u32>,
     pub(crate) colorspace: Option<ColorSpace>,
-    // Derived from itemproperty::irot
-    pub(crate) rotation: Option<u16>,
-    // Derived from itemproperty::imir
-    pub(crate) mirror: Option<u8>,
     pub(crate) read_headers: bool,
     pub(crate) exif_data: Option<Vec<u8>>,
     pub(crate) icc_data: Option<Vec<u8>>,
-    pub(crate) ordered_tile_ids: Vec<u32>,
-    pub(crate) rows: u32,
-    pub(crate) cols: u32,
     pub(crate) options: DecoderOptions,
-    // whether image is grid type, if true, we use parallel decoders
-    pub(crate) is_grid: bool,
+    /// The primary image
+    pub(crate) primary: Option<ImageLayout>,
+    /// Its alpha plane (an auxiliary image), if it has one
+    pub(crate) alpha: Option<ImageLayout>,
+    /// The colour samples are premultiplied by alpha (`prem` reference)
+    pub(crate) alpha_premultiplied: bool,
+}
+
+/// How a coded image item is put together: a single HEVC picture, or a grid
+/// of them, plus its size and orientation.
+#[derive(Clone, Debug)]
+pub(crate) struct ImageLayout {
+    /// The image item (`grid` or `hvc1`)
+    pub item_id:  u32,
+    /// The coded pictures (`hvc1` items) in raster order
+    pub tile_ids: Vec<u32>,
+    /// Columns of the grid (1 for a single picture)
+    pub cols:     usize,
+    /// Grid tiles are decoded in parallel (std only)
+    #[cfg_attr(not(feature = "std"), allow(dead_code))]
+    pub is_grid:  bool,
+    /// Size of the decoded picture (`ispe`, else the grid's output size)
+    pub width:      usize,
+    pub height:     usize,
+    /// `clap`, `irot` and `imir`, in the order they are applied
+    pub transforms: Vec<Transform>,
+}
+
+impl ImageLayout {
+    /// Size after the transformations
+    pub fn output_dimensions(&self) -> (usize, usize) {
+        transform::output_size(&self.transforms, (self.width, self.height))
+    }
 }
 impl<T> HeifDecoder<T>
 where
     T: ZByteReaderTrait,
 {
-    /// Create a new Decoder instance
+    /// Create a decoder with the default [`DecoderOptions`].
+    ///
+    /// Nothing is read until [`decode_headers`](Self::decode_headers) or one
+    /// of the decode methods is called.
     ///
     /// # Arguments
-    ///  - `stream`: The raw bytes of a heif/heic file.
+    ///  - `stream`: The HEIF/HEIC file, e.g. a [`ZCursor`](zune_core::bytestream::ZCursor)
+    ///    over its bytes or a buffered file.
     #[must_use]
     #[allow(clippy::new_without_default)]
     pub fn new(stream: T) -> Self {
         Self::new_with_options(stream, DecoderOptions::default())
     }
-    /// Create a new decoder instance with the ability to define decode options
+    /// Create a decoder with the given options.
+    ///
+    /// The options used by this decoder are:
+    ///  - [`max_width`](DecoderOptions::max_width) / [`max_height`](DecoderOptions::max_height):
+    ///    larger images are rejected.
+    ///  - [`hevc_max_mdat_size`](DecoderOptions::hevc_max_mdat_size): the
+    ///    largest image data (`mdat` box) accepted; it is read into memory.
+    ///  - [`num_threads`](DecoderOptions::num_threads): threads used to decode
+    ///    the tiles of grid images.
+    ///  - [`hvec_use_apple_videotoolbox`](DecoderOptions::hvec_use_apple_videotoolbox):
+    ///    decode with Apple's hardware decoder (macOS, `std` feature).
     ///
     /// # Arguments
+    ///  - `stream`: The HEIF/HEIC file
     ///  - `options`: Decoding options
-    ///  - `stream`: The actual data stream with raw heif/heic file
+    ///
+    /// # Example
+    /// ```no_run
+    /// use zune_heic::HeifDecoder;
+    /// use zune_heic::zune_core::bytestream::ZCursor;
+    /// use zune_heic::zune_core::options::DecoderOptions;
+    ///
+    /// let data = std::fs::read("image.heic").unwrap();
+    /// // software decoding everywhere, including macOS
+    /// let options = DecoderOptions::default().hvec_set_use_videotoolbox(false);
+    /// let mut decoder = HeifDecoder::new_with_options(ZCursor::new(&data), options);
+    /// let pixels = decoder.decode().unwrap();
+    /// ```
     #[allow(clippy::redundant_field_names)]
     pub fn new_with_options(stream: T, options: DecoderOptions) -> Self {
         Self {
@@ -67,21 +151,38 @@ where
             ftyp_section: None,
             mdat_section: None,
             meta_section: None,
-            width: None,
-            height: None,
-            rotation: None,
-            mirror: None,
             colorspace: None,
             exif_data: None,
             icc_data: None,
-            ordered_tile_ids: Vec::new(),
             read_headers: false,
-            is_grid: false,
-            rows: 0,
-            cols: 0,
+            primary: None,
+            alpha: None,
+            alpha_premultiplied: false,
         }
     }
 
+    /// Parse the file structure: everything except the image data itself.
+    ///
+    /// Afterwards [`width`](Self::width), [`height`](Self::height),
+    /// [`colorspace`](Self::colorspace), [`output_buffer_size`](Self::output_buffer_size),
+    /// [`exif_data`](Self::exif_data) and [`icc_data`](Self::icc_data) are
+    /// available. Calling it again does nothing; the decode methods call it
+    /// themselves.
+    ///
+    /// # Errors
+    /// The file is not a valid HEIF file, uses features this decoder does not
+    /// support, is larger than the configured limits, or reading failed.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use zune_heic::HeifDecoder;
+    /// use zune_heic::zune_core::bytestream::ZCursor;
+    ///
+    /// let data = std::fs::read("image.heic").unwrap();
+    /// let mut decoder = HeifDecoder::new(ZCursor::new(&data));
+    /// decoder.decode_headers().unwrap();
+    /// println!("{}x{}", decoder.width().unwrap(), decoder.height().unwrap());
+    /// ```
     pub fn decode_headers(&mut self) -> Result<(), HeicErrors> {
         if self.read_headers {
             //warn!("Headers already read");
@@ -96,37 +197,42 @@ where
                     self.ftyp_section = Some(ftype);
                 }
                 b"mdat" => {
-                    // store mdat option
+                    // A file may have several `mdat` boxes; item locations
+                    // (`iloc`) are absolute file offsets, so keep one
+                    // contiguous region from the first payload to the end of
+                    // the last one (the bytes between boxes are zero).
                     trace!("Found MDAT section :{:?}", header.get_total_size());
                     let payload_start_offset = self.stream.position()?;
-                    // skip to the next section
-                    match header.get_total_size() {
+                    let payload = match header.get_total_size() {
                         BoxSize::Absolute(total_size) => {
                             let payload_size = total_size.saturating_sub(header.get_header_size());
-
-                            if payload_size > self.options.hevc_max_mdat_size() as u64 {
-                                return Err(HeicErrors::Generic {
-                                    msg: format!(
-                                        "MDAT {} size exceeds HEIC max configured size {}",
-                                        payload_size,
-                                        self.options.hevc_max_mdat_size()
-                                    ),
-                                });
-                            }
+                            self.check_mdat_size(payload_start_offset, payload_size)?;
                             let mut output = vec![0; payload_size as usize];
-
                             self.stream.read_exact_bytes(&mut output)?;
-                            self.mdat_section = Some(MDatSection {
-                                raw_data: output,
-                                start_offset: payload_start_offset,
-                            });
+                            output
                         }
                         BoxSize::ToEnd => {
                             // read to end of file/stream
                             let mut output = Vec::with_capacity(1024);
                             self.stream.read_all(&mut output)?;
+                            self.check_mdat_size(payload_start_offset, output.len() as u64)?;
+                            output
+                        }
+                    };
+                    match &mut self.mdat_section {
+                        Some(mdat) if payload_start_offset >= mdat.start_offset + mdat.raw_data.len() as u64 => {
+                            let gap = payload_start_offset - mdat.start_offset;
+                            mdat.raw_data.resize(gap as usize, 0);
+                            mdat.raw_data.extend_from_slice(&payload);
+                        }
+                        Some(_) => {
+                            return Err(HeicErrors::Generic {
+                                msg: "Overlapping mdat boxes".to_string(),
+                            });
+                        }
+                        None => {
                             self.mdat_section = Some(MDatSection {
-                                raw_data: output,
+                                raw_data: payload,
                                 start_offset: payload_start_offset,
                             });
                         }
@@ -178,14 +284,30 @@ where
             });
         }
 
-        // load extra items
-        self.handle_grid_items()?;
-        // Calc width and height
-        self.calc_internal_dims_via_ispe()?;
+        // the primary image: its tiles, size and orientation
+        let primary_id = self
+            .meta_section
+            .as_ref()
+            .and_then(|m| m.pitm.as_ref())
+            .ok_or(HeicErrors::Generic {
+                msg: "no pitm section".to_string(),
+            })?
+            .item_id;
+        let primary = self.read_layout(primary_id)?;
+        self.check_dimensions(&primary)?;
+        self.primary = Some(primary);
+        // its alpha plane, if any
+        self.find_alpha(primary_id);
         // Calc colorspace
         self.internal_colorspace()?;
-        // Load exif if present
-        self.load_exif_data()?;
+        // Load exif if present. Metadata that cannot be read does not stop
+        // the image from being decoded (like libheif): warn and go on.
+        let position = self.stream.position()?;
+        if let Err(e) = self.load_exif_data() {
+            warn!("Ignoring unreadable Exif metadata: {e:?}");
+            self.exif_data = None;
+            self.stream.seek(ZSeekFrom::Start(position))?;
+        }
         // ICC too
         let _ = self.extract_icc_profile_inner();
 
@@ -194,7 +316,8 @@ where
         Ok(())
     }
 
-    pub fn get_item_type(&self, item_id: u32) -> [u8; 4] {
+    /// Four-character type of an item (`hvc1`, `grid`, ...), zeroes if unknown
+    pub(crate) fn get_item_type(&self, item_id: u32) -> [u8; 4] {
         self.meta_section
             .as_ref()
             .and_then(|meta| meta.iinf.as_ref())
@@ -206,311 +329,648 @@ where
             })
             .unwrap_or([0, 0, 0, 0]) // Return null if not found
     }
-    fn handle_grid_items(&mut self) -> Result<(), HeicErrors> {
+    /// The layout of image item `item_id`: a `grid` of `hvc1` pictures or a
+    /// single `hvc1` picture, with its size (`ispe`) and its transformations
+    /// (`clap`, `irot`, `imir`, in property order, as libheif applies them).
+    fn read_layout(&mut self, item_id: u32) -> Result<ImageLayout, HeicErrors> {
         let meta = self.meta_section.as_ref().ok_or(HeicErrors::Generic {
             msg: "no meta section".to_string(),
         })?;
 
-        let pitm = meta.pitm.as_ref().ok_or(HeicErrors::Generic {
-            msg: "no pitm section".to_string(),
-        })?;
-
-        if let Some(iref) = &meta.iref {
-            for rel in &iref.references {
-                // 'dimg' links the Grid item to its constituent Tiles
-                if &rel.reference_type.0 == b"dimg" && rel.from_item_id == pitm.item_id {
-                    self.ordered_tile_ids = rel.to_item_ids.clone();
-                }
-            }
-        }
-        // 1. Find the location of the grid data using iloc
-        let grid_item = meta
-            .iloc
-            .as_ref()
-            .ok_or(HeicErrors::Generic {
-                msg: "no iloc section".to_string(),
-            })?
-            .items
-            .iter()
-            .find(|item| item.item_id == pitm.item_id)
-            .ok_or(HeicErrors::Generic {
-                msg: "Grid item location not found".into(),
-            })?;
-
-        let item_type = self.get_item_type(pitm.item_id);
-        if &item_type == b"grid" {
-            self.is_grid = true;
-            let extent = &grid_item.extents[0];
-            let mut final_offset = grid_item.base_offset + extent.offset;
-
-            // Construction Method 1 means the offset is relative to the 'idat' box
-            if grid_item.construction_method == 1 {
-                let idat_offset = meta.idat.as_ref().ok_or(HeicErrors::Generic {
-                    msg: "Item uses idat construction but idat box not found".into(),
-                })?;
-                final_offset += idat_offset.position;
-            }
-
-            self.stream.seek(ZSeekFrom::Start(final_offset))?;
-
-            // 3. Parse the 8-byte Grid Descriptor
-            self.stream.skip(1)?;
-            let flags = self.stream.read_u8_err()?;
-
-            // The next two bytes are rows and columns (stored as N-1)
-            self.rows = u32::from(self.stream.read_u8_err()?) + 1;
-            self.cols = u32::from(self.stream.read_u8_err()?) + 1;
-
-            // 4. Parse output width and height
-            if (flags & 1) == 1 {
-                // 32-bit dimensions
-                self.width = Some(self.stream.get_u32_be_err()?);
-                self.height = Some(self.stream.get_u32_be_err()?);
-            } else {
-                // 16-bit dimensions (most common)
-                self.width = Some(u32::from(self.stream.get_u16_be_err()?));
-                self.height = Some(u32::from(self.stream.get_u16_be_err()?));
-            }
-
-            trace!(
-                "Grid initialized: {}x{} tiles, target resolution: {}x{}",
-                self.cols,
-                self.rows,
-                self.width.unwrap(),
-                self.height.unwrap()
-            );
-        } else {
-            self.rows = 1;
-            self.cols = 1;
-            self.ordered_tile_ids = vec![pitm.item_id];
-        }
-        Ok(())
-    }
-    /// Return the width of the image
-    ///
-    pub fn width(&self) -> Option<usize> {
-        let w = self.width?;
-        let h = self.height?;
-        let rot = self.rotation.unwrap_or(0);
-        if rot == 90 || rot == 270 { Some(h as usize) } else { Some(w as usize) }
-    }
-
-    pub fn height(&self) -> Option<usize> {
-        let w = self.width?;
-        let h = self.height?;
-        let rot = self.rotation.unwrap_or(0);
-        if rot == 90 || rot == 270 { Some(w as usize) } else { Some(h as usize) }
-    }
-
-    pub(crate) fn calc_internal_dims_via_ispe(&mut self) -> Result<(), HeicErrors> {
-        let meta = self.meta_section.as_ref().ok_or(HeicErrors::Generic {
-            msg: "No meta section parsed".to_string(),
-        })?;
-        // now try extracting width and height.
-        // 1. Ensure the properties sections exist
-        let iprp = meta.iprp.as_ref().ok_or(HeicErrors::Generic {
-            msg: "no iprp section found".to_string(),
-        })?;
-        let ipma = iprp.ipma.as_ref().ok_or(HeicErrors::Generic {
-            msg: "no ipma section found".to_string(),
-        })?;
-        let ipco = iprp.ipco.as_ref().ok_or(HeicErrors::Generic {
-            msg: "no ipco section found".to_string(),
-        })?;
-        let pitm = meta.pitm.as_ref().ok_or(HeicErrors::Generic {
-            msg: "no pitm section found".to_string(),
-        })?;
-
-        let mut final_width = 0;
-        let mut final_height = 0;
-
-        // 2. Find the property associations for the primary item
-        let primary_ipma_entry = ipma.entries.iter().find(|e| e.item_id == pitm.item_id);
-
-        if let Some(entry) = primary_ipma_entry {
-            // 3. Loop through the traits assigned to this item
-            for assoc in &entry.associations {
-                // CRITICAL: property_index is 1-based in the ISOBMFF spec!
-                // We must subtract 1 to safely access our 0-based Rust Vec.
-                if assoc.property_index == 0 {
-                    continue; // Invalid index per spec, skip it
-                }
-                let array_index = (assoc.property_index - 1) as usize;
-
-                // 4. Look up the physical property in the ipco container
-                if let Some(property) = ipco.properties.get(array_index) {
-                    // 5. Check if it's the Image Spatial Extents (ispe)
-                    match property {
-                        // 1. Grab the Encoded Dimensions
-                        ItemProperty::Ispe { width, height } => {
-                            final_width = *width;
-                            final_height = *height;
-                        }
-                        // 2. Grab the Rotation (if it exists)
-                        ItemProperty::Irot { angle_degrees } => {
-                            trace!("Image is rotated on {angle_degrees}");
-                            self.rotation = Some(*angle_degrees);
-                        }
-                        // (Optional) Grab Mirroring
-                        ItemProperty::Imir { axis } => {
-                            trace!("Image is mirrored on axis: {axis}");
-                            self.mirror = Some(*axis);
-                        }
-                        _ => {}
+        // properties: size and transformations
+        let (mut width, mut height) = (0, 0);
+        // the crop rectangle depends on the size at that point, which is
+        // only known once the size is
+        let mut steps: Vec<Result<Transform, CleanAperture>> = Vec::new();
+        if let Some(iprp) = &meta.iprp
+            && let (Some(ipma), Some(ipco)) = (&iprp.ipma, &iprp.ipco)
+            && let Some(entry) = ipma.entries.iter().find(|e| e.item_id == item_id)
+        {
+            // property_index is 1-based, 0 means "none"
+            let properties = entry
+                .associations
+                .iter()
+                .filter_map(|a| ipco.properties.get(usize::from(a.property_index).checked_sub(1)?));
+            for property in properties {
+                match property {
+                    ItemProperty::Ispe { width: w, height: h } => {
+                        (width, height) = (*w as usize, *h as usize);
                     }
+                    ItemProperty::Irot { angle_degrees } => {
+                        trace!("Item {item_id} is rotated by {angle_degrees}");
+                        if *angle_degrees != 0 {
+                            steps.push(Ok(Transform::Rotate(*angle_degrees)));
+                        }
+                    }
+                    ItemProperty::Imir { axis } => {
+                        trace!("Item {item_id} is mirrored on axis {axis}");
+                        // libheif: axis 0 flips top/bottom, axis 1 left/right
+                        steps.push(Ok(if *axis == 0 {
+                            Transform::FlipTopBottom
+                        } else {
+                            Transform::FlipLeftRight
+                        }));
+                    }
+                    ItemProperty::Clap { width, height, horizontal_offset, vertical_offset } => {
+                        trace!("Item {item_id} has a clean aperture");
+                        steps.push(Err(CleanAperture {
+                            width:             *width,
+                            height:            *height,
+                            horizontal_offset: *horizontal_offset,
+                            vertical_offset:   *vertical_offset,
+                        }));
+                    }
+                    _ => {}
                 }
             }
         }
 
-        if final_height == 0 || final_width == 0 {
+        let item_type = self.get_item_type(item_id);
+        let layout = match &item_type {
+            b"grid" => {
+                let meta = self.meta_section.as_ref().unwrap();
+                let tile_ids = meta
+                    .iref
+                    .as_ref()
+                    .and_then(|iref| {
+                        // 'dimg' links the grid item to its tiles
+                        iref.references
+                            .iter()
+                            .find(|r| &r.reference_type.0 == b"dimg" && r.from_item_id == item_id)
+                    })
+                    .map(|r| r.to_item_ids.clone())
+                    .ok_or(HeicErrors::Generic {
+                        msg: "Grid missing 'dimg' relationship".to_string(),
+                    })?;
+
+                // the grid descriptor is the item's data
+                let grid_item = meta
+                    .iloc
+                    .as_ref()
+                    .ok_or(HeicErrors::Generic {
+                        msg: "no iloc section".to_string(),
+                    })?
+                    .items
+                    .iter()
+                    .find(|item| item.item_id == item_id)
+                    .ok_or(HeicErrors::Generic {
+                        msg: "Grid item location not found".into(),
+                    })?;
+                let extent = grid_item.extents.first().ok_or(HeicErrors::Generic {
+                    msg: "Grid item has no data".into(),
+                })?;
+                let mut offset = grid_item.base_offset + extent.offset;
+                // construction method 1: relative to the 'idat' box
+                if grid_item.construction_method == 1 {
+                    let idat = meta.idat.as_ref().ok_or(HeicErrors::Generic {
+                        msg: "Item uses idat construction but idat box not found".into(),
+                    })?;
+                    offset += idat.position;
+                }
+                self.stream.seek(ZSeekFrom::Start(offset))?;
+
+                // version, flags, rows - 1, columns - 1, output width and height
+                self.stream.skip(1)?;
+                let flags = self.stream.read_u8_err()?;
+                let rows = usize::from(self.stream.read_u8_err()?) + 1;
+                let cols = usize::from(self.stream.read_u8_err()?) + 1;
+                let (grid_w, grid_h) = if (flags & 1) == 1 {
+                    (
+                        self.stream.get_u32_be_err()? as usize,
+                        self.stream.get_u32_be_err()? as usize,
+                    )
+                } else {
+                    (
+                        usize::from(self.stream.get_u16_be_err()?),
+                        usize::from(self.stream.get_u16_be_err()?),
+                    )
+                };
+                trace!("Grid {item_id}: {cols}x{rows} tiles, output {grid_w}x{grid_h}");
+                if tile_ids.len() != rows * cols {
+                    return Err(HeicErrors::Generic {
+                        msg: format!(
+                            "Grid has {} tiles but {rows}x{cols} positions",
+                            tile_ids.len()
+                        ),
+                    });
+                }
+                // `ispe` is mandatory, but fall back to the grid's own size
+                if width == 0 || height == 0 {
+                    (width, height) = (grid_w, grid_h);
+                }
+                ImageLayout {
+                    item_id,
+                    tile_ids,
+                    cols,
+                    is_grid: true,
+                    width,
+                    height,
+                    transforms: Vec::new(),
+                }
+            }
+            // `hvc1`; other types fail when they are decoded
+            _ => ImageLayout {
+                item_id,
+                tile_ids: vec![item_id],
+                cols: 1,
+                is_grid: false,
+                width,
+                height,
+                transforms: Vec::new(),
+            },
+        };
+        if layout.width == 0 || layout.height == 0 {
             return Err(HeicErrors::Generic {
-                msg: format!("Width or height is zero (w={final_width},h={final_height})"),
+                msg: format!("Width or height is zero (w={},h={})", layout.width, layout.height),
             });
         }
-        if final_width as usize > self.options.max_width() {
+        let mut layout = layout;
+        let mut size = (layout.width, layout.height);
+        for step in steps {
+            let t = match step {
+                Ok(t) => t,
+                Err(clap) => Transform::Crop(clap.crop(size.0, size.1)?),
+            };
+            size = t.output_size(size);
+            layout.transforms.push(t);
+        }
+        Ok(layout)
+    }
+
+    /// Enforce the configured maximum dimensions.
+    fn check_dimensions(&self, layout: &ImageLayout) -> Result<(), HeicErrors> {
+        if layout.width > self.options.max_width() {
             return Err(HeicErrors::Generic {
                 msg: format!(
                     "Width of image {} greater than configured maximum width {}",
-                    final_width,
+                    layout.width,
                     self.options.max_width()
                 ),
             });
         }
-        if final_height as usize > self.options.max_height() {
+        if layout.height > self.options.max_height() {
             return Err(HeicErrors::Generic {
                 msg: format!(
                     "Height of image {} greater than configured maximum height {}",
-                    final_height,
+                    layout.height,
                     self.options.max_height()
                 ),
             });
         }
-        self.width = Some(final_width);
-        self.height = Some(final_height);
-
-        trace!("Width and height from ispe {final_width}x{final_height}");
+        trace!("Image size {}x{}", layout.width, layout.height);
         Ok(())
     }
 
+    /// Find the alpha plane of `primary_id`: an auxiliary image (`auxl`
+    /// reference) whose `auxC` type is one of the alpha URNs libheif accepts.
+    /// An alpha image that cannot be decoded is ignored (with a warning), so
+    /// the colour image still decodes.
+    fn find_alpha(&mut self, primary_id: u32) {
+        const ALPHA_URNS: [&str; 3] = [
+            "urn:mpeg:avc:2015:auxid:1",
+            "urn:mpeg:hevc:2015:auxid:1",
+            "urn:mpeg:mpegB:cicp:systems:auxiliary:alpha",
+        ];
+        let Some(meta) = self.meta_section.as_ref() else {
+            return;
+        };
+        let (Some(iref), Some(iprp)) = (&meta.iref, &meta.iprp) else {
+            return;
+        };
+        let (Some(ipma), Some(ipco)) = (&iprp.ipma, &iprp.ipco) else {
+            return;
+        };
+        let is_alpha = |item_id: u32| {
+            ipma.entries.iter().filter(|e| e.item_id == item_id).any(|entry| {
+                entry.associations.iter().any(|a| {
+                    let index = usize::from(a.property_index).checked_sub(1);
+                    matches!(
+                        index.and_then(|i| ipco.properties.get(i)),
+                        Some(ItemProperty::AuxC { aux_type, .. })
+                            if ALPHA_URNS.contains(&aux_type.trim_end_matches('\0'))
+                    )
+                })
+            })
+        };
+        let alpha_id = iref
+            .references
+            .iter()
+            .filter(|r| &r.reference_type.0 == b"auxl" && r.to_item_ids.contains(&primary_id))
+            .map(|r| r.from_item_id)
+            .find(|&id| is_alpha(id));
+        // `prem`: the colour image's samples are premultiplied by alpha
+        let premultiplied = iref
+            .references
+            .iter()
+            .any(|r| &r.reference_type.0 == b"prem" && r.from_item_id == primary_id);
+
+        let Some(alpha_id) = alpha_id else {
+            return;
+        };
+        let alpha_type = self.get_item_type(alpha_id);
+        if &alpha_type != b"hvc1" && &alpha_type != b"grid" && &alpha_type != b"unci" {
+            warn!("Ignoring alpha image {alpha_id} of unsupported type {alpha_type:?}");
+            return;
+        }
+        match self.read_layout(alpha_id) {
+            Ok(layout) => {
+                trace!("Alpha plane in item {alpha_id}");
+                self.alpha = Some(layout);
+                self.alpha_premultiplied = premultiplied;
+            }
+            Err(e) => warn!("Ignoring alpha image {alpha_id}: {e}"),
+        }
+    }
+
+    /// Width of the decoded image in pixels, or `None` before
+    /// [`decode_headers`](Self::decode_headers).
+    ///
+    /// This is the width after cropping and rotation, i.e. the width of the pixels
+    /// returned by [`decode`](Self::decode).
+    pub fn width(&self) -> Option<usize> {
+        Some(self.primary.as_ref()?.output_dimensions().0)
+    }
+
+    /// Height of the decoded image in pixels, or `None` before
+    /// [`decode_headers`](Self::decode_headers).
+    ///
+    /// This is the height after cropping and rotation, i.e. the height of the pixels
+    /// returned by [`decode`](Self::decode).
+    pub fn height(&self) -> Option<usize> {
+        Some(self.primary.as_ref()?.output_dimensions().1)
+    }
+
+    /// Whether the colour samples are premultiplied by alpha (the file has a
+    /// `prem` reference), available after [`decode_headers`](Self::decode_headers).
+    ///
+    /// The decoder returns the samples as stored; divide by alpha to get
+    /// straight (unassociated) colour. Always `false` for images without
+    /// alpha.
+    pub fn is_alpha_premultiplied(&self) -> bool {
+        self.alpha.is_some() && self.alpha_premultiplied
+    }
+
+    /// Return the number of bytes needed to hold the decoded image,
+    /// `width * height * components` of [`colorspace`](Self::colorspace).
+    ///
+    /// # Returns
+    ///  - `Some(usize)`: Minimum size of a buffer for [`decode_into`](Self::decode_into)
+    ///  - `None`: Headers were not decoded yet, or the size overflows `usize`
+    #[must_use]
+    pub fn output_buffer_size(&self) -> Option<usize> {
+        let (w, h) = self.primary.as_ref()?.output_dimensions();
+        let components = self.colorspace?.num_components();
+        w.checked_mul(h)?.checked_mul(components)
+    }
+
+    /// Decode the primary image, returning its pixels.
+    ///
+    /// The pixels are 8-bit and interleaved in the order of
+    /// [`colorspace`](Self::colorspace) (usually RGB), row by row,
+    /// [`width`](Self::width) × [`height`](Self::height), with any cropping
+    /// (`clap`), rotation and mirroring stored in the file already applied. Its size is
+    /// [`output_buffer_size`](Self::output_buffer_size).
+    ///
+    /// To decode into a buffer you already have, use [`decode_into`](Self::decode_into).
+    ///
+    /// # Errors
+    /// Any error of [`decode_headers`](Self::decode_headers), or invalid or
+    /// unsupported image data.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use zune_heic::HeifDecoder;
+    /// use zune_heic::zune_core::bytestream::ZCursor;
+    ///
+    /// let data = std::fs::read("image.heic").unwrap();
+    /// let mut decoder = HeifDecoder::new(ZCursor::new(&data));
+    /// let pixels = decoder.decode().unwrap();
+    /// let (w, h) = (decoder.width().unwrap(), decoder.height().unwrap());
+    /// ```
     pub fn decode(&mut self) -> Result<Vec<u8>, HeicErrors> {
         self.decode_headers()?;
+        let size = self.output_buffer_size().ok_or(HeicErrors::Generic {
+            msg: "image dimensions overflow usize".to_string(),
+        })?;
+        let mut output = vec![0; size];
+        self.decode_into(&mut output)?;
+        Ok(output)
+    }
 
-        let w = self.width.unwrap() as usize;
-        let h = self.height.unwrap() as usize;
-        let colors = self.colorspace().unwrap().num_components();
+    /// Decode the primary image into `out`.
+    ///
+    /// `out` must hold at least [`output_buffer_size`](Self::output_buffer_size)
+    /// bytes; only that many bytes are written. The pixel layout is the one of
+    /// [`decode`](Self::decode).
+    ///
+    /// # Errors
+    /// [`HeicErrors::TooSmallOutput`] if `out` is too small, otherwise as
+    /// [`decode`](Self::decode).
+    ///
+    /// # Example
+    /// ```no_run
+    /// use zune_heic::HeifDecoder;
+    /// use zune_heic::zune_core::bytestream::ZCursor;
+    ///
+    /// let data = std::fs::read("image.heic").unwrap();
+    /// let mut decoder = HeifDecoder::new(ZCursor::new(&data));
+    /// decoder.decode_headers().unwrap();
+    ///
+    /// let mut pixels = vec![0; decoder.output_buffer_size().unwrap()];
+    /// decoder.decode_into(&mut pixels).unwrap();
+    /// ```
+    pub fn decode_into(&mut self, out: &mut [u8]) -> Result<(), HeicErrors> {
+        self.decode_headers()?;
 
-        let mut output = vec![0; w * h * colors];
+        let expected = self.output_buffer_size().ok_or(HeicErrors::Generic {
+            msg: "image dimensions overflow usize".to_string(),
+        })?;
+        if out.len() < expected {
+            return Err(HeicErrors::TooSmallOutput(expected, out.len()));
+        }
+        let output = &mut out[..expected];
+
+        let primary = self.primary.clone().unwrap();
+        let colorspace = self.colorspace.unwrap();
+        let channels = colorspace.num_components();
+
+        match (&self.alpha, colorspace) {
+            (Some(alpha), ColorSpace::RGBA) => {
+                // colour into RGBA (alpha 255), then the alpha plane into every
+                // fourth byte
+                self.decode_layout(&primary, 4, output, true)?;
+                if let Some(plane) = self.decode_alpha(alpha, &primary)? {
+                    for (px, a) in output.chunks_exact_mut(4).zip(plane) {
+                        px[3] = a;
+                    }
+                }
+            }
+            (Some(alpha), ColorSpace::LumaA) => {
+                let mut luma = vec![0; expected / 2];
+                self.decode_layout(&primary, 1, &mut luma, true)?;
+                let plane = self.decode_alpha(alpha, &primary)?;
+                let alpha = plane.as_deref().unwrap_or(&[]);
+                for (i, (px, y)) in output.chunks_exact_mut(2).zip(luma).enumerate() {
+                    px[0] = y;
+                    px[1] = alpha.get(i).copied().unwrap_or(255);
+                }
+            }
+            _ => self.decode_layout(&primary, channels, output, true)?,
+        }
+        Ok(())
+    }
+
+    /// Decode the alpha image as a plane (its luma samples, unconverted, as
+    /// libheif does) with its own orientation applied. `None` if its size
+    /// does not match the colour image's; the alpha is then left opaque.
+    fn decode_alpha(
+        &self, alpha: &ImageLayout, primary: &ImageLayout,
+    ) -> Result<Option<Vec<u8>>, HeicErrors> {
+        if alpha.output_dimensions() != primary.output_dimensions() {
+            warn!(
+                "Alpha image is {:?}, colour image {:?}; ignoring alpha",
+                alpha.output_dimensions(),
+                primary.output_dimensions()
+            );
+            return Ok(None);
+        }
+        let mut plane = vec![0; alpha.width * alpha.height];
+        // always in software: hardware decoders return colour, not raw luma
+        self.decode_layout(alpha, 1, &mut plane, false)?;
+        Ok(Some(plane))
+    }
+
+    /// Decode the image described by `layout` into `output`
+    /// (`channels` = 1: raw luma samples, 3/4: RGB/RGBA with opaque alpha),
+    /// stitching tiles and applying its transformations (`clap`, `irot`,
+    /// `imir`).
+    fn decode_layout(
+        &self, layout: &ImageLayout, channels: usize, output: &mut [u8], allow_hardware: bool,
+    ) -> Result<(), HeicErrors> {
+        let (w, h) = (layout.width, layout.height);
+
+        #[cfg(all(target_os = "macos", feature = "std"))]
+        let use_hardware = allow_hardware && self.options.hvec_use_apple_videotoolbox();
+        #[cfg(not(all(target_os = "macos", feature = "std")))]
+        let use_hardware = {
+            let _ = allow_hardware;
+            false
+        };
 
         // Tiles are converted straight into their place on the canvas as soon as
-        // they are decoded, so no per-tile RGB copies are kept around. When the
-        // image is rotated we need an intermediate (unrotated) canvas; otherwise
-        // the output buffer itself is the canvas.
-        let rotation = self.rotation.unwrap_or(0);
-        let mut unrotated_canvas = if rotation != 0 { vec![0u8; w * h * colors] } else { Vec::new() };
+        // they are decoded, so no per-tile RGB copies are kept around. Rotating
+        // and cropping need an intermediate canvas; otherwise (no transforms,
+        // or only flips, which work in place) the output buffer is the canvas.
+        let needs_canvas = layout
+            .transforms
+            .iter()
+            .any(|t| matches!(t, Transform::Rotate(_) | Transform::Crop(_)));
+        let mut canvas = if needs_canvas { vec![0u8; w * h * channels] } else { Vec::new() };
+
+        if &self.get_item_type(layout.item_id) == b"unci" {
+            {
+                let target: &mut [u8] = if needs_canvas { &mut canvas } else { &mut *output };
+                self.decode_unci(layout, channels, target)?;
+            }
+            return transform::apply_interleaved(&layout.transforms, channels, canvas, (w, h), output);
+        }
 
         {
-            let canvas: &mut [u8] =
-                if rotation != 0 { &mut unrotated_canvas } else { &mut output };
+            let canvas: &mut [u8] = if needs_canvas { &mut canvas } else { &mut *output };
 
             // One lock per canvas row: tiles in the same grid row share canvas
             // rows, so they may be written concurrently from different threads.
             let canvas_rows: Vec<Lock<&mut [u8]>> =
-                canvas.chunks_mut(w * colors).map(Lock::new).collect();
+                canvas.chunks_mut(w * channels).map(Lock::new).collect();
 
-            // item_id -> grid positions (an item may in theory be referenced more than once)
-            let mut placements: BTreeMap<u32, Vec<usize>> = BTreeMap::new();
-            for (index, &item_id) in self.ordered_tile_ids.iter().enumerate() {
-                placements.entry(item_id).or_default().push(index);
-            }
-            let cols = (self.cols as usize).max(1);
+            let placements = Self::placements(layout);
+            let cols = layout.cols.max(1);
 
             // Apple VideoToolbox: hardware decode, tiles written straight into
             // the same canvas from the decode callback.
             #[cfg(all(target_os = "macos", feature = "std"))]
-            let decoded_in_hardware = if self.options.hvec_use_apple_videotoolbox() {
+            if use_hardware {
                 trace!("HEVC using apple video toolbox");
-                self.decode_hardware_videotoolbox(&canvas_rows, &placements, cols, w, h, colors)?;
-                true
-            } else {
-                false
-            };
-            #[cfg(not(all(target_os = "macos", feature = "std")))]
-            let decoded_in_hardware = false;
+                self.decode_hardware_videotoolbox(
+                    layout,
+                    &canvas_rows,
+                    &placements,
+                    cols,
+                    w,
+                    h,
+                    channels,
+                )?;
+            }
 
-            if !decoded_in_hardware {
-                // Grid tiles are already decoded in parallel (one tile per thread),
-                // so only a single picture spreads its CTU rows over the CPUs.
-                #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
-                let row_threads = if self.is_grid {
-                    1
-                } else {
-                    std::thread::available_parallelism().map_or(1, core::num::NonZero::get)
-                };
-                #[cfg(any(not(feature = "std"), target_arch = "wasm32"))]
-                let row_threads = 1;
+            if !use_hardware {
+                // colour description from each item's own `colr` (nclx) box
+                let item_nclx = self.item_nclx_profiles();
+                // conversions built so far, shared by all tiles (usually just one)
+                let conversions: Lock<Vec<(ColourInfo, Conversion)>> = Lock::new(Vec::new());
+                let row_threads = Self::row_threads(layout);
 
-                let processor = |sample: HevcSample| -> Result<(), HeicErrors> {
-                    let mut software_decoder: HevcDecoder = HevcDecoder::new();
-                    software_decoder.set_max_threads(row_threads);
+                self.for_each_picture(layout, |sample: HevcSample| -> Result<(), HeicErrors> {
+                    let (frame, tile_w, tile_h, colour) =
+                        Self::decode_picture(&sample, row_threads, &item_nclx)?;
+                    let conv = conversions.with(|built| {
+                        if let Some((_, conv)) = built.iter().find(|(info, _)| *info == colour) {
+                            return conv.clone();
+                        }
+                        let conv = Conversion::new(colour);
+                        built.push((colour, conv.clone()));
+                        conv
+                    });
 
-                    let vps = sample.vps.as_deref().ok_or(HeicErrors::Generic {
-                        msg: "vps not found".to_owned(),
-                    })?;
-                    let sps = sample.sps.as_deref().ok_or(HeicErrors::Generic {
-                        msg: "sps not found".to_owned(),
-                    })?;
-                    let pps = sample.pps.as_deref().ok_or(HeicErrors::Generic {
-                        msg: "pps not found".to_owned(),
-                    })?;
-
-                    software_decoder.parse_extradata(vps, NalFraming::RawBytes)?;
-                    software_decoder.parse_extradata(sps, NalFraming::RawBytes)?;
-                    software_decoder.parse_extradata(pps, NalFraming::RawBytes)?;
-
-                    // then decode
-                    let frame = software_decoder.decode(&sample)?.ok_or(HeicErrors::Generic {
-                        msg: "decode failure, no frame found".to_string(),
-                    })?;
-
-                    // Dynamically grab the REAL tile dimensions
-                    let tile_w = software_decoder.width();
-                    let tile_h = software_decoder.height();
-
-                    let positions = placements.get(&sample.item_id).ok_or(HeicErrors::Generic {
-                        msg: format!("Decoded tile {} has no grid position", sample.item_id),
-                    })?;
-
-                    for &index in positions {
+                    for &index in Self::positions(&placements, sample.item_id)? {
                         let base_x = (index % cols) * tile_w;
                         let base_y = (index / cols) * tile_h;
-                        frame.write_into_canvas(&canvas_rows, base_x, base_y, w, h, colors)?;
+                        frame.write_into_canvas(&canvas_rows, base_x, base_y, w, h, channels, &conv)?;
                     }
                     Ok(())
-                };
-                // no threads without std (or on wasm)
-                #[cfg(any(not(feature = "std"), target_arch = "wasm32"))]
-                {
-                    trace!("Using single threaded sample processor");
-
-                    self.process_hevc_samples(processor)?;
-                }
-
-                #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
-                {
-                    if self.is_grid {
-                        trace!("Using parallel sample decoder");
-                        self.process_hevc_samples_parallel(processor)?;
-                    } else {
-                        trace!("Using standard sample decoder, image is not grid so no need for parallel");
-                        self.process_hevc_samples(processor)?;
-                    }
-                }
+                })?;
             }
         }
 
-        // Mirroring then rotation (HEIF order), in place / into `output`.
-        self.apply_orientation(&mut unrotated_canvas, &mut output)?;
-        return Ok(output);
+        transform::apply_interleaved(&layout.transforms, channels, canvas, (w, h), output)
+    }
+
+    /// The properties associated with item `item_id`, in `ipma` order.
+    fn item_properties(&self, item_id: u32) -> Vec<&ItemProperty> {
+        let Some(iprp) = self.meta_section.as_ref().and_then(|m| m.iprp.as_ref()) else {
+            return Vec::new();
+        };
+        let (Some(ipma), Some(ipco)) = (&iprp.ipma, &iprp.ipco) else {
+            return Vec::new();
+        };
+        ipma.entries
+            .iter()
+            .filter(|e| e.item_id == item_id)
+            .flat_map(|e| &e.associations)
+            // property_index is 1-based, 0 means "none"
+            .filter_map(|a| ipco.properties.get(usize::from(a.property_index).checked_sub(1)?))
+            .collect()
+    }
+
+    /// The description of `unci` item `item_id`.
+    fn unci_header(&self, item_id: u32) -> Result<UnciHeader, HeicErrors> {
+        UnciHeader::parse(self.item_properties(item_id).into_iter())
+    }
+
+    /// Decode `unci` (uncompressed) item `layout` into `output`, `channels`
+    /// samples per pixel, before its transformations.
+    fn decode_unci(
+        &self, layout: &ImageLayout, channels: usize, output: &mut [u8]
+    ) -> Result<(), HeicErrors> {
+        let header = self.unci_header(layout.item_id)?;
+        let extents = self.item_extents(layout.item_id)?;
+        let data: alloc::borrow::Cow<[u8]> = match extents.as_slice() {
+            [one] => alloc::borrow::Cow::Borrowed(one),
+            more => alloc::borrow::Cow::Owned(more.concat())
+        };
+        // the item's nclx colour description, else libheif's default
+        // (full-range Rec. 601)
+        let conversion = (header.colour()?.0 == UnciColour::YCbCr).then(|| {
+            Conversion::new(self.item_nclx_profiles().get(&layout.item_id).copied().unwrap_or(
+                ColourInfo {
+                    matrix_coefficients: 6,
+                    colour_primaries:    1,
+                    full_range:          true
+                }
+            ))
+        });
+        // decompressed data: the image (up to 4 16-bit components per
+        // pixel) with room for padding, or the configured data size
+        let max_bytes = (layout.width.saturating_mul(layout.height))
+            .saturating_mul(8)
+            .saturating_add(1 << 20)
+            .max(self.options.hevc_max_mdat_size());
+        header.decode(
+            &data,
+            layout.width,
+            layout.height,
+            channels,
+            conversion.as_ref(),
+            max_bytes,
+            output
+        )
+    }
+
+    /// item_id -> grid positions (an item may in theory be referenced more than once)
+    fn placements(layout: &ImageLayout) -> BTreeMap<u32, Vec<usize>> {
+        let mut placements: BTreeMap<u32, Vec<usize>> = BTreeMap::new();
+        for (index, &item_id) in layout.tile_ids.iter().enumerate() {
+            placements.entry(item_id).or_default().push(index);
+        }
+        placements
+    }
+
+    fn positions(placements: &BTreeMap<u32, Vec<usize>>, item_id: u32) -> Result<&[usize], HeicErrors> {
+        placements.get(&item_id).map(Vec::as_slice).ok_or(HeicErrors::Generic {
+            msg: format!("Decoded tile {item_id} has no grid position"),
+        })
+    }
+
+    /// Threads for the CTU rows of one picture: grid tiles are already
+    /// decoded in parallel (one tile per thread), so only a single picture
+    /// spreads its rows over the CPUs.
+    fn row_threads(layout: &ImageLayout) -> usize {
+        #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+        if !layout.is_grid {
+            return std::thread::available_parallelism().map_or(1, core::num::NonZero::get);
+        }
+        let _ = layout;
+        1
+    }
+
+    /// Run `processor` on every coded picture of `layout`, grid tiles in
+    /// parallel when threads are available.
+    #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+    fn for_each_picture<F>(&self, layout: &ImageLayout, processor: F) -> Result<(), HeicErrors>
+    where
+        F: Fn(HevcSample) -> Result<(), HeicErrors> + Sync,
+    {
+        if layout.is_grid {
+            trace!("Using parallel sample decoder");
+            return self.process_hevc_samples_parallel(layout, processor);
+        }
+        trace!("Using single threaded sample decoder");
+        self.process_hevc_samples(layout, processor)
+    }
+
+    /// Run `processor` on every coded picture of `layout` (no threads
+    /// without std, or on wasm).
+    #[cfg(any(not(feature = "std"), target_arch = "wasm32"))]
+    fn for_each_picture<F>(&self, layout: &ImageLayout, processor: F) -> Result<(), HeicErrors>
+    where
+        F: Fn(HevcSample) -> Result<(), HeicErrors>,
+    {
+        self.process_hevc_samples(layout, processor)
+    }
+
+    /// Decode one coded picture in software. Returns it with its size and
+    /// its colour description (like libheif: the item's nclx box, else the
+    /// HEVC VUI).
+    fn decode_picture(
+        sample: &HevcSample, row_threads: usize, item_nclx: &BTreeMap<u32, ColourInfo>,
+    ) -> Result<(crate::hevc_decoder::RawFrame, usize, usize, ColourInfo), HeicErrors> {
+        fn parameter_set<'a>(set: Option<&'a [u8]>, name: &str) -> Result<&'a [u8], HeicErrors> {
+            set.ok_or(HeicErrors::Generic { msg: format!("{name} not found") })
+        }
+
+        let mut decoder: HevcDecoder = HevcDecoder::new();
+        decoder.set_max_threads(row_threads);
+        decoder.parse_extradata(parameter_set(sample.vps.as_deref(), "vps")?, NalFraming::RawBytes)?;
+        decoder.parse_extradata(parameter_set(sample.sps.as_deref(), "sps")?, NalFraming::RawBytes)?;
+        decoder.parse_extradata(parameter_set(sample.pps.as_deref(), "pps")?, NalFraming::RawBytes)?;
+
+        let frame = decoder.decode(sample)?.ok_or(HeicErrors::Generic {
+            msg: "decode failure, no frame found".to_string(),
+        })?;
+        let colour = item_nclx
+            .get(&sample.item_id)
+            .copied()
+            .unwrap_or_else(|| ColourInfo::from_vui(decoder.vui()));
+        Ok((frame, decoder.width(), decoder.height(), colour))
     }
 
     /// Determines the final output color space of the primary image,
@@ -528,7 +988,6 @@ where
 
         // Default assumptions
         let mut base_channels = 3; // Assume RGB if no pixi box is present
-        let mut has_alpha_mask = false;
 
         // --- STEP 1: Find base channels via `pixi` on the primary item ---
         if let Some(iprp) = &meta.iprp
@@ -551,40 +1010,21 @@ where
             }
         }
 
-        // --- STEP 2: Find Alpha channel via `iref` and `auxC` ---
-        if let Some(iref) = &meta.iref {
-            for ref_entry in &iref.references {
-                // Look for an Auxiliary Link pointing TO our primary image
-                if &ref_entry.reference_type.0 == b"auxl"
-                    && ref_entry.to_item_ids.contains(&primary_id)
-                {
-                    let auxiliary_item_id = ref_entry.from_item_id;
+        // The HEVC bitstream decides, like libheif 1.17, which decodes and
+        // converts whatever the bitstream holds: some files say one channel
+        // in `pixi` (and in `hvcC`) but carry a 4:2:0 picture.
+        if let Some(chroma_format_idc) = self.primary_chroma_format_idc() {
+            base_channels = if chroma_format_idc == 0 { 1 } else { 3 };
+        }
 
-                    // We found an auxiliary item. Now check if it's an Alpha Mask (auxid:1)
-                    if let Some(iprp) = &meta.iprp
-                        && let (Some(ipma), Some(ipco)) = (&iprp.ipma, &iprp.ipco)
-                        && let Some(entry) =
-                            ipma.entries.iter().find(|e| e.item_id == auxiliary_item_id)
-                    {
-                        for assoc in &entry.associations {
-                            if assoc.property_index == 0 {
-                                continue;
-                            }
-                            let array_index = (assoc.property_index - 1) as usize;
+        // --- STEP 2: an alpha plane, found by `find_alpha` ---
+        let mut has_alpha_mask = self.alpha.is_some();
 
-                            if let Some(ItemProperty::AuxC { aux_type, .. }) =
-                                ipco.properties.get(array_index)
-                            {
-                                // Trim null terminators just in case they were captured in the string
-                                let clean_type = aux_type.trim_end_matches('\0');
-                                if clean_type == "urn:mpeg:hevc:2015:auxid:1" {
-                                    has_alpha_mask = true;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        // An uncompressed image says what its components are, alpha included
+        if &self.get_item_type(primary_id) == b"unci" {
+            let (colour, has_alpha) = self.unci_header(primary_id)?.colour()?;
+            base_channels = if colour == UnciColour::Mono { 1 } else { 3 };
+            has_alpha_mask |= has_alpha;
         }
 
         // --- STEP 3: Resolve the final ColorSpace enum ---
@@ -603,6 +1043,47 @@ where
         };
         self.colorspace = Some(result);
         Ok(())
+    }
+
+    /// Check that the image data, with an `mdat` payload of `payload_size`
+    /// bytes at `payload_start` added, stays within
+    /// [`hevc_max_mdat_size`](DecoderOptions::hevc_max_mdat_size).
+    fn check_mdat_size(&self, payload_start: u64, payload_size: u64) -> Result<(), HeicErrors> {
+        let start = self.mdat_section.as_ref().map_or(payload_start, |m| m.start_offset);
+        let total = (payload_start + payload_size).saturating_sub(start);
+        if total > self.options.hevc_max_mdat_size() as u64 {
+            return Err(HeicErrors::Generic {
+                msg: format!(
+                    "MDAT {} size exceeds HEIC max configured size {}",
+                    total,
+                    self.options.hevc_max_mdat_size()
+                ),
+            });
+        }
+        Ok(())
+    }
+
+    /// `chroma_format_idc` of the SPS of the primary image's first coded
+    /// picture (its `hvcC`, else the grid item's), if there is one.
+    fn primary_chroma_format_idc(&self) -> Option<u32> {
+        let layout = self.primary.as_ref()?;
+        let iprp = self.meta_section.as_ref()?.iprp.as_ref()?;
+        let (ipma, ipco) = (iprp.ipma.as_ref()?, iprp.ipco.as_ref()?);
+        let sps_of = |item_id: u32| -> Option<Vec<u8>> {
+            let entry = ipma.entries.iter().find(|e| e.item_id == item_id)?;
+            entry.associations.iter().find_map(|assoc| {
+                let index = usize::from(assoc.property_index).checked_sub(1)?;
+                match ipco.properties.get(index) {
+                    Some(ItemProperty::HvcC { payload }) => {
+                        crate::processor::extract_hevc_parameter_sets(payload).sps
+                    }
+                    _ => None,
+                }
+            })
+        };
+        let first = *layout.tile_ids.first()?;
+        let sps = sps_of(first).or_else(|| sps_of(layout.item_id))?;
+        sps_chroma_format_idc(&sps)
     }
 
     /// Internal method to find and load EXIF data into the struct.
@@ -635,6 +1116,11 @@ where
             return Ok(());
         }
         let position = &exif_iloc.extents[0];
+        // an Exif item starts with a 4-byte offset to the TIFF header; some
+        // files have an empty Exif item
+        if position.length < 4 {
+            return Ok(());
+        }
 
         // 3. Calculate absolute file offset
         let absolute_offset = match exif_iloc.construction_method {
@@ -677,20 +1163,178 @@ where
             self.exif_data = Some(exif_bytes);
         }
 
-        // 5. Restore the reader cursor so the rest of your parsing isn't messed up
+        // 5. Restore the reader cursor so the rest of the parsing isn't messed up
         self.stream.seek(ZSeekFrom::Start(original_position))?;
 
         Ok(())
     }
 
-    /// Get the image colorspace
+    /// Colorspace of the decoded pixels, or `None` before
+    /// [`decode_headers`](Self::decode_headers).
+    ///
+    /// - [`ColorSpace::RGB`] for colour images,
+    /// - [`ColorSpace::Luma`] for greyscale (monochrome) images,
+    /// - [`ColorSpace::RGBA`] / [`ColorSpace::LumaA`] when the image has an
+    ///   alpha plane. The alpha plane is decoded into the last channel; if
+    ///   its size does not match the colour image it is ignored (alpha 255).
     pub fn colorspace(&self) -> Option<ColorSpace> {
         self.colorspace
     }
-    /// Return the image exif data if present
+    /// Decode every coded image of the primary item, and of its alpha image if
+    /// it has one, on its own and return its HEVC bitstream together with the
+    /// decoded (pre colour conversion) planes, for checking the HEVC decoder
+    /// against a reference decoder.
+    /// Each image is decoded with as many threads as there are CPUs.
+    ///
+    /// Only available with the `dump-tiles` feature.
+    ///
+    /// # Errors
+    /// As [`decode`](Self::decode).
+    ///
+    /// # Example
+    /// ```no_run
+    /// use zune_heic::HeifDecoder;
+    /// use zune_heic::zune_core::bytestream::ZCursor;
+    ///
+    /// let data = std::fs::read("image.heic").unwrap();
+    /// let mut decoder = HeifDecoder::new(ZCursor::new(&data));
+    /// for tile in decoder.decode_tiles_yuv().unwrap() {
+    ///     // decode `tile.hevc` with e.g. `dec265 -o ref.yuv` and compare with `tile.yuv`
+    ///     std::fs::write(format!("{}.hevc", tile.item_id), &tile.hevc).unwrap();
+    ///     std::fs::write(format!("{}.yuv", tile.item_id), &tile.yuv).unwrap();
+    /// }
+    /// ```
+    #[cfg(feature = "dump-tiles")]
+    pub fn decode_tiles_yuv(&mut self) -> Result<Vec<DecodedTile>, HeicErrors> {
+        use crate::hevc_decoder::nal_parser::NalParser;
+
+        self.decode_headers()?;
+        // the colour image, then the alpha image (if any)
+        let layouts: Vec<ImageLayout> =
+            self.primary.iter().chain(self.alpha.iter()).cloned().collect();
+        let mut tiles = Vec::new();
+        for layout in &layouts {
+            self.process_hevc_samples(layout, |sample| {
+                let missing = |what: &str| HeicErrors::Generic {
+                    msg: format!("{what} not found")
+                };
+                let parameter_sets = [
+                    sample.vps.as_deref().ok_or_else(|| missing("vps"))?,
+                    sample.sps.as_deref().ok_or_else(|| missing("sps"))?,
+                    sample.pps.as_deref().ok_or_else(|| missing("pps"))?
+                ];
+
+                let mut decoder = HevcDecoder::new();
+                // all CPUs, so the multi-threaded paths are covered as well
+                #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+                decoder.set_max_threads(
+                    std::thread::available_parallelism().map_or(1, core::num::NonZero::get)
+                );
+                let mut hevc = Vec::new();
+                for ps in parameter_sets {
+                    decoder.parse_extradata(ps, NalFraming::RawBytes)?;
+                    hevc.extend_from_slice(&[0, 0, 0, 1]);
+                    hevc.extend_from_slice(ps);
+                }
+                NalParser::new_detect(&sample.extents).for_each_nal(|nal| {
+                    // rebuild the 2-byte NAL header in front of the payload
+                    hevc.extend_from_slice(&[
+                        0,
+                        0,
+                        0,
+                        1,
+                        ((nal.nal_type as u8) << 1) | (nal.layer_id >> 5),
+                        ((nal.layer_id & 0x1f) << 3) | (nal.temporal_id + 1)
+                    ]);
+                    hevc.extend_from_slice(nal.payload);
+                    Ok(true)
+                })?;
+
+                let frame = decoder.decode(&sample)?.ok_or(HeicErrors::Generic {
+                    msg: "decode failure, no frame found".to_string()
+                })?;
+                tiles.push(DecodedTile {
+                    item_id: sample.item_id,
+                    hevc,
+                    yuv: frame.planar_yuv(decoder.conformance_window())
+                });
+                Ok(())
+            })?;
+        }
+        Ok(tiles)
+    }
+
+    /// The `colr` box of type `nclx` of every item that has one.
+    fn item_nclx_profiles(&self) -> BTreeMap<u32, ColourInfo> {
+        let mut profiles = BTreeMap::new();
+        let Some(iprp) = self.meta_section.as_ref().and_then(|m| m.iprp.as_ref()) else {
+            return profiles;
+        };
+        let (Some(ipma), Some(ipco)) = (&iprp.ipma, &iprp.ipco) else {
+            return profiles;
+        };
+        for entry in &ipma.entries {
+            // property_index is 1-based, 0 means "none"
+            let nclx = entry
+                .associations
+                .iter()
+                .filter_map(|a| ipco.properties.get(usize::from(a.property_index).checked_sub(1)?))
+                .find_map(|p| match p {
+                    ItemProperty::Colr(c) => ColourInfo::from_colr(c),
+                    _ => None,
+                });
+            if let Some(nclx) = nclx {
+                profiles.insert(entry.item_id, nclx);
+            }
+        }
+        profiles
+    }
+
+    /// The Exif metadata of the image, if it has any, available after
+    /// [`decode_headers`](Self::decode_headers).
+    ///
+    /// These are the raw TIFF-structured Exif bytes, starting with the byte
+    /// order mark (`II` or `MM`), ready for an Exif parser. The HEIF header
+    /// in front of them is removed.
+    ///
+    /// Note that the Exif orientation tag describes the stored image; the
+    /// pixels returned by [`decode`](Self::decode) already have the HEIF
+    /// cropping, rotation and mirroring applied.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use zune_heic::HeifDecoder;
+    /// use zune_heic::zune_core::bytestream::ZCursor;
+    ///
+    /// let data = std::fs::read("image.heic").unwrap();
+    /// let mut decoder = HeifDecoder::new(ZCursor::new(&data));
+    /// decoder.decode_headers().unwrap();
+    /// if let Some(exif) = decoder.exif_data() {
+    ///     println!("{} bytes of Exif", exif.len());
+    /// }
+    /// ```
     pub fn exif_data(&self) -> Option<&Vec<u8>> {
         self.exif_data.as_ref()
     }
+    /// The ICC colour profile of the image (a `colr` box of type `prof` or
+    /// `rICC`), if it has one, available after
+    /// [`decode_headers`](Self::decode_headers).
+    ///
+    /// The decoded pixels are not converted with this profile; pass it on to
+    /// a colour management system or embed it in the output file.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use zune_heic::HeifDecoder;
+    /// use zune_heic::zune_core::bytestream::ZCursor;
+    ///
+    /// let data = std::fs::read("image.heic").unwrap();
+    /// let mut decoder = HeifDecoder::new(ZCursor::new(&data));
+    /// decoder.decode_headers().unwrap();
+    /// if let Some(icc) = decoder.icc_data() {
+    ///     println!("{} byte ICC profile", icc.len());
+    /// }
+    /// ```
     pub fn icc_data(&self) -> Option<&Vec<u8>> {
         self.icc_data.as_ref()
     }
@@ -753,3 +1397,70 @@ where
 //         );
 //     }
 // }
+
+/// `chroma_format_idc` from an SPS NAL unit (with its 2-byte header), or
+/// `None` if it is too short.
+fn sps_chroma_format_idc(nal: &[u8]) -> Option<u32> {
+    // remove emulation prevention bytes (00 00 03 -> 00 00); the field is in
+    // the first few dozen bytes
+    let mut rbsp = Vec::with_capacity(64);
+    let mut zeros = 0;
+    for &b in nal.get(2..)?.iter().take(64) {
+        if zeros >= 2 && b == 3 {
+            zeros = 0;
+            continue;
+        }
+        zeros = if b == 0 { zeros + 1 } else { 0 };
+        rbsp.push(b);
+    }
+
+    let mut pos = 0usize;
+    let mut bits = |n: usize| -> Option<u32> {
+        let mut v = 0u32;
+        for _ in 0..n {
+            let byte = *rbsp.get(pos >> 3)?;
+            v = (v << 1) | u32::from((byte >> (7 - (pos & 7))) & 1);
+            pos += 1;
+        }
+        Some(v)
+    };
+    // sps_video_parameter_set_id, sps_max_sub_layers_minus1, temporal_id_nesting
+    bits(4)?;
+    let max_sub_layers_minus1 = bits(3)? as usize;
+    bits(1)?;
+    // profile_tier_level(1, sps_max_sub_layers_minus1): general part
+    bits(32)?;
+    bits(32)?;
+    bits(32)?;
+    let mut sub_layer_flags = [(false, false); 8];
+    for flags in sub_layer_flags.iter_mut().take(max_sub_layers_minus1) {
+        *flags = (bits(1)? == 1, bits(1)? == 1);
+    }
+    if max_sub_layers_minus1 > 0 {
+        for _ in max_sub_layers_minus1..8 {
+            bits(2)?;
+        }
+    }
+    for &(profile, level) in sub_layer_flags.iter().take(max_sub_layers_minus1) {
+        if profile {
+            bits(32)?;
+            bits(32)?;
+            bits(24)?;
+        }
+        if level {
+            bits(8)?;
+        }
+    }
+    let mut ue = || -> Option<u32> {
+        let mut leading = 0;
+        while bits(1)? == 0 {
+            leading += 1;
+            if leading > 31 {
+                return None;
+            }
+        }
+        Some((1u32 << leading) - 1 + bits(leading)?)
+    };
+    ue()?; // sps_seq_parameter_set_id
+    ue() // chroma_format_idc
+}

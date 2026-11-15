@@ -162,11 +162,34 @@ impl OperationsTrait for AffineTransform {
 
     #[allow(clippy::too_many_lines, unused_variables)]
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
+        if self.inverse().is_none() {
+            warn!(
+                "a={},b={},c={},d={},tx={},ty={}",
+                self.a, self.b, self.c, self.d, self.tx, self.ty
+            );
+            return Err(ImageErrors::GenericString(
+                "AffineTransform doesn't have inverse".to_string(),
+            ));
+        }
+
         let is_image_linear = image.metadata().color_trc() == Some(ColorCharacteristics::Linear);
         let transfer_function = image
             .metadata()
             .color_trc()
             .unwrap_or(ColorCharacteristics::sRGB);
+
+        let original_depth = image.depth();
+        let is_premultiplied = image.metadata().is_premultiplied_alpha();
+        let has_alpha = image.colorspace().has_alpha();
+        let needs_premultiply = !is_premultiplied && has_alpha;
+
+        if needs_premultiply {
+            // Convert before linearizing so the transfer curve runs at full precision
+            image.convert_depth(BitDepth::Float32)?;
+        } else if !is_image_linear && original_depth == BitDepth::Eight {
+            // 8 bits can't hold linear light without crushing dark tones
+            image.convert_depth(BitDepth::Sixteen)?;
+        }
 
         if !is_image_linear {
             let start = Instant::now();
@@ -182,12 +205,7 @@ impl OperationsTrait for AffineTransform {
             );
         }
 
-        let is_premultiplied = image.metadata().is_premultiplied_alpha();
-        let has_alpha = image.colorspace().has_alpha();
-        let original_depth = image.depth();
-
-        if !is_premultiplied && has_alpha {
-            image.convert_depth(BitDepth::Float32)?;
+        if needs_premultiply {
             trace!("Premultiplying alpha along affine transform");
             let start = Instant::now();
             PremultiplyAlpha::new(AlphaState::PreMultiplied).execute_impl(image)?;
@@ -196,21 +214,14 @@ impl OperationsTrait for AffineTransform {
 
         let (w, h) = image.dimensions();
 
-        if self.inverse().is_none() {
-            warn!(
-                "a={},b={},c={},d={},tx={},ty={}",
-                self.a, self.b, self.c, self.d, self.tx, self.ty
-            );
-            return Err(ImageErrors::GenericString(
-                "AffineTransform doesn't have inverse".to_string(),
-            ));
-        }
 
         let (new_w, new_h) = get_affine_output_dimensions(w, h, self);
         let depth = image.depth().bit_type();
+        // Channel lengths are in bytes
+        let pix_size = image.depth().size_of();
 
         let affine_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
-            let mut new_channel = Channel::new_with_bit_type(new_w * new_h, depth);
+            let mut new_channel = Channel::new_with_bit_type(new_w * new_h * pix_size, depth);
             match depth {
                 BitType::U8 => affine_transform_channel::<u8>(
                     channel.reinterpret_as()?,
@@ -248,11 +259,10 @@ impl OperationsTrait for AffineTransform {
 
         image.set_dimensions(new_w, new_h);
 
-        if !is_premultiplied && has_alpha {
+        if needs_premultiply {
             trace!("Un-premultiplying alpha along affine transform");
             let start = Instant::now();
             PremultiplyAlpha::new(AlphaState::NonPreMultiplied).execute_impl(image)?;
-            image.convert_depth(original_depth)?;
             trace!("Un-premultiply completed in {:.2?}", start.elapsed());
         }
 
@@ -269,6 +279,8 @@ impl OperationsTrait for AffineTransform {
                 start.elapsed()
             );
         }
+
+        image.convert_depth(original_depth)?;
 
         Ok(())
     }

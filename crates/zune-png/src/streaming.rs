@@ -12,6 +12,7 @@ use crate::utils::{
 use crate::{InterlaceMethod, PngDecoder};
 use zune_core::bytestream::ZByteReaderTrait;
 use zune_core::log::{trace, warn};
+use zune_inflate::errors::DecodeErrorStatus;
 use zune_inflate::DecodeStatus;
 
 use alloc::format;
@@ -195,6 +196,24 @@ where
                     }
 
                     DecodeStatus::Error(e) => {
+                        // The inflate limit is set to exactly the number of bytes the image
+                        // needs. A stream that carries surplus data after the last row (which
+                        // libpng only warns about) trips it. If every byte the image needs was
+                        // already produced, the surplus is irrelevant: extract the remaining
+                        // rows and finish normally.
+                        if let DecodeErrorStatus::OutputLimitExceeded(limit, _) = e.error {
+                            if !self.options.strict_mode() && decoder.decoded_bytes() >= limit {
+                                extract_callback(
+                                    self,
+                                    deflate_buf,
+                                    &mut processed_bytes,
+                                    decoder.current_dest_offset(),
+                                    final_out,
+                                )?;
+                                warn!("Image data has more bytes than the image needs");
+                                return Ok(());
+                            }
+                        }
                         return Err(PngDecodeErrors::ZlibDecodeErrors(e));
                     }
                     DecodeStatus::InputBackReferenceTooSmall { .. } => {
@@ -285,11 +304,14 @@ where
                 // this elides 2 bounds check 1. That x_spc_bytes is not zero,
                 // 2. that the copy on out chunk will succeed correctly
                 if { $b_size } <= x_spc_bytes {
-                    for (src_pixel, out_chunk) in src_pixels
-                        .chunks_exact($b_size)
-                        .zip(out_space.chunks_exact_mut(x_spc_bytes))
-                    {
+                    let mut src_iter = src_pixels.chunks_exact($b_size);
+                    let mut out_chunks = out_space.chunks_exact_mut(x_spc_bytes);
+                    for (out_chunk, src_pixel) in out_chunks.by_ref().zip(src_iter.by_ref()) {
                         out_chunk[..$b_size].copy_from_slice(src_pixel);
+                    }
+                    // the last pixel of a pass can end less than a stride before the row end
+                    if let Some(src_pixel) = src_iter.next() {
+                        out_chunks.into_remainder()[..$b_size].copy_from_slice(src_pixel);
                     }
                 }
             };
@@ -693,6 +715,10 @@ where
         let will_post_process = self.will_post_process();
 
         while (decode_dest - *processed_bytes) >= row_size {
+            // Every row of the image is already written: whatever follows is surplus data
+            if *final_out_pos >= final_out.len() {
+                return Ok(ProcessingStatus::Stop);
+            }
             // Grab the chunk of deflate data for this exact row
             let in_stride = &deflate_buf[*processed_bytes..*processed_bytes + row_size];
             let filter_byte = in_stride[0];

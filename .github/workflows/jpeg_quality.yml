@@ -1,0 +1,123 @@
+name: JPEG Quality
+
+on:
+  push:
+    branches: ["main", "dev"]
+    paths:
+      - ".github/workflows/jpeg_quality.yml"
+      - "Cargo.lock"
+      - "crates/zune-core/**"
+      - "crates/zune-jpeg/**"
+      - "test-images/jpeg/**"
+      - "tests/Cargo.toml"
+      - "tests/src/**"
+      - "tests/tests/jpeg.json"
+  pull_request:
+    branches: ["main", "dev"]
+    paths:
+      - ".github/workflows/jpeg_quality.yml"
+      - "Cargo.lock"
+      - "crates/zune-core/**"
+      - "crates/zune-jpeg/**"
+      - "test-images/jpeg/**"
+      - "tests/Cargo.toml"
+      - "tests/src/**"
+      - "tests/tests/jpeg.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: 1
+
+jobs:
+  test:
+    name: JPEG / ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: default debug
+            toolchain: stable
+            command: cargo test -p zune-jpeg --locked
+          - name: scalar debug
+            toolchain: stable
+            command: cargo test -p zune-jpeg --no-default-features --features std --locked
+          - name: arithmetic release
+            toolchain: stable
+            command: cargo test -p zune-jpeg --release --features arith --locked
+          - name: portable SIMD
+            toolchain: nightly
+            command: cargo test -p zune-jpeg --no-default-features --features std,arith,portable_simd --locked
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+      - name: Run JPEG tests
+        run: ${{ matrix.command }}
+
+  no-std:
+    name: JPEG / no-std
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-uefi
+      - name: Check no-std
+        run: cargo check -p zune-jpeg --target x86_64-unknown-uefi --no-default-features --locked
+      - name: Check no-std arithmetic
+        run: >-
+          cargo check -p zune-jpeg
+          --target x86_64-unknown-uefi
+          --no-default-features
+          --features arith
+          --locked
+
+  regressions:
+    name: JPEG / golden regressions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run golden image regressions
+        run: cargo test -p zune-tests --release jpeg::test_jpeg --locked
+
+  release-readiness:
+    name: JPEG / package, docs, and MSRV
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install declared MSRV
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.77.1
+      - name: Check documentation
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo +stable doc -p zune-jpeg --features arith --no-deps --locked
+      - name: Verify clean package
+        run: cargo +stable package -p zune-jpeg --locked
+      - name: Check packaged crate on declared MSRV
+        shell: bash
+        run: |
+          package_dir="${RUNNER_TEMP}/zune-jpeg-package"
+          mkdir "${package_dir}"
+          tar -xzf target/package/zune-jpeg-*.crate -C "${package_dir}"
+          manifest="$(find "${package_dir}" -mindepth 2 -maxdepth 2 -name Cargo.toml -print -quit)"
+          rm "${manifest%/*}/Cargo.lock"
+          cargo +1.77.1 check --manifest-path "${manifest}"
+          cargo +1.77.1 check --manifest-path "${manifest}" --no-default-features
+          cargo +1.77.1 check --manifest-path "${manifest}" --no-default-features --features std,arith

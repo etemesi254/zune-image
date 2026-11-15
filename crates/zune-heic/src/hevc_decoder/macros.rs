@@ -22,7 +22,6 @@
 /// - Requires a `DEBUG_MORE: bool` in scope
 /// - Prefer `const DEBUG_MORE: bool = false;` for zero-cost in release builds
 ///
-#[macro_export]
 macro_rules! debug_more {
     ($cond:expr => $($arg:tt)*) => {
         if DEBUG_MORE && $cond {
@@ -38,7 +37,6 @@ macro_rules! debug_more {
 
 /// `println!` for debug tracing; compiled out (arguments still type-checked)
 /// without the `std` feature.
-#[macro_export]
 macro_rules! dbg_println {
     () => {{
         #[cfg(feature = "std")]
@@ -53,7 +51,6 @@ macro_rules! dbg_println {
 }
 
 /// `print!` for debug tracing; compiled out without the `std` feature.
-#[macro_export]
 macro_rules! dbg_print {
     ($($arg:tt)*) => {{
         #[cfg(feature = "std")]
@@ -62,3 +59,6 @@ macro_rules! dbg_print {
         let _ = format_args!($($arg)*);
     }};
 }
+
+// crate-private, reachable as `crate::debug_more!` etc. (see lib.rs)
+pub(crate) use {dbg_print, dbg_println, debug_more};

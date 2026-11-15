@@ -1,7 +1,14 @@
 [package]
 name = "zune-isobmff"
 version = "0.5.0"
+rust-version = "1.85.0"
+authors = ["caleb <etemesicaleb@gmail.com>"]
 edition = "2024"
+repository = "https://github.com/etemesi254/zune-image/tree/dev/crates/zune-isobmff"
+license = "MIT OR Apache-2.0 OR Zlib"
+keywords = ["isobmff", "mp4", "heif", "box", "parser"]
+categories = ["multimedia", "parser-implementations", "no-std"]
+description = "ISO Base Media File Format (ISOBMFF) box header parsing, shared by the zune HEIF decoders"
 
 [dependencies]
 zune-core = { version = "0.5.1", path = "../zune-core" }

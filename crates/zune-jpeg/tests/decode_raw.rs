@@ -64,6 +64,35 @@ fn decode_raw_into_owned(bytes: &[u8]) -> Vec<Vec<u8>> {
 }
 
 #[test]
+fn restart_read_ahead_preserves_raw_planes_and_padding() {
+    use zune_core::options::DecoderOptions;
+
+    let data = include_bytes!("../../../test-images/jpeg/restart_cross_row_128x128.jpg");
+    for strict in [true, false] {
+        let options = DecoderOptions::default().set_strict_mode(strict);
+        let mut decoder = JpegDecoder::new_with_options(ZCursor::new(data), options);
+        decoder.decode_headers().unwrap();
+        let mut raw = decoder.raw_output();
+        assert_eq!(raw.num_components(), Some(1));
+        let layout = raw.layout().unwrap();
+        assert_eq!((layout[0].width, layout[0].height), (128, 128));
+        let stride = 128 + 13;
+        let mut output = vec![0xa5; stride * 128];
+        raw.decode_into_planes_strided(&mut [output.as_mut_slice()], &[stride])
+            .unwrap();
+        let mut expected_row = vec![48_u8; stride];
+        expected_row[48..80].fill(208);
+        expected_row[128..].fill(0xa5);
+        for (index, row) in output.chunks_exact(stride).enumerate() {
+            assert_eq!(
+                row, expected_row,
+                "native raw samples and padding in row {index}"
+            );
+        }
+    }
+}
+
+#[test]
 fn decode_raw_matches_libjpeg_turbo_with_idct_tolerance() {
     // Logical samples produced by libjpeg-turbo 2.1.5 through
     // jpeg_read_raw_data. Rows in this 16x16 fixture are constant, keeping

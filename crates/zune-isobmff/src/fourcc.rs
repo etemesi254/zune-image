@@ -2,24 +2,40 @@ use core::fmt;
 
 use zune_core::bytestream::{ZByteIoError, ZByteWriterTrait, ZWriter};
 
-/// Four-character code identifying the box type.
+/// Four-character code (4CC) identifying a box type, such as `ftyp` or
+/// `meta`.
+///
+/// The bytes are kept as they are in the file; they are usually, but not
+/// necessarily, printable ASCII.
+///
+/// ```
+/// use zune_isobmff::FourCC;
+///
+/// let fourcc = FourCC(*b"ftyp");
+/// assert_eq!(fourcc, "ftyp");
+/// assert_eq!(fourcc, b"ftyp");
+/// assert_eq!(fourcc.to_string(), "ftyp");
+/// ```
 #[derive(Clone, PartialEq, Eq, Hash, Copy)]
 pub struct FourCC(pub [u8; 4]);
 
 impl FourCC {
-    /// Get a string representation of the FourCC.
+    /// The FourCC as a string.
     ///
-    /// If the FourCC cannot be represented as a readable string,
-    /// the result will be "????".
+    /// Returns `"????"` if the bytes are not valid UTF-8.
     pub fn as_str(&self) -> &str {
         core::str::from_utf8(&self.0).unwrap_or("????")
     }
 
-    // Get a byte array representation of the FourCC.
+    /// The four bytes of the FourCC.
     pub fn as_bytes(&self) -> &[u8; 4] {
         &self.0
     }
 
+    /// Write the four bytes to `writer`.
+    ///
+    /// # Errors
+    /// If the writer cannot take four more bytes.
     pub fn encode<T: ZByteWriterTrait>(&self, writer: &mut ZWriter<T>) -> Result<(), ZByteIoError> {
         writer.write_all(self.as_bytes())
     }
@@ -55,6 +71,7 @@ impl PartialEq<&[u8; 4]> for FourCC {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use alloc::vec::Vec;
 

@@ -454,6 +454,7 @@ pub(crate) fn parse_start_of_frame<T: ZByteReaderTrait>(
         // intercept the DNL marker rather than stopping at row 0.
         if img_height == 0 {
             img.expects_dnl = true;
+            img.dnl_image = true;
         }
         img.info.components = num_components;
         img.components = components;
@@ -615,6 +616,16 @@ pub(crate) fn parse_sos<T: ZByteReaderTrait>(
         image.succ_high = succ_high;
         image.succ_low = succ_low;
 
+        // A restart interval is scan-local: each scan restarts the counter, since a scan's
+        // data units are counted from its own SOS. Not resetting it here lets a scan whose
+        // data-unit count is not a multiple of the interval leak its remainder into the next
+        // component's scan, shifting every later restart boundary. In a non-interleaved file
+        // each component is its own scan (ITU-T.81 A.2.1), so the leaked remainder misplaces
+        // RST markers for the remaining components.
+        if image.restart_interval != 0 {
+            image.todo = image.restart_interval;
+        }
+
         trace!("Ss={spec_start}, Se={spec_end} Ah={succ_high} Al={succ_low}");
 
         Ok(())
@@ -741,7 +752,14 @@ pub(crate) fn parse_app1<T: ZByteReaderTrait>(
         match payload {
             App1Payload::Exif(data) => decoder.info.exif_data = Some(data),
             App1Payload::Xmp(data) => decoder.info.xmp_data = Some(data),
-            App1Payload::ExtendedXmp(seg) => decoder.extended_xmp_segments.push(seg),
+            App1Payload::ExtendedXmp(seg) => {
+                let bytes_received = decoder
+                    .extended_xmp_bytes_received
+                    .checked_add(seg.data.len())
+                    .ok_or(DecodeErrors::FormatStatic("Extended XMP size overflow"))?;
+                decoder.extended_xmp_segments.push(seg);
+                decoder.extended_xmp_bytes_received = bytes_received;
+            }
             App1Payload::Unknown => {}
         }
         Ok(())

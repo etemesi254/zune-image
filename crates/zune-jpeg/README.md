@@ -139,6 +139,19 @@ loop {
 }
 ```
 
+### Final raw input
+
+`RawDecodeSession::set_input_complete()` marks compressed input as final.
+Non-strict progressive raw decoding may render accepted coefficients at final
+EOF, but every component must have an actual decoded DC coefficient; SOS
+precision and Huffman lookahead padding do not establish component data.
+The signal persists across whole-image replays on the same session, including
+retries after invalid output buffers. Recreating a session after completion or
+changing options clears the signal. Pull completion remains sticky until a new
+sequence starts.
+Progressive raw suspension replays scans from the start rather than retaining
+fine checkpoints, avoiding full coefficient-plane clones.
+
 ## Goals
 
 The implementation aims to have the following goals achieved,

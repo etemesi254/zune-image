@@ -80,10 +80,22 @@ impl DeblockParams {
     }
 }
 
+/// QpC of a chroma edge (spec 8.7.2.5.5): Table 8-10 for 4:2:0, else
+/// `Min(qPi, 51)`.
 #[inline]
-fn chroma_qp(luma_qp: i32, offset: i8) -> i32 {
-    let qp_i = (luma_qp + i32::from(offset)).clamp(0, 51);
-    i32::from(CHROMA_QP_TABLE[qp_i as usize])
+fn chroma_qp(luma_qp: i32, offset: i8, is_420: bool) -> i32 {
+    let qp_i = luma_qp + i32::from(offset);
+    if is_420 {
+        // Table 8-10: identity below 30, qPi - 6 from 43 up (like libde265's
+        // table8_22; tc's index is clipped afterwards)
+        match qp_i {
+            ..30 => qp_i,
+            43.. => qp_i - 6,
+            _ => i32::from(CHROMA_QP_TABLE[qp_i as usize]),
+        }
+    } else {
+        qp_i.min(51)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -399,7 +411,7 @@ fn deblock_chroma_band(
             }
             let cx = (x4 * 4) / sub_x;
             let qp = edge_qp(&nt.blocks[y4 * w4 + (x4 - 1)], &nt.blocks[y4 * w4 + x4]);
-            let tc_val = params.tc(chroma_qp(qp, qp_off), 2);
+            let tc_val = params.tc(chroma_qp(qp, qp_off, (sub_x, sub_y) == (2, 2)), 2);
             for dy in 0..4 {
                 if cy + dy >= ch {
                     break;
@@ -424,7 +436,7 @@ fn deblock_chroma_band(
             }
             let cx = (x4 * 4) / sub_x;
             let qp = edge_qp(&nt.blocks[(y4 - 1) * w4 + x4], &nt.blocks[y4 * w4 + x4]);
-            let tc_val = params.tc(chroma_qp(qp, qp_off), 2);
+            let tc_val = params.tc(chroma_qp(qp, qp_off, (sub_x, sub_y) == (2, 2)), 2);
             for dx in 0..4 {
                 if cx + dx >= cw {
                     break;
@@ -472,23 +484,25 @@ pub(crate) mod tests {
     #[test]
     fn chroma_qp_identity_low() {
         for qp in 0..=28i32 {
-            assert_eq!(chroma_qp(qp, 0), qp, "chroma_qp identity failed at {qp}");
+            assert_eq!(chroma_qp(qp, 0, true), qp, "chroma_qp identity failed at {qp}");
         }
     }
 
     #[test]
     fn chroma_qp_top_of_table() {
-        // qPi = clamp(51+6, 0, 51) = 51 → QpC = qPi - 6 = 45 (Table 8-10)
-        assert_eq!(chroma_qp(51, 6), 45);
-        assert_eq!(chroma_qp(51, 0), 45);
+        // Table 8-10: QpC = qPi - 6 from qPi = 43 up, no upper clamp
+        assert_eq!(chroma_qp(51, 6, true), 51); // qPi=57 → 57 - 6
+        assert_eq!(chroma_qp(51, 0, true), 45);
+        assert_eq!(chroma_qp(51, 6, false), 51); // 4:4:4: Min(qPi, 51)
+        assert_eq!(chroma_qp(40, 0, false), 40);
     }
 
     #[test]
     fn chroma_qp_spot_check() {
         // A few known values from spec Table 8-15
-        assert_eq!(chroma_qp(30, 0), 29); // qPi=30 → 29
-        assert_eq!(chroma_qp(35, 0), 33); // qPi=35 → 33
-        assert_eq!(chroma_qp(45, 0), 39); // qPi=45 → 39
+        assert_eq!(chroma_qp(30, 0, true), 29); // qPi=30 → 29
+        assert_eq!(chroma_qp(35, 0, true), 33); // qPi=35 → 33
+        assert_eq!(chroma_qp(45, 0, true), 39); // qPi=45 → 39
     }
 
     // -----------------------------------------------------------------------

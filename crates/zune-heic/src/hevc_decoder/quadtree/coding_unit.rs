@@ -52,6 +52,13 @@ fn decode_cu_transquant_bypass_flag(ctx: &mut DecodeSliceContext) -> bool {
     bit
 }
 
+/// Chroma intra prediction mode for 4:2:2 from the 4:2:0-style mode
+/// (spec Table 8-3; same as libde265's `map_chroma_422`)
+const MODE_422: [u8; 35] = [
+    0, 1, 2, 2, 2, 2, 3, 5, 7, 8, 10, 12, 13, 15, 17, 18, 19, 20, 21, 22, 23, 23, 24, 24, 25, 25,
+    26, 27, 27, 28, 28, 29, 29, 30, 31,
+];
+
 pub fn get_actual_chroma_mode(intra_mode_chroma: u8, intra_mode_luma: u8) -> u8 {
     // intra_mode_chroma is the 0-4 value from the bitstream
     // intra_mode_luma is the 0-34 value from the corresponding Luma block
@@ -81,6 +88,7 @@ pub fn read_coding_unit(
     debug_more!("read_coding_unit x0={}, y0={}, size={}", x0, y0, cb_size);
 
     // 1. Initial Quantization Setup
+    (ctx.cu_x0, ctx.cu_y0, ctx.cu_log2_size) = (x0, y0, log_2_cb_size);
     decode_quantization_parameters(ctx, x0, y0, log_2_cb_size);
 
     if ctx.pps.transquant_bypass_enabled_flag {
@@ -97,8 +105,10 @@ pub fn read_coding_unit(
         ctx.is_intra = false;
         ctx.neighbor_tracker
             .set_pred_mode(x0, y0, log_2_cb_size, PredMode::ModeSkip);
-        todo!("Inter decoding");
-        //return Ok(());
+        // skipped CUs are inter-predicted, see below
+        return Err(NalError::Generic(
+            "Inter-coded pictures (P/B slices) are not supported".into()
+        ));
     }
 
     // 3. Prediction Mode
@@ -134,52 +144,79 @@ pub fn read_coding_unit(
 
         if pcm_flag {
             // read_pcm_samples(...)
-            todo!();
+            return Err(NalError::Generic("PCM coding units are not supported".into()));
+        }
+        // Decode Luma Intra Modes
+        debug_more!("Part Mode:{:?}",part_mode);
+        if part_mode == PartMode::PartNxN {
+            let pb_size = cb_size / 2;
+            let mut prev_mpm_flags = [false; 4];
+            for i in 0..4 {
+                prev_mpm_flags[i] = decode_prev_intra_luma_pred_flag(ctx) == 1;
+            }
+
+            for idx in 0..4 {
+                let curr_x = x0 + (idx % 2) * pb_size;
+                let curr_y = y0 + (idx / 2) * pb_size;
+                let mode = decode_intra_luma_mode(ctx, curr_x, curr_y, prev_mpm_flags[idx]);
+                ctx.neighbor_tracker
+                    .set_intra_mode(curr_x, curr_y, pb_size, mode);
+                if idx == 0 {
+                    ctx.intra_mode_luma = mode;
+                }
+            }
         } else {
-            // Decode Luma Intra Modes
-            debug_more!("Part Mode:{:?}",part_mode);
-            if part_mode == PartMode::PartNxN {
-                let pb_size = cb_size / 2;
-                let mut prev_mpm_flags = [false; 4];
-                for i in 0..4 {
-                    prev_mpm_flags[i] = decode_prev_intra_luma_pred_flag(ctx) == 1;
-                }
+            let is_mpm = decode_prev_intra_luma_pred_flag(ctx) == 1;
+            let mode = decode_intra_luma_mode(ctx, x0, y0, is_mpm);
+            ctx.neighbor_tracker.set_intra_mode(x0, y0, cb_size, mode);
+            ctx.intra_mode_luma = mode;
+        }
 
-                for idx in 0..4 {
-                    let curr_x = x0 + (idx % 2) * pb_size;
-                    let curr_y = y0 + (idx / 2) * pb_size;
-                    let mode = decode_intra_luma_mode(ctx, curr_x, curr_y, prev_mpm_flags[idx]);
-                    ctx.neighbor_tracker
-                        .set_intra_mode(curr_x, curr_y, pb_size, mode);
-                    if idx == 0 {
-                        ctx.intra_mode_luma = mode;
-                    }
-                }
-            } else {
-                let is_mpm = decode_prev_intra_luma_pred_flag(ctx) == 1;
-                let mode = decode_intra_luma_mode(ctx, x0, y0, is_mpm);
-                ctx.neighbor_tracker.set_intra_mode(x0, y0, cb_size, mode);
-                ctx.intra_mode_luma = mode;
-            }
-
-            // Decode Chroma Intra Mode
-            if ctx.sps.chroma_format != ChromaFormat::Monochrome {
-                let idx = decode_intra_chroma_mode(ctx, ctx.intra_mode_luma);
-                let actual_mode = get_actual_chroma_mode(idx, ctx.intra_mode_luma);
+        // Decode Chroma Intra Mode(s) (spec 7.3.8.5)
+        if ctx.sps.chroma_format == ChromaFormat::Yuv444 {
+            // 4:4:4: one chroma mode per prediction block (four for NxN),
+            // each derived from that block's luma mode
+            let (pb_log2, count) =
+                if part_mode == PartMode::PartNxN { (log_2_cb_size - 1, 4) } else { (log_2_cb_size, 1) };
+            let pb_size = 1 << pb_log2;
+            for i in 0..count {
+                let px = x0 + (i % 2) * pb_size;
+                let py = y0 + (i / 2) * pb_size;
+                let luma_mode = ctx.neighbor_tracker.get_intra_mode(px, py);
+                let idx = decode_intra_chroma_mode(ctx, luma_mode);
+                let actual_mode = get_actual_chroma_mode(idx, luma_mode);
                 debug_more!("Final actual chroma mode: {:?}", actual_mode);
-                ctx.neighbor_tracker.set_intra_mode_chroma(
-                    x0,
-                    y0,
-                    log_2_cb_size,
-                    actual_mode,
-                    idx == 4
-                );
-                ctx.intra_mode_chroma = actual_mode;
+                ctx.neighbor_tracker
+                    .set_intra_mode_chroma(px, py, pb_log2, actual_mode, idx == 4);
+                if i == 0 {
+                    ctx.intra_mode_chroma = actual_mode;
+                }
             }
+        } else if ctx.sps.chroma_format != ChromaFormat::Monochrome {
+            let idx = decode_intra_chroma_mode(ctx, ctx.intra_mode_luma);
+            let mut actual_mode = get_actual_chroma_mode(idx, ctx.intra_mode_luma);
+            if ctx.sps.chroma_format == ChromaFormat::Yuv422 {
+                // 4:2:2 chroma is twice as tall as wide: directions are
+                // remapped (spec 8.4.3, Table 8-3)
+                actual_mode = MODE_422[usize::from(actual_mode)];
+            }
+            debug_more!("Final actual chroma mode: {:?}", actual_mode);
+            ctx.neighbor_tracker.set_intra_mode_chroma(
+                x0,
+                y0,
+                log_2_cb_size,
+                actual_mode,
+                idx == 4
+            );
+            ctx.intra_mode_chroma = actual_mode;
         }
     } else {
-        // Inter Prediction Units (MVs, Merges, etc.)
-        todo!();
+        // Inter prediction (P/B slices) is not supported: HEIF still images
+        // are intra-coded, inter-coded pictures only occur in image sequences
+        // and multi-layer streams.
+        return Err(NalError::Generic(
+            "Inter-coded pictures (P/B slices) are not supported".into()
+        ));
     }
 
     // 6. Residual Processing (Transform Tree)

@@ -132,7 +132,14 @@ pub enum ItemProperty {
     }, // decoded from (flags & 0x03) * 90
     Imir {
         axis: u8
-    }, // 0 = vertical, 1 = horizontal
+    }, // 0: top/bottom flip, 1: left/right flip (libheif's reading)
+    /// Clean aperture: crop, as fractions (numerator, denominator)
+    Clap {
+        width:             (i32, i32),
+        height:            (i32, i32),
+        horizontal_offset: (i32, i32),
+        vertical_offset:   (i32, i32)
+    },
     Colr(ColourInformation), // Color information
     // nclx, rICC, or prof
     HvcC {

@@ -111,7 +111,11 @@ pub fn decode_tu(
     }
 
     // --- 2. LOSSLESS (TRANSQUANT BYPASS) PATH ---
-    if ctx.cu_transquant_bypass_flag {
+    // Only when there is a residual (coefficients, or chroma cross-component
+    // prediction): otherwise the coefficient lists still hold the previous
+    // TU's coefficients, and the block is just its prediction (below).
+    let ccp_active = c_idx != 0 && ctx.res_scale_val != 0;
+    if ctx.cu_transquant_bypass_flag && (cbf || ccp_active) {
         // This function handles scattering, RDPCM, CCP, and frame write
         ctx.reconstruct_lossless(x0, y0, n_t, c_idx, residual_dpcm);
 
@@ -127,7 +131,6 @@ pub fn decode_tu(
 
     // --- 3. NORMAL PATH (Scaling & Transform) ---
     // We run scaling if there is a CBF OR if Chroma CCP is active (even if CBF is 0)
-    let ccp_active = c_idx != 0 && ctx.res_scale_val != 0;
 
     let bit_depth = if c_idx == 0 { ctx.sps.bit_depth_luma } else { ctx.sps.bit_depth_chroma };
     if cbf || ccp_active {
@@ -193,16 +196,23 @@ pub fn decode_tu(
                 _ => {}
             }
 
-            // --- 2. The Missing Transform Skip Shift! (Spec 8.6.2.1) ---
-            // Because we bypassed the IDCT, we must manually apply the
-            // post-transform bit-shift to scale the residuals back down to pixel space.
-            let shift = 20 - i32::from(bit_depth);
-            let offset = if shift > 0 { 1 << (shift - 1) } else { 0 };
+            // --- 2. Transform skip scaling (Spec 8.6.4.2) ---
+            // Without a transform the scaled coefficients are the residuals,
+            // but at transform precision: r = d << tsShift, then the same
+            // bdShift as after the inverse transform (8.6.2), like libde265.
+            let extended_precision = sps
+                .range_extension
+                .as_ref()
+                .is_some_and(|r| r.extended_precision_processing_flag);
+            let bd_shift = (20 - i32::from(bit_depth)).max(if extended_precision { 11 } else { 0 });
+            let ts_shift = if extended_precision { 5.min(bd_shift - 2) } else { 5 }
+                + n_t.trailing_zeros() as i32;
+            let offset = if bd_shift > 0 { 1 << (bd_shift - 1) } else { 0 };
 
             for i in 0..(n_t * n_t) {
                 let val = i32::from(ctx.math_scratchpad[i]);
-                // Shift, and safely clamp to the 16-bit intermediate range
-                let shifted = (val + offset) >> shift;
+                let shifted = ((val << ts_shift) + offset) >> bd_shift;
+                // safely clamp to the 16-bit intermediate range
                 ctx.math_scratchpad[i] = shifted.clamp(-32768, 32767) as i16;
             }
         }
@@ -278,7 +288,12 @@ pub fn read_transform_tree(
     let has_chroma = (log2_trafo_size > 2 && ctx.sps.chroma_format != ChromaFormat::Monochrome)
         || ctx.sps.chroma_format == ChromaFormat::Yuv444;
 
-    if has_chroma {
+    if ctx.sps.chroma_format == ChromaFormat::Monochrome {
+        // no chroma: the flags are inferred to be 0 (they must not inherit
+        // the "parent had coefficients" value the root is called with)
+        cbf_cb = 0;
+        cbf_cr = 0;
+    } else if has_chroma {
         // Cb Component
         if cbf_cb != 0 {
             let mut bit = decode_cbf_chroma(ctx, trafo_depth);
@@ -311,8 +326,10 @@ pub fn read_transform_tree(
                     ctx,
                     x0 + i * half_size,
                     y0 + j * half_size,
-                    x_base,
-                    y_base,
+                    // the children's base is this node (spec 7.3.8.8):
+                    // 4x4 luma blocks put their chroma at the 8x8 parent
+                    x0,
+                    y0,
                     log2_trafo_size - 1,
                     trafo_depth + 1,
                     max_trafo_depth,
@@ -427,7 +444,11 @@ pub fn read_transform_unit(
     {
         ctx.cu_qp_delta = decode_cu_qp_delta(ctx)?;
         ctx.is_cu_qp_delta_coded = true;
-        decode_quantization_parameters(ctx, x0, y0, log2_size);
+        // QpY with the delta, for the whole coding unit (like libde265's
+        // xCUBase/yCUBase): this TU's position may lie in another QG-sized
+        // area of a large CU, which would wrongly reset the delta
+        let (x_cu, y_cu, log2_cb_size) = (ctx.cu_x0, ctx.cu_y0, ctx.cu_log2_size);
+        decode_quantization_parameters(ctx, x_cu, y_cu, log2_cb_size);
     }
 
     // 2. Luma Path
@@ -442,8 +463,10 @@ pub fn read_transform_unit(
     if chroma_format == ChromaFormat::Monochrome {
         return Ok(());
     }
-    // In 4:2:0, if Luma is 4x4, we only process Chroma at the 4th block (blk_idx 3)
-    let is_420_small = (chroma_format == ChromaFormat::Yuv420) && (log2_size == 2);
+    // In 4:2:0 and 4:2:2, 4x4 luma blocks have no chroma of their own: the
+    // 4x4 chroma block(s) of their 8x8 parent are decoded with the 4th
+    // (blk_idx 3), at the parent's position (x_base, y_base)
+    let is_420_small = chroma_format != ChromaFormat::Yuv444 && log2_size == 2;
     let should_decode_chroma = !is_420_small || blk_idx == 3;
 
     if should_decode_chroma {
@@ -512,11 +535,11 @@ pub fn read_transform_unit(
             if chroma_format == ChromaFormat::Yuv422 {
                 let y_offset = 1 << log2_size_c;
                 if (cbf & 2) != 0 {
-                    // Note: y_base + y_offset translated back to Luma coordinates
+                    // the second block's position in luma coordinates
                     decode_residual_block(
                         ctx,
                         xc,
-                        xc + (y_offset * sub_h),
+                        yc + (y_offset * sub_h),
                         log2_size_c,
                         if c_idx == 1 { Component::Cb } else { Component::Cr },
                     );

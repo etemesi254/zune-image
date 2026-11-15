@@ -156,15 +156,26 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
     }
 
     pub(crate) fn parse_trns(&mut self, chunk: PngChunk) -> Result<(), PngDecodeErrors> {
+        // bytes of the chunk body read below; the rest is skipped so the next chunk
+        // header is read from the right place
+        let mut read = chunk.length;
         match self.png_info.color {
             PngColor::Luma => {
+                if chunk.length < 2 {
+                    return Err(PngDecodeErrors::GenericStatic("tRNS chunk too short"));
+                }
                 let grey_sample = self.stream.get_u16_be();
                 self.trns_bytes[0] = grey_sample;
+                read = 2;
             }
             PngColor::RGB => {
+                if chunk.length < 6 {
+                    return Err(PngDecodeErrors::GenericStatic("tRNS chunk too short"));
+                }
                 self.trns_bytes[0] = self.stream.get_u16_be();
                 self.trns_bytes[1] = self.stream.get_u16_be();
                 self.trns_bytes[2] = self.stream.get_u16_be();
+                read = 6;
             }
             PngColor::Palette => {
                 if self.palette.is_empty() {
@@ -186,8 +197,9 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
                 return Err(PngDecodeErrors::Generic(msg));
             }
         }
-        // skip crc
-        self.stream.skip(4)?;
+        // skip any unread bytes and the crc (saturating: a malformed length must not wrap)
+        self.stream
+            .skip(chunk.length.saturating_sub(read).saturating_add(4))?;
         self.seen_trns = true;
 
         Ok(())

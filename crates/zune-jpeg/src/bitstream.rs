@@ -48,7 +48,6 @@
 //! Knock yourself out.
 use alloc::format;
 use alloc::string::ToString;
-use core::cmp::min;
 
 use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 use zune_core::log::warn;
@@ -114,13 +113,18 @@ macro_rules! decode_huff {
 /// entropy data.
 #[derive(Clone, Copy)]
 pub(crate) struct HuffmanBitstreamState {
-    pub(crate) buffer:         u64,
-    pub(crate) aligned_buffer: u64,
-    pub(crate) bits_left:      u8,
-    pub(crate) marker:         Option<Marker>,
-    pub(crate) overread_by:    usize,
-    pub(crate) seen_eoi:       bool,
-    pub(crate) eob_run:        i32
+    pub(crate) buffer:                  u64,
+    pub(crate) aligned_buffer:          u64,
+    pub(crate) bits_left:               u8,
+    pub(crate) marker:                  Option<Marker>,
+    pub(crate) marker_bits:             Option<u8>,
+    pub(crate) marker_padding_consumed: bool,
+    pub(crate) overread_by:             usize,
+    pub(crate) zeros_past_end:          usize,
+    pub(crate) exhausted:               bool,
+    pub(crate) stuffed_past_end:        bool,
+    pub(crate) seen_eoi:                bool,
+    pub(crate) eob_run:                 i32
 }
 
 /// Type-erased bitstream state snapshot stored in `ScanCheckpoint`.
@@ -148,6 +152,9 @@ pub(crate) trait BitStream {
 
     /// Create a new Bitstream for progressive decoding
     fn new_progressive(al: u8, spec_start: u8, spec_end: u8) -> Self;
+
+    /// Strict mode: reject malformed entropy data that lenient decoding recovers from.
+    fn set_strict(&mut self, _strict: bool) {}
 
     fn get_dc_table(
         tables: &mut EntropyTables, dc_pos: usize
@@ -213,6 +220,23 @@ pub(crate) trait BitStream {
 
     fn overread_by(&self) -> usize;
 
+    /// Whether the decoder has consumed bits that were not part of the entropy-coded data.
+    ///
+    /// `overread_by()` turns positive when the reader's lookahead reaches the end of the data,
+    /// which it does while the bits of the last MCUs are still in the buffer, unconsumed. This
+    /// is true only once those buffered bits have been consumed past the end: until then every
+    /// bit the decoder took was in the data, and a scan whose data holds all of its MCUs is
+    /// decoded whole, with or without the `EOI` after it.
+    fn consumed_past_end(&self) -> bool {
+        self.overread_by() > 0
+    }
+
+    /// Huffman lookahead past a marker is not entropy data. Arithmetic
+    /// decoding instead permits its specified zero extension after markers.
+    fn consumed_marker_padding(&self) -> bool {
+        false
+    }
+
     /// True if we have seen end of image marker.
     /// Don't read anything after that.
     fn seen_eoi(&mut self) -> &mut bool;
@@ -265,18 +289,52 @@ pub(crate) struct BitStreamHuffman {
     bits_left:           u8,
     /// Did we find a marker(RST/EOF) during decoding?
     marker:              Option<Marker>,
+    marker_bits:         Option<u8>,
+    marker_padding_consumed: bool,
     /// An i16 with the bit corresponding to successive_low set to 1, others 0.
     successive_low_mask: i16,
     spec_start:          u8,
     spec_end:            u8,
     eob_run:             i32,/// Did we find a marker(RST/EOF) during decoding?
     overread_by:         usize,
+    /// Zero bits appended to the buffer after the data ended, which a scan read past its data
+    /// would consume, and which a scan whose data held all of its MCUs never consumes.
+    zeros_past_end:      usize,
+    /// Set once the decoder takes more bits than the buffer holds, which only a scan read past
+    /// its data does.
+    exhausted:           bool,
+    /// Set once a stuffing resolution — the byte read after an entropy `0xFF` — consumed a
+    /// byte past the end of the data. The resolution byte is not appended to the buffer, so
+    /// it reaches no counter of appended zeros, but it was still consumed: whether that
+    /// `0xFF` was data or the first half of a marker is exactly what the missing byte would
+    /// have said, so a row that reached it is not publishable.
+    stuffed_past_end:    bool,
     /// True if we have seen end of image marker.
     /// Don't read anything after that.
     seen_eoi:            bool,
+    /// Strict mode, see [`BitStream::set_strict`].
+    strict:              bool,
 }
 
 impl BitStreamHuffman {
+    /// The zig-zag position of an AC coefficient whose run ended at `pos`. A run past the
+    /// last coefficient of the block (63) is malformed: strict mode rejects it, lenient mode
+    /// puts the coefficient on that last position, as libjpeg-turbo does, instead of
+    /// wrapping it onto the DC or a low-frequency coefficient. A run past the end of a
+    /// progressive scan's band but within the block is left alone, as in libjpeg-turbo.
+    #[inline(always)]
+    fn ac_position(&self, pos: usize) -> Result<usize, DecodeErrors> {
+        if pos <= 63 {
+            return Ok(pos);
+        }
+        if self.strict {
+            return Err(DecodeErrors::FormatStatic(
+                "AC coefficient run past the end of the block"
+            ));
+        }
+        Ok(63)
+    }
+
     /// Get a single bit from the bitstream
     fn get_bit(&mut self) -> u8 {
         let k = (self.aligned_buffer >> 63) as u8;
@@ -295,6 +353,7 @@ impl BitStreamHuffman {
     /// Discard the next `N` bits without checking
     #[inline]
     fn drop_bits(&mut self, n: u8) {
+        self.consume_marker_bits(n);
         // PS: Its a good check, but triggers fuzzer and a lot of false positives
         //debug_assert!(self.bits_left >= n);
         //self.bits_left -= n;
@@ -306,12 +365,23 @@ impl BitStreamHuffman {
     #[inline(always)]
     #[allow(clippy::cast_possible_truncation)]
     fn get_bits(&mut self, n_bits: u8) -> i32 {
+        self.consume_marker_bits(n_bits);
         let mask = (1_u64 << n_bits) - 1;
 
         self.aligned_buffer = self.aligned_buffer.rotate_left(u32::from(n_bits));
         let bits = (self.aligned_buffer & mask) as i32;
-        self.bits_left = self.bits_left.wrapping_sub(n_bits);
+        let (left, exhausted) = self.bits_left.overflowing_sub(n_bits);
+        self.bits_left = left;
+        self.exhausted |= exhausted;
         bits
+    }
+
+    #[inline]
+    fn consume_marker_bits(&mut self, bits: u8) {
+        if let Some(remaining) = &mut self.marker_bits {
+            self.marker_padding_consumed |= bits > *remaining;
+            *remaining = remaining.saturating_sub(bits);
+        }
     }
 
 
@@ -470,12 +540,18 @@ impl BitStream for BitStreamHuffman {
             aligned_buffer:      0,
             bits_left:           0,
             marker:              None,
+            marker_bits:         None,
+            marker_padding_consumed: false,
             successive_low_mask: 1,
             spec_start:          0,
             spec_end:            0,
             eob_run:             0,
             overread_by:         0,
+            zeros_past_end:      0,
+            exhausted:           false,
+            stuffed_past_end:    false,
             seen_eoi:            false,
+            strict:              false,
         }
     }
 
@@ -489,18 +565,39 @@ impl BitStream for BitStreamHuffman {
             aligned_buffer:      0,
             bits_left:           0,
             marker:              None,
+            marker_bits:         None,
+            marker_padding_consumed: false,
             successive_low_mask: 1i16 << al,
             spec_start:          spec_start,
             spec_end:            spec_end,
             eob_run:             0,
             overread_by:         0,
+            zeros_past_end:      0,
+            exhausted:           false,
+            stuffed_past_end:    false,
             seen_eoi:            false,
+            strict:              false,
         }
+    }
+
+    fn set_strict(&mut self, strict: bool) {
+        self.strict = strict;
     }
 
     #[inline(always)]
     fn overread_by(&self) -> usize {
         self.overread_by
+    }
+    #[inline(always)]
+    fn consumed_past_end(&self) -> bool {
+        self.overread_by > 0
+            && (self.exhausted
+                || self.zeros_past_end > usize::from(self.bits_left)
+                || self.stuffed_past_end)
+    }
+    #[inline(always)]
+    fn consumed_marker_padding(&self) -> bool {
+        self.marker_padding_consumed
     }
     #[inline(always)]
     fn seen_eoi(&mut self) -> &mut bool {
@@ -536,7 +633,12 @@ impl BitStream for BitStreamHuffman {
             aligned_buffer: self.aligned_buffer,
             bits_left:      self.bits_left,
             marker:         self.marker,
-            overread_by:    self.overread_by,
+            marker_bits:    self.marker_bits,
+            marker_padding_consumed: self.marker_padding_consumed,
+            overread_by:      self.overread_by,
+            zeros_past_end:   self.zeros_past_end,
+            exhausted:        self.exhausted,
+            stuffed_past_end: self.stuffed_past_end,
             seen_eoi:       self.seen_eoi,
             eob_run:        self.eob_run
         }
@@ -548,7 +650,12 @@ impl BitStream for BitStreamHuffman {
         self.aligned_buffer = state.aligned_buffer;
         self.bits_left = state.bits_left;
         self.marker = state.marker;
+        self.marker_bits = state.marker_bits;
+        self.marker_padding_consumed = state.marker_padding_consumed;
         self.overread_by = state.overread_by;
+        self.zeros_past_end = state.zeros_past_end;
+        self.exhausted = state.exhausted;
+        self.stuffed_past_end = state.stuffed_past_end;
         self.seen_eoi = state.seen_eoi;
         self.eob_run = state.eob_run;
     }
@@ -587,9 +694,12 @@ impl BitStream for BitStreamHuffman {
         /// to full refill
         macro_rules! refill {
             ($buffer:expr,$byte:expr,$bits_left:expr) => {
-                // read a byte from the stream
+                // read a byte from the stream; one read once the data has ended is a zero
+                // the data never held
+                let past_end = reader.eof()?;
                 $byte = u64::from(reader.read_u8());
                 self.overread_by += usize::from(reader.eof()?);
+                self.zeros_past_end += 8 * usize::from(past_end);
                 // append to the buffer
                 // JPEG is a MSB type buffer so that means we append this
                 // to the lower end (0..8) of the buffer and push the rest bits above..
@@ -598,16 +708,31 @@ impl BitStream for BitStreamHuffman {
                 $bits_left += 8;
                 // Check for special case  of OxFF, to see if it's a stream or a marker
                 if $byte == 0xff {
-                    // read next byte
+                    // read next byte; when the data has ended this read is a zero the data
+                    // never held, and resolving the stuffing against it consumed it: whether
+                    // the 0xFF was data or the first half of a marker is what the missing
+                    // byte would have said, and a row that reached it is not publishable
+                    let stuffed_past_end = reader.eof()?;
                     let mut next_byte = u64::from(reader.read_u8());
+                    self.stuffed_past_end |= stuffed_past_end;
                     // Byte snuffing, if we encounter byte snuff, we skip the byte
                     if next_byte != 0x00 {
                         // skip that byte we read
                         while next_byte == 0xFF {
+                            let more_past_end = reader.eof()?;
                             next_byte = u64::from(reader.read_u8());
+                            self.stuffed_past_end |= more_past_end;
                         }
-
-                        if next_byte != 0x00 {
+                    }
+                    // read_u8 gives 0 once the input runs out. That 0 is not a stuffed
+                    // byte: the 0xFF bytes may be fill bytes before a marker that has
+                    // not arrived yet. Count it as an over-read so the scan stops (or,
+                    // in incremental mode, retries) instead of decoding a 0xFF data byte.
+                    if next_byte == 0x00 {
+                        self.overread_by += usize::from(reader.eof()?);
+                    }
+                    if next_byte != 0x00 {
+                        {
                             // Undo the byte append and return
                             $buffer >>= 8;
                             $bits_left -= 8;
@@ -618,6 +743,7 @@ impl BitStream for BitStreamHuffman {
 
                             let marker = Marker::from_u8(next_byte as u8);
                             self.marker = marker;
+                            self.marker_bits = Some(self.bits_left);
 
                             if let Some(Marker::UNKNOWN(_)) = marker{
                                 return Err(DecodeErrors::Format("Unknown marker in bit stream".to_string()));
@@ -646,6 +772,9 @@ impl BitStream for BitStreamHuffman {
                 // fill with zeroes
                 self.buffer <<= 32;
                 self.bits_left += 32;
+                if self.overread_by > 0 {
+                    self.zeros_past_end += 32;
+                }
                 self.aligned_buffer = self.buffer << (64 - self.bits_left);
                 return Ok(true);
             }
@@ -747,7 +876,7 @@ impl BitStream for BitStreamHuffman {
             if fast_ac != 0 {
                 //  FAST AC path
                 pos += ((fast_ac >> 4) & 15) as usize; // run
-                let t_pos = UN_ZIGZAG[min(pos, 63)] & 63;
+                let t_pos = UN_ZIGZAG[self.ac_position(pos)?] & 63;
 
                 block[t_pos] = i32::from(fast_ac >> 8).wrapping_mul (qt_table[t_pos]); // Value
                 self.drop_bits((fast_ac & 15) as u8);
@@ -762,7 +891,7 @@ impl BitStream for BitStreamHuffman {
                     pos += r as usize;
                     r = self.get_bits(symbol as u8);
                     symbol = huff_extend(r, symbol);
-                    let t_pos = UN_ZIGZAG[pos & 63] & 63;
+                    let t_pos = UN_ZIGZAG[self.ac_position(pos)?] & 63;
 
                     block[t_pos] = symbol .wrapping_mul( qt_table[t_pos]);
 
@@ -809,6 +938,8 @@ impl BitStream for BitStreamHuffman {
                 //  FAST AC path
                 pos += ((fast_ac >> 4) & 15) as usize; // run
 
+                // nothing is written, but strict mode must reject the same streams
+                self.ac_position(pos)?;
                 self.drop_bits((fast_ac & 15) as u8);
                 pos += 1;
             } else {
@@ -819,6 +950,7 @@ impl BitStream for BitStreamHuffman {
 
                 if symbol != 0 {
                     pos += r as usize;
+                    self.ac_position(pos)?;
                     // Advance over bits but ignore.
                     let _ = self.get_bits(symbol as u8);
 
@@ -898,7 +1030,7 @@ impl BitStream for BitStreamHuffman {
             if fac != 0 {
                 // fast ac path
                 k += ((fac >> 4) & 15) as usize; // run
-                block[UN_ZIGZAG[min(k, 63)] & 63] = (fac >> 8).wrapping_mul(bit); // value
+                block[UN_ZIGZAG[self.ac_position(k)?] & 63] = (fac >> 8).wrapping_mul(bit); // value
                 self.drop_bits((fac & 15) as u8);
                 k += 1;
             } else {
@@ -911,7 +1043,7 @@ impl BitStream for BitStreamHuffman {
                     k += r as usize;
                     r = self.get_bits(symbol as u8);
                     symbol = huff_extend(r, symbol);
-                    block[UN_ZIGZAG[k & 63] & 63] = (symbol as i16).wrapping_mul(bit);
+                    block[UN_ZIGZAG[self.ac_position(k)?] & 63] = (symbol as i16).wrapping_mul(bit);
                     k += 1;
                 } else {
                     if r != 15 {
@@ -1084,9 +1216,13 @@ impl BitStream for BitStreamHuffman {
     fn reset(&mut self) {
         self.bits_left = 0;
         self.marker = None;
+        self.marker_bits = None;
+        self.marker_padding_consumed = false;
         self.buffer = 0;
         self.aligned_buffer = 0;
         self.eob_run = 0;
+        // the zeros went with the buffer
+        self.zeros_past_end = 0;
     }
 }
 
@@ -1107,6 +1243,35 @@ const fn has_byte(b: u32, val: u8) -> bool {
     // Retrieved from Stanford bithacks
     // @ https://graphics.stanford.edu/~seander/bithacks.html#ZeroInWord
     has_zero(b ^ ((!0_u32 / 255) * (val as u32)))
+}
+
+#[cfg(test)]
+mod marker_padding_tests {
+    use zune_core::bytestream::{ZCursor, ZReader};
+
+    use super::{BitStream, BitStreamHuffman};
+
+    #[test]
+    fn marker_prefetch_and_consumption_survive_checkpoint_restore() {
+        let bytes = [0x00, 0xFF, 0xD9];
+        let mut reader = ZReader::new(ZCursor::new(&bytes));
+        let mut stream = BitStreamHuffman::new_progressive(0, 0, 0);
+        stream.refill(&mut reader).unwrap();
+        assert!(!stream.consumed_marker_padding());
+        let checkpoint = stream.save_state();
+        stream.drop_bits(8);
+        assert!(!stream.consumed_marker_padding());
+        stream.get_bits(1);
+        assert!(stream.consumed_marker_padding());
+        stream.restore_state(checkpoint);
+        assert!(!stream.consumed_marker_padding());
+        stream.get_bits(8);
+        assert!(!stream.consumed_marker_padding());
+        stream.get_bits(1);
+        assert!(stream.consumed_marker_padding());
+        stream.reset();
+        assert!(!stream.consumed_marker_padding());
+    }
 }
 
 // mod tests {

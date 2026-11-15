@@ -569,15 +569,15 @@ where
                 .put_bits(code.lz77_cache_nbits[count], code.lz77_cache_bits[count]);
         } else {
             encode_hybrid_uint_lz77(count as u32, &mut token, &mut nbits, &mut bits);
-            let mut wbits = bits;
+            let mut wbits = u64::from(bits);
             let token_s = token as usize;
 
-            wbits = (wbits << code.lz77_nbits[token_s]) | u32::from(code.lz77_bits[token_s]);
-            wbits = (wbits << code.raw_nbits[0]) | u32::from(code.raw_bits[0]);
+            wbits = (wbits << code.lz77_nbits[token_s]) | u64::from(code.lz77_bits[token_s]);
+            wbits = (wbits << code.raw_nbits[0]) | u64::from(code.raw_bits[0]);
 
             let nbit_w = code.lz77_nbits[token_s] + (nbits & 0xFF) as u8 + code.raw_nbits[0];
 
-            self.output.put_bits(nbit_w, u64::from(wbits))
+            self.output.put_bits(nbit_w, wbits)
         }
     }
     fn chunk(&mut self, run: usize, residuals: &[T::Upixel], skip: usize, n: usize) {
@@ -1517,7 +1517,19 @@ fn prepare_header(frame: &mut FrameState, add_image_header: bool, is_last: bool)
         }
         if have_alpha {
             output.put_bits(2, 1); // extra channel
-            output.put_bits(1, 1); // all default (8 bit alpha)
+            if depth == BitDepth::Eight {
+                output.put_bits(1, 1); // all default (8 bit alpha)
+            } else {
+                // The alpha channel's samples are as deep as the color's.
+                output.put_bits(1, 0); // not all default
+                output.put_bits(2, 0); // type: alpha, enum value 0
+                output.put_bits(1, 0); // integer samples
+                output.put_bits(2, 0b11);
+                output.put_bits(6, (depth.bit_size() - 1) as u64);
+                output.put_bits(2, 0); // dim_shift 0
+                output.put_bits(2, 0); // no name
+                output.put_bits(1, 0); // not premultiplied
+            }
         } else {
             output.put_bits(2, 0); // no extra channel
         }
@@ -1598,9 +1610,103 @@ fn calculate_expected_input(options: &EncoderOptions) -> Option<usize> {
     options
         .width()
         .checked_mul(options.depth().size_of())
-        .and_then(|x| x.checked_add(options.height()))
-        .and_then(|x| x.checked_add(options.width()))
-        .and_then(|x| x.checked_add(options.colorspace().num_components()))
+        .and_then(|x| x.checked_mul(options.height()))
+        .and_then(|x| x.checked_mul(options.colorspace().num_components()))
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::vec;
+    use alloc::vec::Vec;
+
+    use zune_core::bit_depth::BitDepth;
+    use zune_core::colorspace::ColorSpace;
+    use zune_core::options::EncoderOptions;
+
+    use super::*;
+
+    /// The input is one sample of each component a pixel, of the
+    /// depth's size, for each of width × height pixels: more or fewer
+    /// bytes are refused.
+    #[test]
+    fn the_input_is_width_by_height_pixels_of_samples() {
+        for (colorspace, depth) in [
+            (ColorSpace::Luma, BitDepth::Eight),
+            (ColorSpace::RGB, BitDepth::Eight),
+            (ColorSpace::RGBA, BitDepth::Sixteen)
+        ] {
+            let options = EncoderOptions::new(3, 2, colorspace, depth);
+            let size = 3 * 2 * colorspace.num_components() * depth.size_of();
+            assert_eq!(calculate_expected_input(&options), Some(size));
+            let encode = |len: usize| {
+                let data = vec![7_u8; len];
+                let mut out = Vec::new();
+                JxlSimpleEncoder::new(&data, options).encode(&mut out)
+            };
+            assert!(encode(size).is_ok(), "{colorspace:?}");
+            for len in [size - 1, size + 1] {
+                assert!(
+                    matches!(encode(len), Err(JxlEncodeErrors::LengthMismatch(..))),
+                    "{colorspace:?} {len}"
+                );
+            }
+        }
+        let huge = EncoderOptions::new(usize::MAX / 2, 3, ColorSpace::RGB, BitDepth::Eight);
+        assert_eq!(calculate_expected_input(&huge), None);
+    }
+
+    /// The extra channel fields of a 2 × 2 RGBA image at `depth`'s
+    /// header, its bits read least significant first: `None` where it
+    /// is all_default, else its type, its bits per sample, dim_shift,
+    /// name length and premultiplication.
+    fn alpha_info(depth: BitDepth) -> Option<[u32; 5]> {
+        let data = vec![100_u8; 16 * depth.size_of()];
+        let options = EncoderOptions::new(2, 2, ColorSpace::RGBA, depth);
+        let mut out = Vec::new();
+        JxlSimpleEncoder::new(&data, options)
+            .encode(&mut out)
+            .unwrap();
+        let mut at = 0;
+        let mut read = |count: usize| {
+            let mut value = 0;
+            for i in 0..count {
+                value |= u32::from((out[at / 8] >> (at % 8)) & 1) << i;
+                at += 1;
+            }
+            value
+        };
+        // Signature, size and the metadata up to its bit depth.
+        for _ in 0..16 + 1 + 11 + 3 + 11 + 1 + 1 + 1 {
+            read(1);
+        }
+        if read(2) == 3 {
+            assert_eq!(read(6) + 1, depth.bit_size() as u32, "bits");
+        }
+        read(1);
+        assert_eq!(read(2), 1, "one extra channel");
+        if read(1) == 1 {
+            return None;
+        }
+        let kind = match read(2) {
+            2 => 2 + read(4),
+            3 => 18 + read(6),
+            v => v
+        };
+        assert_eq!(read(1), 0, "integer samples");
+        let per_sample = match read(2) {
+            0 => 8,
+            1 => 10,
+            2 => 12,
+            _ => read(6) + 1
+        };
+        Some([kind, per_sample, read(2), read(2), read(1)])
+    }
+
+    #[test]
+    fn alpha_is_as_deep_as_the_colors() {
+        assert_eq!(alpha_info(BitDepth::Eight), None);
+        assert_eq!(alpha_info(BitDepth::Sixteen), Some([0, 16, 0, 0, 0]));
+    }
 }
 
 // #[test]

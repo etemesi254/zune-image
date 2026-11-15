@@ -6,7 +6,7 @@ use crate::hevc_decoder::DEBUG_MORE;
 use crate::hevc_decoder::bitstream::BitReader;
 use crate::hevc_decoder::nal_parser::{NalError, NalUnit};
 use crate::hevc_decoder::nal_unit_headers::{
-    Pps, ProfileIdc, ProfileTierLevel, ScalingLists, SliceHeader, SliceType, Sps, Vui,
+    ChromaFormat, Pps, ProfileIdc, ProfileTierLevel, ScalingLists, SliceHeader, SliceType, Sps, Vui,
     VuiVideoFormat
 };
 
@@ -130,7 +130,11 @@ pub fn parse_scaling_list_data(r: &mut BitReader) -> Result<ScalingLists, NalErr
             } else {
                 // Prediction Mode: Copy from a previous matrix
                 let pred_matrix_id_delta = r.read_ue()? as usize;
-                let ref_matrix_id = matrix_id - pred_matrix_id_delta;
+                let ref_matrix_id = matrix_id.checked_sub(pred_matrix_id_delta).ok_or_else(|| {
+                    NalError::Generic(format!(
+                        "scaling_list_pred_matrix_id_delta {pred_matrix_id_delta} out of range"
+                    ))
+                })?;
 
                 match size_id {
                     0 => sl.size0[matrix_id] = sl.size0[ref_matrix_id],
@@ -454,7 +458,10 @@ pub fn decode_slice_header(
         // 6. SAO Flags
         if sps.sample_adaptive_offset_enabled_flag {
             sh.slice_sao_luma_flag = r.read_flag()?;
-            sh.slice_sao_chroma_flag = r.read_flag()?;
+            // only present when there is chroma (ChromaArrayType != 0)
+            if sps.chroma_format != ChromaFormat::Monochrome {
+                sh.slice_sao_chroma_flag = r.read_flag()?;
+            }
         }
 
         // 7. Temporal/Inter Logic (Skipped for I-Slices)
@@ -478,6 +485,16 @@ pub fn decode_slice_header(
         } else {
             sh.slice_cb_qp_offset = 0;
             sh.slice_cr_qp_offset = 0;
+        }
+
+        // cu_chroma_qp_offset_enabled_flag (range extension): the CU-level
+        // chroma QP offsets it enables are not supported
+        if pps.range_extension.as_ref().is_some_and(|r| r.chroma_qp_offset_list_len > 0)
+            && r.read_flag()?
+        {
+            return Err(NalError::Generic(
+                "CU chroma QP offsets (cu_chroma_qp_offset_enabled_flag) are not supported".into()
+            ));
         }
 
         // 9. Deblocking Filter
@@ -524,6 +541,20 @@ pub fn decode_slice_header(
                 let v = r.get_bits((offset_len_minus1 + 1) as u8)?;
                 sh.entry_point_offsets.push((v as u32).wrapping_add(1));
             }
+        }
+    }
+
+    // slice_segment_header_extension: its bytes have no meaning for this
+    // decoder, but must be skipped (multi-layer encoders use it)
+    if pps.slice_segment_header_extension_present_flag {
+        let extension_length = r.read_ue()?;
+        if extension_length > 256 {
+            return Err(NalError::Generic(format!(
+                "slice_segment_header_extension_length {extension_length} out of range"
+            )));
+        }
+        for _ in 0..extension_length {
+            r.get_bits(8)?;
         }
     }
 
