@@ -28,7 +28,7 @@ use crate::bitstream::{BitStreamHuffman, BitstreamStateSnapshot};
 use crate::bitstream_arith::{ArithACTables, ArithDCTables, BitStreamArithmetic};
 use crate::cancel::{CancelCheck, Debounced, CANCEL_POLL_INTERVAL_MCUS};
 use crate::color_convert::choose_ycbcr_to_rgb_convert_func;
-use crate::components::{Components, SampleRatios};
+use crate::components::{ComponentID, Components, SampleRatios};
 use crate::errors::{DecodeErrors, UnsupportedSchemes};
 #[cfg(feature = "arith")]
 use crate::headers::parse_dac;
@@ -85,6 +85,22 @@ pub struct PlaneInfo {
     pub allocated_height:           usize,
     /// Required slice length for this plane: `stride * allocated_height`.
     pub byte_size:                  usize
+}
+
+/// Quantization table of one component, as returned by
+/// [`RawDecodeSession::quantization_tables`].
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct QuantizationTable {
+    /// The component's role, from its position in the SOF marker.
+    pub component:    ComponentID,
+    /// Component selector byte from the SOF marker, as
+    /// [`RawDecodeSession::component_ids`] returns it.
+    pub id:           u8,
+    /// DQT destination (`Tq`) the component's SOF entry selects.
+    pub table_number: u8,
+    /// The 64 table values in natural (row-major) coefficient order.
+    pub values:       [u16; 64]
 }
 
 /// Round `n` up to the next multiple of `align` (which must be non-zero).
@@ -178,6 +194,7 @@ pub(crate) struct ProgressiveFineCheckpoint {
     pub(crate) mcu_col:          usize,
     pub(crate) todo:             usize,
     pub(crate) dc_predictions:   [(i32, i32); MAX_COMPONENTS],
+    pub(crate) dc_seen:          [bool; MAX_COMPONENTS],
     pub(crate) bitstream_state:  BitstreamStateSnapshot
 }
 
@@ -415,6 +432,12 @@ pub struct JpegDecoder<T> {
     pub(crate) upsampler_scratch: Vec<i16>,
     /// Number of progressive scans committed into `progressive_mcus_buffer`.
     pub(crate) progressive_completed_scans: usize,
+    /// Last input iMCU row before entropy exhaustion in the accepted scan.
+    pub(crate) progressive_last_good_row: usize,
+    /// Pending row position; discarded scans must not change smoothing precision.
+    pub(crate) progressive_scan_last_good_row: usize,
+    /// The first progressive scan has no previous precision to fall back to.
+    pub(crate) progressive_smoothing_first_scan: bool,
     /// Number of committed progressive scans currently rendered as preview
     /// pixels in the output buffer.
     pub(crate) progressive_displayed_scans: usize,
@@ -625,6 +648,7 @@ struct RawPullState {
     entropy_tables:           Option<Box<EntropyTables>>,
     layout:                   Option<[PlaneInfo; MAX_COMPONENTS]>,
     rows_per_stripe:          [usize; MAX_COMPONENTS],
+    input_complete:          bool,
     buffered_source_complete: bool
 }
 
@@ -732,6 +756,7 @@ impl Default for RawPullState {
             entropy_tables:           None,
             layout:                   None,
             rows_per_stripe:          [0; MAX_COMPONENTS],
+            input_complete:          false,
             buffered_source_complete: false
         }
     }
@@ -747,6 +772,22 @@ impl Default for RawPullState {
 /// Unlike [`JpegDecoder::decode`] and [`JpegDecoder::decode_into`], raw output
 /// skips upsampling and color conversion and returns one post-IDCT plane per
 /// JPEG component. The configured output colorspace is therefore ignored.
+///
+/// Interleaved sequential images can produce raw iMCU rows while entropy data
+/// is decoded. Progressive and multi-SOS images first accumulate all coefficient
+/// scans, then reconstruct final component samples directly from those
+/// coefficients. Their first row request may therefore consume the complete
+/// compressed image before returning output, but it does not allocate or
+/// convert through a packed RGB frame. Recoverable suspension during that
+/// buffered phase leaves caller planes untouched. Because raw output exposes
+/// only final samples, a suspended or cancelled progressive decode discards
+/// partial coefficient state and replays its scans on retry instead of cloning
+/// full coefficient planes for preview preservation.
+///
+/// When no more bytes can arrive, [`Self::set_input_complete`] allows non-strict
+/// decoding to reconstruct available progressive coefficients at final EOF.
+/// This does not make missing component DC data displayable or relax strict
+/// validation. Without that signal, incomplete input remains resumable.
 pub struct RawDecodeSession<'decoder, T> {
     decoder: &'decoder mut JpegDecoder<T>,
     previous_incremental_mode: bool,
@@ -1287,6 +1328,19 @@ impl<T> RawDecodeSession<'_, T>
 where
     T: ZByteReaderTrait
 {
+    /// Signal that no more compressed bytes will be provided for this sequence.
+    ///
+    /// Non-strict decoding may then render best-effort output at the final EOF,
+    /// including available progressive coefficients. Strict decoding continues
+    /// to reject truncated input. Without this signal, EOF remains resumable
+    /// and does not commit an incomplete raw stripe.
+    ///
+    /// Whole-image replays on this session retain the signal. Recreating a
+    /// session after completion or changing decoder options clears it.
+    pub fn set_input_complete(&mut self) {
+        self.decoder.raw_pull_state.input_complete = true;
+    }
+
     /// Number of components in SOF declaration order.
     ///
     /// Returns `None` when headers have not been decoded yet.
@@ -1306,6 +1360,23 @@ where
     #[must_use]
     pub fn component_ids(&self) -> Option<Vec<u8>> {
         self.decoder.raw_component_ids()
+    }
+
+    /// Quantization table of each component, in SOF declaration order.
+    ///
+    /// Each entry names its component, both by role and by SOF selector, and
+    /// carries the DQT destination the component's SOF entry selects and the
+    /// table it is reconstructed with: the one that destination held when the
+    /// first scan began, in natural (row-major) coefficient order rather than
+    /// the zig-zag order it is stored in. Together with the raw planes, this
+    /// lets a caller reason about the precision the encoder kept for each
+    /// component.
+    ///
+    /// Returns `None` when headers have not been decoded yet, contain no
+    /// components, or a component selects a table that was never defined.
+    #[must_use]
+    pub fn quantization_tables(&self) -> Option<Vec<QuantizationTable>> {
+        self.decoder.raw_quantization_tables()
     }
 
     /// Per-component raw plane geometry and sampling metadata.
@@ -1458,7 +1529,7 @@ where
         let mut output = McuDecodeOutput::RawPlanes(raw_planes);
 
         if let Err(error) = self.decode_pull_phase(&mut output, &layout, n) {
-            if error.is_recoverable_eof() {
+            if error.is_recoverable_eof() && !self.decoder.raw_pull_state.input_complete {
                 return Ok(RawImcuRowStatus::NeedMoreInput);
             }
             return Err(error);
@@ -1599,7 +1670,11 @@ where
 
     fn prepare_pull_scan(&mut self) -> Result<(), DecodeErrors> {
         self.decoder.prepare_for_scan_decode()?;
-        self.decoder.mcu_checkpoints_enabled = true;
+        // Raw progressive output exposes only final component samples. Decode directly into the
+        // coefficient buffers and replay all scans after suspension/cancellation instead of
+        // cloning each active scan's full coefficient planes. Caller output remains untouched
+        // until coefficient decoding completes.
+        self.decoder.mcu_checkpoints_enabled = !self.decoder.is_progressive;
         Ok(())
     }
 
@@ -1650,6 +1725,11 @@ where
     /// ignored. Samples within each plane's logical `width * height` area are
     /// meaningful; trailing DCT padding is implementation-defined.
     ///
+    /// For progressive JPEGs, all scans are decoded before the first component
+    /// samples are reconstructed. The final planes preserve the sampling factors
+    /// and logical dimensions reported by [`Self::layout`]; no packed RGB
+    /// intermediate is created.
+    ///
     /// On a recoverable EOF, call this method again on the same session after
     /// exposing more input. Successful calls can also be replayed and produce
     /// bit-identical planes.
@@ -1682,9 +1762,6 @@ where
             return Err(DecodeErrors::FormatStatic(
                 "raw output does not support DNL images"
             ));
-        }
-        if self.decoder.raw_pull_state.phase == RawPullPhase::Complete {
-            self.decoder.raw_pull_state = RawPullState::default();
         }
         let layout = self.layout().ok_or(DecodeErrors::FormatStatic(
             "raw layout unavailable before headers are decoded"
@@ -1722,6 +1799,11 @@ where
     /// order. Each stride must be at least the corresponding logical
     /// [`PlaneInfo::width`], and each plane must contain at least
     /// `stride * PlaneInfo::height` bytes.
+    ///
+    /// Progressive input availability follows [`Self::decode_into_planes`]:
+    /// coefficient scans are buffered to completion before final component
+    /// samples are written, and recoverable suspension leaves the destination
+    /// planes unchanged.
     ///
     /// On a recoverable EOF, call this method again on the same session after
     /// exposing more input. Successful calls can also be replayed and produce
@@ -1761,9 +1843,6 @@ where
                 "raw output does not support DNL images"
             ));
         }
-        if self.decoder.raw_pull_state.phase == RawPullPhase::Complete {
-            self.decoder.raw_pull_state = RawPullState::default();
-        }
         let layout = self.layout().ok_or(DecodeErrors::FormatStatic(
             "raw layout unavailable before headers are decoded"
         ))?;
@@ -1798,6 +1877,16 @@ where
         &mut self, planes: &mut [&mut [u8]], strides: &[usize],
         layout: &[PlaneInfo; MAX_COMPONENTS]
     ) -> Result<(), DecodeErrors> {
+        if self.decoder.raw_pull_state.phase == RawPullPhase::Complete {
+            self.decoder.raw_pull_state = RawPullState {
+                input_complete: self.decoder.raw_pull_state.input_complete,
+                ..RawPullState::default()
+            };
+        }
+        if self.decoder.is_progressive {
+            return self.decode_progressive_whole_with_strides(planes, strides, layout);
+        }
+
         let count = planes.len();
         loop {
             let stripe = self.decoder.raw_pull_state.next_stripe;
@@ -1836,6 +1925,57 @@ where
                 RawImcuRowStatus::Complete => return Ok(())
             }
         }
+    }
+
+    fn decode_progressive_whole_with_strides(
+        &mut self, planes: &mut [&mut [u8]], strides: &[usize],
+        layout: &[PlaneInfo; MAX_COMPONENTS]
+    ) -> Result<(), DecodeErrors> {
+        let count = planes.len();
+        match self.decoder.raw_pull_state.owner {
+            RawPullOwner::None => self.decoder.raw_pull_state.owner = RawPullOwner::WholeImage,
+            RawPullOwner::WholeImage => {}
+            RawPullOwner::Pull => {
+                return Err(DecodeErrors::FormatStatic(
+                    "cannot switch raw output API during an active decode sequence"
+                ))
+            }
+        }
+
+        if !self.decoder.raw_pull_state.buffered_source_complete {
+            self.prepare_pull_scan()?;
+            self.decoder.raw_pull_state.phase = RawPullPhase::BufferedRows;
+            self.decoder.decode_buffered_raw_source(0, layout, count)?;
+            self.decoder.raw_pull_state.buffered_source_complete = true;
+        }
+
+        let mut lengths = [0; MAX_COMPONENTS];
+        let mut target_strides = [0; MAX_COMPONENTS];
+        let mut target_widths = [0; MAX_COMPONENTS];
+        let mut target_heights = [0; MAX_COMPONENTS];
+        for index in 0..count {
+            lengths[index] = planes[index].len();
+            target_strides[index] = strides[index];
+            target_widths[index] = layout[index].width;
+            target_heights[index] = layout[index].height;
+        }
+        let sink = RawPlanesSink {
+            planes,
+            lengths,
+            target_strides,
+            target_widths,
+            target_heights,
+            n_components: count,
+            requested_stripe: None,
+            rows_written: [0; MAX_COMPONENTS],
+            stripe_ready: false,
+            source_complete: false
+        };
+        let mut output = McuDecodeOutput::RawPlanes(sink);
+        self.decoder.render_buffered_output_stripe(&mut output)?;
+        self.decoder.finish_output_source();
+        self.decoder.raw_pull_state.phase = RawPullPhase::Complete;
+        Ok(())
     }
 }
 
@@ -2052,6 +2192,7 @@ where
                 .get(idx)
                 .map_or((0, 0), |component| (component.dc_pred, component.dc_diff))
         });
+        let dc_seen = self.capture_progressive_dc_seen();
 
         if let Some(state) = self.scan_state.as_mut() {
             state.progressive_fine_checkpoint = Some(Box::new(ProgressiveFineCheckpoint {
@@ -2064,6 +2205,7 @@ where
                 mcu_col,
                 todo: self.todo,
                 dc_predictions,
+                dc_seen,
                 bitstream_state
             }));
         }
@@ -2235,6 +2377,9 @@ where
             progressive_scan_buffer: core::array::from_fn(|_| Vec::new()),
             upsampler_scratch: Vec::new(),
             progressive_completed_scans: 0,
+            progressive_last_good_row: 0,
+            progressive_scan_last_good_row: 0,
+            progressive_smoothing_first_scan: true,
             progressive_displayed_scans: 0,
             progressive_render_incomplete: false,
             marker_body_scratch:         Vec::new(),
@@ -2466,7 +2611,7 @@ where
     /// Strict mode rejects truncated scans, while incremental mode uses the
     /// error to signal that the caller should provide more input.
     pub(crate) fn scan_eof_is_error(&self) -> bool {
-        self.options.strict_mode() || self.incremental_mode
+        self.options.strict_mode() || (self.incremental_mode && !self.raw_pull_state.input_complete)
     }
 
     /// Return the number of output scanlines known to be stable after the
@@ -3821,7 +3966,7 @@ where
     }
 
     fn abort_raw_pull_sequence(&mut self) {
-        if self.raw_pull_state.owner == RawPullOwner::None {
+        if self.raw_pull_state.owner == RawPullOwner::None && !self.raw_pull_state.input_complete {
             return;
         }
         self.raw_pull_state = RawPullState::default();
@@ -3846,6 +3991,26 @@ where
                 .map(|component| component.id)
                 .collect()
         )
+    }
+
+    fn raw_quantization_tables(&self) -> Option<Vec<QuantizationTable>> {
+        if !self.headers_decoded || self.components.is_empty() {
+            return None;
+        }
+        let qt_tables = &self.scan_state.as_deref()?.header_snapshot.qt_tables;
+        self.components
+            .iter()
+            .map(|component| {
+                let table = qt_tables[usize::from(component.quantization_table_number)].as_ref()?;
+                Some(QuantizationTable {
+                    component:    component.component_id,
+                    id:           component.id,
+                    table_number: component.quantization_table_number,
+                    // DQT values are 8 or 16 bit, so they always fit.
+                    values:       table.map(|value| value as u16)
+                })
+            })
+            .collect()
     }
 
     /// Copy one MCU stripe (`mcu_stripe_index`) of post-IDCT samples from
@@ -4257,9 +4422,110 @@ mod planar_layout_helpers {
     use zune_core::colorspace::ColorSpace;
     use zune_core::options::DecoderOptions;
 
-    use crate::color_convert::choose_ycbcr_to_rgb_convert_func;
     use super::{round_up_pow2, JpegDecoder, RawImcuRowStatus, ScanlineReadStatus, ScanlineStatus};
-    use crate::idct::{choose_idct_1x1_func, choose_idct_4x4_func, choose_idct_func};
+
+    fn dc_only_progressive_jpeg(with_eoi: bool) -> Vec<u8> {
+        let mut data = vec![0xFF, 0xD8, 0xFF, 0xDB, 0, 67, 0];
+        data.extend_from_slice(&[1; 64]);
+        data.extend_from_slice(&[
+            0xFF, 0xC2, 0, 17, 8, 0, 8, 0, 8, 3, 1, 0x11, 0, 2, 0x11, 0, 3, 0x11, 0, 0xFF, 0xC4, 0,
+            20, 0
+        ]);
+        data.extend_from_slice(&[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        data.push(0);
+        for component in 1..=3 {
+            data.extend_from_slice(&[0xFF, 0xDA, 0, 8, 1, component, 0, 0, 0, 0, 0x7F]);
+        }
+        if with_eoi {
+            data.extend_from_slice(&[0xFF, 0xD9]);
+        }
+        data
+    }
+
+    #[test]
+    fn final_raw_input_renders_truncated_progressive_planes() {
+        let data = dc_only_progressive_jpeg(false);
+        let mut decoder = JpegDecoder::new_with_options(
+            ZCursor::new(&data),
+            DecoderOptions::default().set_strict_mode(false)
+        );
+        decoder.decode_headers().unwrap();
+        let mut raw = decoder.raw_output();
+        let mut y = [0xA5; 8 * 11];
+        let mut u = [0xA5; 8 * 11];
+        let mut v = [0xA5; 8 * 11];
+        assert_eq!(
+            raw.decode_next_imcu_row(&mut [&mut y, &mut u, &mut v], &[11; 3])
+                .unwrap(),
+            RawImcuRowStatus::NeedMoreInput,
+        );
+        assert!(y
+            .iter()
+            .chain(u.iter())
+            .chain(v.iter())
+            .all(|&value| value == 0xA5));
+
+        raw.set_input_complete();
+        assert!(matches!(
+            raw.decode_next_imcu_row(&mut [&mut y, &mut u, &mut v], &[11; 3])
+                .unwrap(),
+            RawImcuRowStatus::RowReady {
+                rows_written: [8, 8, 8, 0]
+            },
+        ));
+        for plane in [&y, &u, &v] {
+            for row in plane.chunks_exact(11) {
+                assert_eq!(&row[..8], &[128; 8]);
+                assert_eq!(&row[8..], &[0xA5; 3]);
+            }
+        }
+        assert_eq!(
+            raw.decode_next_imcu_row(&mut [&mut [], &mut [], &mut []], &[11; 3])
+                .unwrap(),
+            RawImcuRowStatus::Complete,
+        );
+    }
+
+    #[test]
+    fn final_raw_input_keeps_strict_eof_an_error() {
+        let data = dc_only_progressive_jpeg(false);
+        let mut decoder = JpegDecoder::new_with_options(
+            ZCursor::new(&data),
+            DecoderOptions::default().set_strict_mode(true)
+        );
+        decoder.decode_headers().unwrap();
+        let mut raw = decoder.raw_output();
+        raw.set_input_complete();
+        let mut y = [0xA5; 64];
+        let mut u = [0xA5; 64];
+        let mut v = [0xA5; 64];
+        assert!(raw
+            .decode_next_imcu_row(&mut [&mut y, &mut u, &mut v], &[8; 3])
+            .unwrap_err()
+            .is_recoverable_eof());
+        assert!(y
+            .iter()
+            .chain(u.iter())
+            .chain(v.iter())
+            .all(|&value| value == 0xA5));
+    }
+
+    #[test]
+    fn final_raw_input_does_not_leak_to_pixel_output() {
+        let data = dc_only_progressive_jpeg(false);
+        let mut decoder = JpegDecoder::new_with_options(
+            ZCursor::new(&data),
+            DecoderOptions::default().set_strict_mode(false)
+        );
+        decoder.decode_headers().unwrap();
+        decoder.set_incremental_mode(true);
+        decoder.raw_output().set_input_complete();
+        let mut output = vec![0; decoder.output_buffer_size().unwrap()];
+        assert!(decoder
+            .decode_into(&mut output)
+            .unwrap_err()
+            .is_recoverable_eof());
+    }
 
     #[test]
     fn div_ceil_basic() {
@@ -4288,25 +4554,19 @@ mod planar_layout_helpers {
     }
 
     #[test]
-    fn set_options_refreshes_cached_dispatch() {
+    fn set_options_matches_fresh_decoder() {
+        let data = include_bytes!("../../../test-images/jpeg/2029.jpg");
         for (initial, replacement) in [
             (DecoderOptions::new_fast(), DecoderOptions::new_safe()),
             (DecoderOptions::new_safe(), DecoderOptions::new_fast())
         ] {
-            let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&[]), initial);
-            decoder.set_options(replacement);
-            assert_eq!(
-                decoder.idct_func as usize,
-                choose_idct_func(&replacement) as usize
-            );
-            assert_eq!(
-                decoder.idct_4x4_func as usize,
-                choose_idct_4x4_func(&replacement) as usize
-            );
-            assert_eq!(
-                decoder.idct_1x1_func as usize,
-                choose_idct_1x1_func(&replacement) as usize
-            );
+            let mut expected =
+                JpegDecoder::new_with_options(ZCursor::new(data), replacement);
+            let expected = expected.decode().unwrap();
+
+            let mut actual = JpegDecoder::new_with_options(ZCursor::new(data), initial);
+            actual.set_options(replacement);
+            assert_eq!(actual.decode().unwrap(), expected);
         }
 
         for colorspace in [
@@ -4316,12 +4576,13 @@ mod planar_layout_helpers {
             ColorSpace::BGRA
         ] {
             let replacement = DecoderOptions::default().jpeg_set_out_colorspace(colorspace);
-            let mut decoder = JpegDecoder::new(ZCursor::new(&[]));
-            decoder.set_options(replacement);
-            assert_eq!(
-                decoder.color_convert_16 as usize,
-                choose_ycbcr_to_rgb_convert_func(colorspace, &replacement).unwrap() as usize
-            );
+            let mut expected =
+                JpegDecoder::new_with_options(ZCursor::new(data), replacement);
+            let expected = expected.decode().unwrap();
+
+            let mut actual = JpegDecoder::new(ZCursor::new(data));
+            actual.set_options(replacement);
+            assert_eq!(actual.decode().unwrap(), expected, "{colorspace:?}");
         }
     }
 

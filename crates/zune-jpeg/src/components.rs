@@ -53,6 +53,12 @@ pub(crate) struct Components {
     pub dc_pred: i32,
     /// most recent difference in dc prediction for the component
     pub dc_diff: i32,
+    /// Successive-approximation bits from accepted progressive scans, in zigzag order.
+    pub progressive_bits: [i8; 64],
+    /// Precision before the most recent scan touching this component.
+    pub progressive_previous_bits: [i8; 10],
+    /// At least one DC coefficient is backed by accepted entropy data.
+    pub progressive_dc_seen: bool,
     /// An up-sampling function, can be basic or SSE, depending
     /// on the platform
     pub up_sampler: UpSampler,
@@ -158,6 +164,9 @@ impl Components {
             quantization_table: [0; 64],
             dc_pred: 0,
             dc_diff: 0,
+            progressive_bits: [-1; 64],
+            progressive_previous_bits: [-1; 10],
+            progressive_dc_seen: false,
             up_sampler: upsample_no_op,
             // set later
             width_stride: horizontal_sample,
@@ -206,7 +215,9 @@ impl Components {
     }
 }
 
-/// Component ID's
+/// Role of a component, given by its position in the SOF marker: the first
+/// component is `Y`, the second `Cb`, the third `Cr` and the fourth `Q`,
+/// whatever the image's colorspace.
 #[derive(Copy, Debug, Clone, PartialEq, Eq)]
 pub enum ComponentID {
     /// Luminance channel

@@ -59,17 +59,15 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
             return Err(NalError::Generic(format!("Invalid Chroma Format (>3) {r}")));
         }
     };
-    // 4:2:0 and monochrome (used e.g. for alpha planes) are supported;
-    // 4:2:2 and 4:4:4 are not implemented yet
-    if !matches!(sps.chroma_format, ChromaFormat::Yuv420 | ChromaFormat::Monochrome) {
-        return Err(NalError::Generic(format!(
-            "Currently unsupported Chroma Format {:?}",
-            sps.chroma_format
-        )));
-    }
-
     sps.separate_color_plane_flag =
         if sps.chroma_format == ChromaFormat::Yuv444 { r.read_flag()? } else { false };
+    // three separately coded colour planes (ChromaArrayType 0 with three
+    // pictures) are not supported
+    if sps.separate_color_plane_flag {
+        return Err(NalError::Generic(
+            "Separately coded colour planes (separate_colour_plane_flag) are not supported".into()
+        ));
+    }
 
     // --- Picture Size ---
     sps.pic_width_in_luma_samples = r.read_ue()?;
@@ -222,7 +220,17 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
 
     let sps_extension_present_flag = r.read_flag()?;
 
-    if sps_extension_present_flag {
+    // sps_range_extension_flag, sps_multilayer_extension_flag,
+    // sps_3d_extension_flag, sps_scc_extension_flag, sps_extension_4bits
+    // (7.3.2.2.1); only the range extension matters for decoding the base
+    // layer, and it comes first
+    let sps_range_extension_flag = sps_extension_present_flag && {
+        let range = r.read_flag()?;
+        r.get_bits(7)?;
+        range
+    };
+
+    if sps_range_extension_flag {
         let mut sps_range_ext = SpsRangeExtension::default();
 
         sps_range_ext.transform_skip_rotation_enabled_flag = r.read_flag()?;

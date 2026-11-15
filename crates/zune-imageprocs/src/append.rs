@@ -75,7 +75,7 @@ impl OperationsTrait for Append {
         }
         // Take all images out
         let imgs: Vec<Image> = std::mem::take(images);
-        let first = &images[0];
+        let first = &imgs[0];
 
         let depth = first.depth();
         let colorspace = first.colorspace();
@@ -107,7 +107,8 @@ impl OperationsTrait for Append {
                 .len();
 
             for ch_idx in 0..channels_len {
-                let new_dims = new_width * new_height;
+                // Channel lengths are in bytes
+                let new_dims = new_width * new_height * depth.size_of();
                 let mut out_channel = Channel::new_with_bit_type(new_dims, bit_type);
 
                 match bit_type {

@@ -245,7 +245,7 @@
 //! decoder.decode().unwrap();
 //! ```
 //!
-//! 3. Anything that implements [ZByteReaderTrait](zune_core::bytestream::traits::ZByteReaderTrait)
+//! 3. Anything that implements [`ZByteReaderTrait`](zune_core::bytestream::ZByteReaderTrait)
 //!
 //! ## Decode a JPEG file to RGBA format
 //!
@@ -320,10 +320,10 @@ extern crate core;
 pub use zune_core;
 
 pub use crate::cancel::{CancelCheck, NeverCancel};
-pub use crate::components::SampleRatios;
+pub use crate::components::{ComponentID, SampleRatios};
 pub use crate::decoder::{
-    ImageInfo, JpegDecoder, PlaneInfo, RawDecodeSession, RawImcuRowStatus, ScanlineDecodeSession,
-    ScanlineReadStatus, ScanlineResumePoint, ScanlineStatus
+    ImageInfo, JpegDecoder, PlaneInfo, QuantizationTable, RawDecodeSession, RawImcuRowStatus,
+    ScanlineDecodeSession, ScanlineReadStatus, ScanlineResumePoint, ScanlineStatus
 };
 pub use crate::marker::Marker;
 mod bitstream;

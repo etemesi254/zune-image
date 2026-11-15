@@ -12,7 +12,17 @@ use crate::header_structs::{
 use crate::utils::read_sized_int;
 
 const MAX_SIZE: usize = 10 * 1024 * 1024;
-const MAX_ENTRIES: u32 = 137;
+/// Most entries (items, properties, references) accepted in one box, like
+/// libheif's security limits (`MAX_CHILDREN_PER_BOX`, `MAX_ILOC_ITEMS`). A
+/// 200 MP photo has over 800 items.
+const MAX_ENTRIES: u32 = 20_000;
+
+/// Capacity to reserve for `count` entries of at least `min_entry_size`
+/// bytes each, when only `bytes_left` bytes remain: a corrupt count then
+/// cannot make us allocate much more than the box could hold.
+fn entry_capacity(count: u32, bytes_left: usize, min_entry_size: usize) -> usize {
+    (count as usize).min(bytes_left / min_entry_size)
+}
 #[inline]
 fn subtract_value(value: usize, subtract: usize) -> Result<usize, HeicErrors> {
     match value.checked_sub(subtract) {
@@ -268,7 +278,6 @@ pub fn decode_iinf<R: ZByteReaderTrait>(
         c
     };
     if entry_count > MAX_ENTRIES {
-        // chosen by rng dice
         return Err(HeicErrors::Generic {
             msg: format!(
                 "Entry count for IINF section too many {entry_count} (possibly corrupt) (max library supported entries {MAX_ENTRIES})"
@@ -280,7 +289,8 @@ pub fn decode_iinf<R: ZByteReaderTrait>(
         version,
         flags: version_and_flags & 0x00FF_FFFF,
         entry_count,
-        entries: Vec::with_capacity(entry_count as usize),
+        // an infe box is at least 12 bytes
+        entries: Vec::with_capacity(entry_capacity(entry_count, bytes_left, 12)),
     };
 
     // read infe sub blocks now
@@ -393,12 +403,12 @@ pub fn decode_iloc<R: ZByteReaderTrait>(
     //  └─────────┴─────────┴───────────────────┴─────────────────────┘
 
     if item_count > MAX_ENTRIES {
-        // chosen by rng dice
         return Err(HeicErrors::Generic {
             msg: format!("Entry count for ILOC section too many {item_count} (possibly corrupt) (max library supported entries {MAX_ENTRIES})")
         });
     }
-    let mut items = Vec::with_capacity(item_count as usize);
+    // an item is at least 6 bytes (id, data reference, extent count)
+    let mut items = Vec::with_capacity(entry_capacity(item_count, bytes_left, 6));
 
     for _ in 0..item_count {
         let item_id = if version < 2 {
@@ -548,14 +558,13 @@ pub fn decode_iref<R: ZByteReaderTrait>(
 
         let ref_count = reader.get_u16_be_err()?;
         if u32::from(ref_count) > MAX_ENTRIES {
-            // chosen by rng dice
-            return Err(HeicErrors::Generic {
+                return Err(HeicErrors::Generic {
                 msg: format!(
                     "Entry count for IREF section too many {ref_count} (possibly corrupt) (max library supported entries {MAX_ENTRIES})"
                 )
             });
         }
-        let mut to_item_ids = Vec::with_capacity(ref_count as usize);
+        let mut to_item_ids = Vec::with_capacity(usize::from(ref_count));
 
         child_bytes_left = subtract_value(child_bytes_left, 2)?;
 
@@ -1005,7 +1014,6 @@ pub fn decode_ipma<R: ZByteReaderTrait>(
     let version = (version_and_flags >> 24) as u8;
     let flags = version_and_flags & 0x00FF_FFFF;
     if entry_count > MAX_ENTRIES {
-        // chosen by rng dice
         return Err(HeicErrors::Generic {
             msg: format!(
                 "Entry count for IPMA section too many {entry_count} (possibly corrupt) (max library supported entries {MAX_ENTRIES})"
@@ -1013,7 +1021,8 @@ pub fn decode_ipma<R: ZByteReaderTrait>(
         });
     }
 
-    let mut entries = Vec::with_capacity(entry_count as usize);
+    // an entry is at least 3 bytes (16-bit item id, association count)
+    let mut entries = Vec::with_capacity(entry_capacity(entry_count, bytes_left, 3));
 
     for _ in 0..entry_count {
         let item_id = if version >= 1 {
@@ -1029,15 +1038,6 @@ pub fn decode_ipma<R: ZByteReaderTrait>(
         let assoc_count = reader.read_u8();
 
         bytes_left = subtract_value(bytes_left, 1)?;
-
-        if entry_count > MAX_ENTRIES {
-            // chosen by rng dice
-            return Err(HeicErrors::Generic {
-                msg: format!(
-                    "Entry count for IPMA sub-section too many {entry_count} (possibly corrupt) (max library supported entries {MAX_ENTRIES})"
-                )
-            });
-        }
 
         let mut associations = Vec::with_capacity(assoc_count as usize);
 

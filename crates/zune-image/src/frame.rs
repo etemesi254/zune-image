@@ -336,9 +336,9 @@ impl Frame {
         let out_pixels = match self.channels.len() {
             0 => vec![],
 
-            1..4 => {
-                let size = self.channels[0]
-                    .len()
+            1..=4 => {
+                // channel length is in bytes, output length is in elements of `T`
+                let size = (self.channels[0].len() / size_of::<T>())
                     .checked_mul(self.channels.len())
                     .expect("Overflowed an int");
 

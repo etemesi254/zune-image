@@ -25,8 +25,8 @@ pub use jxl_oxide;
 use jxl_oxide::{JxlImage, PixelFormat, RenderResult};
 use zune_core::bit_depth::{BitDepth, BitType};
 use zune_core::bytestream::ZByteWriterTrait;
-use zune_core::colorspace::ColorSpace;
-use zune_core::log::trace;
+use zune_core::colorspace::{ColorPrimaries, ColorSpace, SingleColorPrimary};
+use zune_core::log::{trace, warn};
 use zune_core::options::{DecoderOptions, EncoderOptions};
 pub use zune_jpegxl::*;
 
@@ -73,7 +73,8 @@ impl EncoderTrait for JxlEncoder {
 
         let data = &image.to_u8()[0];
 
-        let encoder = JxlSimpleEncoder::new(data, options);
+        let mut encoder = JxlSimpleEncoder::new(data, options);
+        describe_colors(&mut encoder, image.metadata());
 
         let data = encoder
             .encode(sink)
@@ -108,6 +109,55 @@ impl EncoderTrait for JxlEncoder {
 
     fn set_options(&mut self, options: EncoderOptions) {
         self.options = Some(options)
+    }
+}
+
+/// The CIE x and y of a primary or white point.
+const fn xy(x: f64, y: f64) -> SingleColorPrimary {
+    SingleColorPrimary { x, y, z: 0.0 }
+}
+
+/// The primaries and white point a cICP `color_primaries` code names,
+/// for those JPEG XL also names: 1 (BT.709 and sRGB), 9 (BT.2020 and
+/// BT.2100), 11 (DCI-P3) and 12 (Display P3).
+fn primaries_of_cicp(code: u8) -> Option<ColorPrimaries> {
+    let d65 = xy(0.3127, 0.3290);
+    let p3 = [xy(0.680, 0.320), xy(0.265, 0.690), xy(0.150, 0.060)];
+    let ([red, green, blue], white_point) = match code {
+        1 => ([xy(0.640, 0.330), xy(0.300, 0.600), xy(0.150, 0.060)], d65),
+        9 => ([xy(0.708, 0.292), xy(0.170, 0.797), xy(0.131, 0.046)], d65),
+        11 => (p3, xy(0.314, 0.351)),
+        12 => (p3, d65),
+        _ => return None
+    };
+    Some(ColorPrimaries {
+        red,
+        green,
+        blue,
+        white_point
+    })
+}
+
+/// Has `encoder` name the transfer function, primaries and white point
+/// `metadata` gives, as a PNG's cICP and cHRM chunks do, so that they
+/// survive the conversion. cICP's primaries are taken before cHRM's,
+/// as the PNG specification orders them. A transfer function JPEG XL
+/// has no name for is left as sRGB's, with a warning, rather than
+/// failing the encode; unknown cICP primaries without cHRM are left as
+/// sRGB's too.
+fn describe_colors(encoder: &mut JxlSimpleEncoder, metadata: &ImageMetadata) {
+    if let Some(trc) = metadata.color_trc {
+        if JxlSimpleEncoder::names_color_characteristics(trc) {
+            encoder.set_color_characteristics(trc);
+        } else {
+            warn!("JPEG XL names no transfer function {:?}: writing sRGB's", trc);
+        }
+    }
+    let primaries = (metadata.color_standard)
+        .and_then(primaries_of_cicp)
+        .or(metadata.color_primaries);
+    if let Some(primaries) = primaries {
+        encoder.set_color_primaries(primaries);
     }
 }
 
@@ -250,5 +300,148 @@ impl DecoderTrait for JxlDecoder {
         };
 
         Ok(Some(metadata))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use jxl_oxide::color::{ColourEncoding, Primaries, TransferFunction, WhitePoint};
+    use zune_core::colorspace::{ColorCharacteristics, ColorSpace};
+
+    use super::*;
+    use crate::traits::EncoderTrait;
+
+    /// A 4 by 4 RGB ramp with `metadata`'s colors, encoded and its
+    /// header's color encoding read back by jxl-oxide.
+    fn round_trip(describe: impl FnOnce(&mut ImageMetadata)) -> ColourEncoding {
+        let pixels: Vec<u8> = (0..48).map(|i| (i * 5) as u8).collect();
+        let mut image = Image::from_u8(&pixels, 4, 4, ColorSpace::RGB);
+        describe(image.metadata_mut());
+        let mut bytes = Vec::new();
+        JxlEncoder::new().encode(&image, &mut bytes).unwrap();
+        let decoded = jxl_oxide::JxlImage::builder().read(&bytes[..]).unwrap();
+        decoded.image_header().metadata.colour_encoding.clone()
+    }
+
+    /// `encoding`'s white point, primaries and transfer function.
+    fn named(encoding: ColourEncoding) -> (WhitePoint, Primaries, TransferFunction) {
+        match encoding {
+            ColourEncoding::Enum(e) => (e.white_point, e.primaries, e.tf),
+            other => panic!("expected an enum encoding, got {other:?}")
+        }
+    }
+
+    #[test]
+    fn cicp_transfer_and_primaries_reach_the_header() {
+        let got = named(round_trip(|m| {
+            m.color_trc = Some(ColorCharacteristics::PQ);
+            m.color_standard = Some(9);
+        }));
+        assert_eq!(got.0, WhitePoint::D65);
+        assert_eq!(got.1, Primaries::Bt2100);
+        assert_eq!(got.2, TransferFunction::Pq);
+    }
+
+    #[test]
+    fn cicp_dci_p3_keeps_its_white_point() {
+        let got = named(round_trip(|m| {
+            m.color_trc = Some(ColorCharacteristics::Smpte428);
+            m.color_standard = Some(11);
+        }));
+        assert_eq!(got.0, WhitePoint::Dci);
+        assert_eq!(got.1, Primaries::P3);
+        assert_eq!(got.2, TransferFunction::Dci);
+    }
+
+    #[test]
+    fn chrm_primaries_reach_the_header_without_cicp() {
+        let p3 = primaries_of_cicp(12).unwrap();
+        let got = named(round_trip(|m| m.color_primaries = Some(p3)));
+        assert_eq!(got.0, WhitePoint::D65);
+        assert_eq!(got.1, Primaries::P3);
+        assert_eq!(got.2, TransferFunction::Srgb);
+    }
+
+    #[test]
+    fn cicp_primaries_come_before_chrm() {
+        let p3 = primaries_of_cicp(12).unwrap();
+        let got = named(round_trip(|m| {
+            m.color_primaries = Some(p3);
+            m.color_standard = Some(1);
+        }));
+        assert_eq!(got.1, Primaries::Srgb);
+    }
+
+    #[test]
+    fn an_unnamed_transfer_function_is_written_as_srgb() {
+        let got = named(round_trip(|m| {
+            m.color_trc = Some(ColorCharacteristics::Log100);
+        }));
+        assert_eq!(got.1, Primaries::Srgb);
+        assert_eq!(got.2, TransferFunction::Srgb);
+    }
+
+    /// The CRC-32 a PNG chunk ends with, of its type and data.
+    #[cfg(feature = "png")]
+    fn crc(bytes: &[u8]) -> u32 {
+        let mut crc = !0u32;
+        for &b in bytes {
+            crc ^= u32::from(b);
+            for _ in 0..8 {
+                crc = (crc >> 1) ^ (0xEDB8_8320 & (crc & 1).wrapping_neg());
+            }
+        }
+        !crc
+    }
+
+    /// A PNG chunk of `kind` holding `data`.
+    #[cfg(feature = "png")]
+    fn chunk(kind: &[u8; 4], data: &[u8]) -> Vec<u8> {
+        let mut body = kind.to_vec();
+        body.extend_from_slice(data);
+        let mut out = (data.len() as u32).to_be_bytes().to_vec();
+        out.extend_from_slice(&body);
+        out.extend_from_slice(&crc(&body).to_be_bytes());
+        out
+    }
+
+    #[test]
+    #[cfg(feature = "png")]
+    fn a_png_s_cicp_and_chrm_survive_conversion_to_jpeg_xl() {
+        use zune_core::bytestream::ZCursor;
+        use zune_core::options::DecoderOptions;
+
+        let pixels: Vec<u8> = (0..48).map(|i| (i * 5) as u8).collect();
+        let image = Image::from_u8(&pixels, 4, 4, ColorSpace::RGB);
+        let mut png = Vec::new();
+        crate::codecs::png::PngEncoder::new()
+            .encode(&image, &mut png)
+            .unwrap();
+        // After the signature and IHDR (8 + 25 bytes): cICP naming
+        // BT.2020's primaries with HLG, and cHRM giving P3's, which
+        // cICP's come before.
+        let p3 = primaries_of_cicp(12).unwrap();
+        let chrm: Vec<u8> = [p3.white_point, p3.red, p3.green, p3.blue]
+            .iter()
+            .flat_map(|c| [c.x, c.y])
+            .flat_map(|v| ((v * 100_000.0).round() as u32).to_be_bytes())
+            .collect();
+        let mut tagged = png[..33].to_vec();
+        tagged.extend(chunk(b"cICP", &[9, 18, 0, 1]));
+        tagged.extend(chunk(b"cHRM", &chrm));
+        tagged.extend_from_slice(&png[33..]);
+
+        let read = Image::read(ZCursor::new(&tagged), DecoderOptions::default()).unwrap();
+        let mut bytes = Vec::new();
+        JxlEncoder::new().encode(&read, &mut bytes).unwrap();
+        let decoded = jxl_oxide::JxlImage::builder().read(&bytes[..]).unwrap();
+        let got = named(decoded.image_header().metadata.colour_encoding.clone());
+        assert_eq!(got, (WhitePoint::D65, Primaries::Bt2100, TransferFunction::Hlg));
+    }
+
+    #[test]
+    fn no_color_metadata_is_srgb() {
+        let got = named(round_trip(|_| ()));
+        assert_eq!(got, (WhitePoint::D65, Primaries::Srgb, TransferFunction::Srgb));
     }
 }

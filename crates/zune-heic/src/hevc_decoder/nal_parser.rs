@@ -408,6 +408,13 @@ where
         return Err(NalError::InvalidTemporalId);
     }
 
+    // NAL units of other layers (multi-layer / L-HEVC streams) are not part
+    // of the base layer picture: a single-layer decoder ignores them, like
+    // libde265 (H.265 7.4.2.2, F.7.4.2.2)
+    if layer_id > 0 {
+        return Ok(None);
+    }
+
     // Reserved and unspecified NAL unit types must be ignored (H.265 7.4.2.2)
     let Ok(nal_type) = NalUnitType::from_u8(raw_type) else {
         return Ok(None);

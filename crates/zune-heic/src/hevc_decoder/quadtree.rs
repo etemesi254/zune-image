@@ -306,7 +306,7 @@ pub fn finish_ctu(
         // let _curr_tile_id = pps.tile_id_rs[curr_addr_rs];
         // let _next_addr_rs = curr_addr_rs + 1; // Raster scan increment
 
-        todo!()
+        return Err(NalError::Generic("Tiles (tiles_enabled_flag) are not supported".into()));
         // // Peek at next CTB in Tile Scan order
         // if let Some(next_addr_ts) = ctx.get_next_ctb_addr_ts() {
         //     if pps.tile_id_ts[next_addr_ts] != pps.tile_id_ts[next_addr_ts - 1] {

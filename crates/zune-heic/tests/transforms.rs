@@ -30,3 +30,20 @@ fn greyscale_with_clean_aperture() {
     assert_eq!((w, h, cs), (301, 203, ColorSpace::Luma));
     assert_eq!(pixels.len(), w * h);
 }
+
+#[test]
+fn chroma_formats() {
+    // 4:4:4 and 4:2:2 (301x203, coded larger and cropped), with alpha,
+    // transform skip and lossless RGB
+    for (name, w, h, cs) in [
+        ("yuv444.heic", 301, 203, ColorSpace::RGB),
+        ("yuv422.heic", 301, 203, ColorSpace::RGB),
+        ("yuv444-alpha.heic", 200, 150, ColorSpace::RGBA),
+        ("yuv422-transform-skip.heic", 256, 256, ColorSpace::RGB),
+        ("rgb444-lossless.heic", 256, 256, ColorSpace::RGB),
+    ] {
+        let (width, height, colorspace, pixels) = decode(name);
+        assert_eq!((width, height, colorspace), (w, h, cs), "{name}");
+        assert_eq!(pixels.len(), w * h * cs.num_components(), "{name}");
+    }
+}
