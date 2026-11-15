@@ -29,7 +29,7 @@ use crate::bitstream::{BitstreamStateSnapshot, BitStreamHuffman};
 #[cfg(feature = "arith")]
 use crate::bitstream_arith::{ArithACTables, ArithDCTables, BitStreamArithmetic};
 use crate::color_convert::choose_ycbcr_to_rgb_convert_func;
-use crate::components::{Components, SampleRatios};
+use crate::components::{ComponentID, Components, SampleRatios};
 use crate::errors::{DecodeErrors, UnsupportedSchemes};
 #[cfg(feature = "arith")]
 use crate::headers::parse_dac;
@@ -86,6 +86,22 @@ pub struct PlaneInfo {
     pub allocated_height:           usize,
     /// Required slice length for this plane: `stride * allocated_height`.
     pub byte_size:                  usize
+}
+
+/// Quantization table of one component, as returned by
+/// [`RawDecodeSession::quantization_tables`].
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct QuantizationTable {
+    /// The component's role, from its position in the SOF marker.
+    pub component:    ComponentID,
+    /// Component selector byte from the SOF marker, as
+    /// [`RawDecodeSession::component_ids`] returns it.
+    pub id:           u8,
+    /// DQT destination (`Tq`) the component's SOF entry selects.
+    pub table_number: u8,
+    /// The 64 table values in natural (row-major) coefficient order.
+    pub values:       [u16; 64]
 }
 
 /// Round `n` up to the next multiple of `align` (which must be non-zero).
@@ -623,16 +639,18 @@ where
 
     /// Quantization table of each component, in SOF declaration order.
     ///
-    /// Each table holds the 64 values of the DQT marker the component's SOF
-    /// entry selects, in natural (row-major) coefficient order rather than
-    /// the zig-zag order they are stored in. Together with the raw planes,
-    /// this lets a caller reason about the precision the encoder kept for
-    /// each component.
+    /// Each entry names its component, both by role and by SOF selector, and
+    /// carries the DQT destination the component's SOF entry selects and the
+    /// table it is reconstructed with: the one that destination held when the
+    /// first scan began, in natural (row-major) coefficient order rather than
+    /// the zig-zag order it is stored in. Together with the raw planes, this
+    /// lets a caller reason about the precision the encoder kept for each
+    /// component.
     ///
     /// Returns `None` when headers have not been decoded yet, contain no
     /// components, or a component selects a table that was never defined.
     #[must_use]
-    pub fn quantization_tables(&self) -> Option<Vec<[u16; 64]>> {
+    pub fn quantization_tables(&self) -> Option<Vec<QuantizationTable>> {
         self.decoder.raw_quantization_tables()
     }
 
@@ -2967,7 +2985,7 @@ where
         Some(self.components.iter().map(|component| component.id).collect())
     }
 
-    fn raw_quantization_tables(&self) -> Option<Vec<[u16; 64]>> {
+    fn raw_quantization_tables(&self) -> Option<Vec<QuantizationTable>> {
         if !self.headers_decoded || self.components.is_empty() {
             return None;
         }
@@ -2976,8 +2994,13 @@ where
             .iter()
             .map(|component| {
                 let table = qt_tables[usize::from(component.quantization_table_number)].as_ref()?;
-                // DQT values are 8 or 16 bit, so they always fit.
-                Some(table.map(|value| value as u16))
+                Some(QuantizationTable {
+                    component:    component.component_id,
+                    id:           component.id,
+                    table_number: component.quantization_table_number,
+                    // DQT values are 8 or 16 bit, so they always fit.
+                    values:       table.map(|value| value as u16)
+                })
             })
             .collect()
     }

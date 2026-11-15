@@ -16,7 +16,7 @@ use std::io::{BufRead, Read, Seek, SeekFrom};
 use std::rc::Rc;
 
 use zune_core::bytestream::ZCursor;
-use zune_jpeg::JpegDecoder;
+use zune_jpeg::{ComponentID, JpegDecoder, QuantizationTable};
 
 /// Zig-zag index -> natural (row-major) index.
 const ZIGZAG: [usize; 64] = [
@@ -25,9 +25,9 @@ const ZIGZAG: [usize; 64] = [
     52, 45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62, 63
 ];
 
-/// Walk the markers up to the first SOS and return, per SOF component, the
-/// natural-order table it selects.
-fn tables_in_file(bytes: &[u8]) -> Vec<[u16; 64]> {
+/// Walk the markers up to the first SOS and return, per SOF component, its
+/// selector, the destination it selects and that table in natural order.
+fn tables_in_file(bytes: &[u8]) -> Vec<(u8, u8, [u16; 64])> {
     let mut defined: [Option<[u16; 64]>; 4] = [None; 4];
     let mut selected = Vec::new();
     let mut pos = 2;
@@ -62,7 +62,7 @@ fn tables_in_file(bytes: &[u8]) -> Vec<[u16; 64]> {
             0xC0..=0xC2 => {
                 let count = usize::from(body[5]);
                 for c in 0..count {
-                    selected.push(usize::from(body[6 + 3 * c + 2]));
+                    selected.push((body[6 + 3 * c], body[6 + 3 * c + 2]));
                 }
             }
             0xDA => break,
@@ -72,15 +72,34 @@ fn tables_in_file(bytes: &[u8]) -> Vec<[u16; 64]> {
     }
     selected
         .into_iter()
-        .map(|position| defined[position].expect("table defined before SOS"))
+        .map(|(id, position)| {
+            let table = defined[usize::from(position)].expect("table defined before SOS");
+            (id, position, table)
+        })
         .collect()
 }
 
-fn tables_from_decoder(bytes: &[u8]) -> Vec<[u16; 64]> {
+fn as_tuples(tables: &[QuantizationTable]) -> Vec<(u8, u8, [u16; 64])> {
+    tables
+        .iter()
+        .map(|t| (t.id, t.table_number, t.values))
+        .collect()
+}
+
+fn tables_from_decoder(bytes: &[u8]) -> Vec<QuantizationTable> {
     let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
     decoder.decode_headers().expect("decode_headers failed");
     let raw = decoder.raw_output();
-    raw.quantization_tables().expect("quantization tables")
+    let tables = raw.quantization_tables().expect("quantization tables");
+    assert_eq!(
+        tables.iter().map(|t| t.id).collect::<Vec<_>>(),
+        raw.component_ids().unwrap()
+    );
+    tables
+}
+
+fn components(tables: &[QuantizationTable]) -> Vec<ComponentID> {
+    tables.iter().map(|t| t.component).collect()
 }
 
 #[test]
@@ -95,7 +114,7 @@ fn quantization_tables_444() {
     let bytes = include_bytes!("../../../test-images/jpeg/non_interleaved_444_64x64.jpg");
     let tables = tables_from_decoder(bytes);
     assert_eq!(tables.len(), 3);
-    assert_eq!(tables, tables_in_file(bytes));
+    assert_eq!(as_tuples(&tables), tables_in_file(bytes));
 }
 
 #[test]
@@ -103,16 +122,43 @@ fn quantization_tables_420() {
     let bytes = include_bytes!("../../../test-images/jpeg/non_interleaved_420_64x64.jpg");
     let tables = tables_from_decoder(bytes);
     assert_eq!(tables.len(), 3);
-    assert_eq!(tables, tables_in_file(bytes));
+    assert_eq!(as_tuples(&tables), tables_in_file(bytes));
     // Luma and chroma usually select different tables.
-    assert_ne!(tables[0], tables[1]);
+    assert_ne!(tables[0].values, tables[1].values);
 }
 
 #[test]
 fn quantization_tables_are_in_natural_order() {
     let bytes = include_bytes!("../../../test-images/jpeg/fox410.jpg");
     let tables = tables_from_decoder(bytes);
-    assert_eq!(tables, tables_in_file(bytes));
+    assert_eq!(as_tuples(&tables), tables_in_file(bytes));
+}
+
+#[test]
+fn quantization_tables_name_their_components() {
+    use ComponentID::{Cb, Cr, Q, Y};
+
+    let grey = include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg");
+    let tables = tables_from_decoder(grey);
+    assert_eq!(components(&tables), [Y]);
+    assert_eq!(as_tuples(&tables), tables_in_file(grey));
+
+    let colour = include_bytes!("../../../test-images/jpeg/non_interleaved_420_64x64.jpg");
+    let tables = tables_from_decoder(colour);
+    assert_eq!(components(&tables), [Y, Cb, Cr]);
+
+    let four = include_bytes!("../../../test-images/jpeg/four_components.jpg");
+    let tables = tables_from_decoder(four);
+    assert_eq!(components(&tables), [Y, Cb, Cr, Q]);
+    assert_eq!(as_tuples(&tables), tables_in_file(four));
+
+    // Selectors that are not 1, 2, 3: the role still follows the position,
+    // the selector is reported as encoded.
+    let unusual = include_bytes!("../../../test-images/jpeg/huge_sof_number.jpg");
+    let tables = tables_from_decoder(unusual);
+    assert_eq!(components(&tables), [Y, Cb, Cr]);
+    assert_eq!(as_tuples(&tables), tables_in_file(unusual));
+    assert_ne!(tables.iter().map(|t| t.id).collect::<Vec<_>>(), [1, 2, 3]);
 }
 
 /// Offsets of the file's SOS markers.
@@ -201,7 +247,7 @@ fn check_dqt_between_scans(original: &[u8]) {
     let mut decoder = JpegDecoder::new(ZCursor::new(&bytes));
     decoder.decode_headers().unwrap();
     let mut raw = decoder.raw_output();
-    assert_eq!(raw.quantization_tables().unwrap(), expected);
+    assert_eq!(as_tuples(&raw.quantization_tables().unwrap()), expected);
     let layout = raw.layout().unwrap();
     let components = raw.num_components().unwrap();
     let mut planes: Vec<Vec<u8>> = layout[..components]
@@ -210,7 +256,7 @@ fn check_dqt_between_scans(original: &[u8]) {
         .collect();
     let mut refs: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
     raw.decode_into_planes(&mut refs).unwrap();
-    assert_eq!(raw.quantization_tables().unwrap(), expected);
+    assert_eq!(as_tuples(&raw.quantization_tables().unwrap()), expected);
 
     let limit = Rc::new(Cell::new(0));
     let mut decoder = JpegDecoder::new(Growing {
@@ -236,13 +282,13 @@ fn check_dqt_between_scans(original: &[u8]) {
         match raw.decode_into_planes(&mut refs) {
             Ok(()) => break,
             Err(e) if e.is_recoverable_eof() => {
-                assert_eq!(raw.quantization_tables().unwrap(), expected);
+                assert_eq!(as_tuples(&raw.quantization_tables().unwrap()), expected);
                 limit.set(limit.get() + 97);
             }
             Err(e) => panic!("{e:?}")
         }
     }
-    assert_eq!(raw.quantization_tables().unwrap(), expected);
+    assert_eq!(as_tuples(&raw.quantization_tables().unwrap()), expected);
     assert_eq!(retried, planes);
 }
 

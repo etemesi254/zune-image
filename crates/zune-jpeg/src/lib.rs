@@ -286,9 +286,9 @@ extern crate core;
 
 pub use zune_core;
 
-pub use crate::components::SampleRatios;
+pub use crate::components::{ComponentID, SampleRatios};
 pub use crate::decoder::{
-    ImageInfo, JpegDecoder, PlaneInfo, RawDecodeSession, RawImcuRowStatus
+    ImageInfo, JpegDecoder, PlaneInfo, QuantizationTable, RawDecodeSession, RawImcuRowStatus
 };
 pub use crate::marker::Marker;
 pub use crate::cancel::{CancelCheck, NeverCancel};
