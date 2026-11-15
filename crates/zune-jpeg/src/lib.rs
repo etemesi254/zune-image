@@ -320,10 +320,10 @@ extern crate core;
 pub use zune_core;
 
 pub use crate::cancel::{CancelCheck, NeverCancel};
-pub use crate::components::SampleRatios;
+pub use crate::components::{ComponentID, SampleRatios};
 pub use crate::decoder::{
-    ImageInfo, JpegDecoder, PlaneInfo, RawDecodeSession, RawImcuRowStatus, ScanlineDecodeSession,
-    ScanlineReadStatus, ScanlineStatus
+    ImageInfo, JpegDecoder, PlaneInfo, QuantizationTable, RawDecodeSession, RawImcuRowStatus,
+    ScanlineDecodeSession, ScanlineReadStatus, ScanlineStatus
 };
 pub use crate::marker::Marker;
 mod bitstream;
