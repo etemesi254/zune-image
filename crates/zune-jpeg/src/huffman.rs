@@ -68,8 +68,7 @@ impl HuffmanTable {
     }
 
     fn new_with_dc_symbol_limit(
-        codes: &[u8; 17], values: [u8; 256], is_dc: bool, is_progressive: bool,
-        dc_symbol_limit: u8
+        codes: &[u8; 17], values: [u8; 256], is_dc: bool, is_progressive: bool, dc_symbol_limit: u8
     ) -> Result<HuffmanTable, DecodeErrors> {
         let too_long_code = (i32::from(HUFF_LOOKAHEAD) + 1) << HUFF_LOOKAHEAD;
         let mut p = HuffmanTable {
@@ -104,7 +103,7 @@ impl HuffmanTable {
         clippy::cast_sign_loss,
         clippy::too_many_lines,
         clippy::needless_range_loop,
-        clippy::explicit_counter_loop,
+        clippy::explicit_counter_loop
     )]
     fn make_derived_table(
         &mut self, is_dc: bool, _is_progressive: bool, bits: &[u8; 17], dc_symbol_limit: u8

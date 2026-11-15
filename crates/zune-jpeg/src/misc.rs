@@ -113,7 +113,6 @@ pub enum SOFMarkers {
     LosslessArithmetic
 }
 
-
 impl SOFMarkers {
     /// Check if a certain marker is sequential DCT or not
     pub fn is_sequential_dct(self) -> bool {

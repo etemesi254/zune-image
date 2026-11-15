@@ -168,7 +168,11 @@ pub fn ycbcr_to_rgb_neon(
     y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], out: &mut [u8], offset: &mut usize
 ) {
     // check if we have enough space to write.
-    let out: &mut [u8; 48] = out.get_mut(*offset..*offset + 48).expect("Slice to small cannot write").try_into().unwrap();
+    let out: &mut [u8; 48] = out
+        .get_mut(*offset..*offset + 48)
+        .expect("Slice to small cannot write")
+        .try_into()
+        .unwrap();
 
     // SAFETY: `out` is a validated 48-byte destination, and `vst3q_u8` writes
     // exactly three interleaved 16-byte vectors.
@@ -203,7 +207,11 @@ pub fn ycbcr_to_rgba_neon(
     y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], out: &mut [u8], offset: &mut usize
 ) {
     // check if we have enough space to write.
-    let out: &mut [u8; 64] = out.get_mut(*offset..*offset + 64).expect("Slice to small cannot write").try_into().unwrap();
+    let out: &mut [u8; 64] = out
+        .get_mut(*offset..*offset + 64)
+        .expect("Slice to small cannot write")
+        .try_into()
+        .unwrap();
 
     // SAFETY: `out` is a validated 64-byte destination, and `vst4q_u8` writes
     // exactly four interleaved 16-byte vectors.

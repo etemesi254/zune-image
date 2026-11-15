@@ -114,7 +114,11 @@ unsafe fn ycbcr_to_rgb_avx2_1<const BGR: bool>(
     y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], out: &mut [u8], offset: &mut usize
 ) {
     // check if we have enough space to write.
-    let out: &mut [u8; 48] = out.get_mut(*offset..*offset + 48).expect("Slice to small cannot write").try_into().unwrap();
+    let out: &mut [u8; 48] = out
+        .get_mut(*offset..*offset + 48)
+        .expect("Slice to small cannot write")
+        .try_into()
+        .unwrap();
 
     let (mut r, mut g, mut b) = ycbcr_to_rgb_baseline_no_clamp(y, cb, cr);
 
@@ -342,5 +346,4 @@ mod safety_tests {
             "function did NOT write at offset=50 as the API implies"
         );
     }
-
 }

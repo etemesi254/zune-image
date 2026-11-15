@@ -10,6 +10,7 @@
 //!
 //! Not as fast as AVX one.
 
+use super::scaled_basis::{BASIS_10, BASIS_12, BASIS_14, BASIS_3, BASIS_5, BASIS_6, BASIS_7};
 use super::{CONST_BITS, OUTPUT_SHIFT, PASS1_ROUND, PASS1_SHIFT, SCALE_BITS};
 
 #[inline(always)]
@@ -35,8 +36,110 @@ pub fn idct_int_1x1(in_vector: &mut [i32; 64], mut out_vector: &mut [i16], strid
     for _ in 0..7 {
         out_vector = &mut out_vector[stride..];
         out_vector[..8].fill(coeff);
-
     }
+}
+
+// Separable reduced-IDCT weights and pass precision match libjpeg-turbo's
+// jidctred.c. These average DCT reconstruction cells, rather than sampling a
+// full 8x8 reconstruction. Frequency four vanishes at half scale; even AC
+// frequencies vanish at quarter scale.
+const HALF_WEIGHTS: [[i32; 8]; 4] = [
+    [16384, 20995, 15137, 7373, 0, -4926, -6270, -4176],
+    [16384, 8697, -15137, -17799, 0, 11893, 6270, -1730],
+    [16384, -8697, -15137, 17799, 0, -11893, 6270, 1730],
+    [16384, -20995, 15137, -7373, 0, 4926, -6270, 4176]
+];
+
+const QUARTER_WEIGHTS: [[i32; 8]; 2] = [
+    [32768, 29692, 0, -10426, 0, 6967, 0, -5906],
+    [32768, -29692, 0, 10426, 0, -6967, 0, 5906]
+];
+
+fn reduced_idct<const SIDE: usize>(
+    coefficients: &[i32; 64], output: &mut [i16], stride: usize, weights: &[[i32; 8]; SIDE],
+    column_shift: u32, row_shift: u32
+) {
+    assert!(stride >= SIDE && output.len() >= (SIDE - 1) * stride + SIDE);
+    let mut workspace = [[0_i32; 8]; SIDE];
+    for row in 0..SIDE {
+        for column in 0..8 {
+            let mut sum = 0_i32;
+            for frequency in 0..8 {
+                sum = wa(
+                    sum,
+                    wm(
+                        coefficients[frequency * 8 + column],
+                        weights[row][frequency]
+                    )
+                );
+            }
+            workspace[row][column] = wa(sum, 1 << (column_shift - 1)) >> column_shift;
+        }
+    }
+    for row in 0..SIDE {
+        for column in 0..SIDE {
+            let mut sum = 0_i32;
+            for frequency in 0..8 {
+                sum = wa(
+                    sum,
+                    wm(workspace[row][frequency], weights[column][frequency])
+                );
+            }
+            let sample = wa(sum, 1 << (row_shift - 1)) >> row_shift;
+            output[row * stride + column] = clamp(wa(sample, 128));
+        }
+    }
+}
+
+/// Reconstruct a half-scale 4x4 block without modifying coefficients or row padding.
+pub fn idct_scaled_4x4(coefficients: &mut [i32; 64], output: &mut [i16], stride: usize) {
+    reduced_idct(coefficients, output, stride, &HALF_WEIGHTS, 12, 19);
+}
+
+/// Reconstruct a quarter-scale 2x2 block without modifying coefficients or row padding.
+pub fn idct_scaled_2x2(coefficients: &mut [i32; 64], output: &mut [i16], stride: usize) {
+    reduced_idct(coefficients, output, stride, &QUARTER_WEIGHTS, 13, 20);
+}
+
+/// Reconstruct the eighth-scale block average without modifying coefficients.
+pub fn idct_scaled_1x1(coefficients: &mut [i32; 64], output: &mut [i16], stride: usize) {
+    assert!(stride > 0 && !output.is_empty());
+    output[0] = clamp(wa(wa(coefficients[0], 4) >> 3, 128));
+}
+
+/// Reconstruct a three-eighths-scale block with native integer rounding.
+pub fn idct_scaled_3x3(coefficients: &mut [i32; 64], output: &mut [i16], stride: usize) {
+    reduced_idct(coefficients, output, stride, &BASIS_3, 11, 18);
+}
+
+/// Reconstruct a five-eighths-scale block with native integer rounding.
+pub fn idct_scaled_5x5(coefficients: &mut [i32; 64], output: &mut [i16], stride: usize) {
+    reduced_idct(coefficients, output, stride, &BASIS_5, 11, 18);
+}
+
+/// Reconstruct a three-quarters-scale block with native integer rounding.
+pub fn idct_scaled_6x6(coefficients: &mut [i32; 64], output: &mut [i16], stride: usize) {
+    reduced_idct(coefficients, output, stride, &BASIS_6, 11, 18);
+}
+
+/// Reconstruct a seven-eighths-scale block with native integer rounding.
+pub fn idct_scaled_7x7(coefficients: &mut [i32; 64], output: &mut [i16], stride: usize) {
+    reduced_idct(coefficients, output, stride, &BASIS_7, 11, 18);
+}
+
+/// Reconstruct a ten-sample chroma block for native component scaling.
+pub fn idct_scaled_10x10(coefficients: &mut [i32; 64], output: &mut [i16], stride: usize) {
+    reduced_idct(coefficients, output, stride, &BASIS_10, 11, 18);
+}
+
+/// Reconstruct a twelve-sample chroma block for native component scaling.
+pub fn idct_scaled_12x12(coefficients: &mut [i32; 64], output: &mut [i16], stride: usize) {
+    reduced_idct(coefficients, output, stride, &BASIS_12, 11, 18);
+}
+
+/// Reconstruct a fourteen-sample chroma block for native component scaling.
+pub fn idct_scaled_14x14(coefficients: &mut [i32; 64], output: &mut [i16], stride: usize) {
+    reduced_idct(coefficients, output, stride, &BASIS_14, 11, 18);
 }
 
 #[allow(unused_assignments)]

@@ -181,7 +181,7 @@ mod tests {
                 core::array::from_fn(|index| (index * 17) as i16),
                 core::array::from_fn(|index| (255 - index * 13) as i16),
                 core::array::from_fn(|index| (index * 11) as i16)
-            )
+            ),
         ];
         let mut state = 0xC0FF_EE12_u32;
         for _ in 0..256 {
@@ -199,8 +199,7 @@ mod tests {
     }
 
     fn assert_converter_matches_scalar(
-        vector: ColorConvert16Ptr, scalar: ColorConvert16Ptr, output_size: usize,
-        has_alpha: bool
+        vector: ColorConvert16Ptr, scalar: ColorConvert16Ptr, output_size: usize, has_alpha: bool
     ) {
         const OFFSET: usize = 7;
         const GUARD: usize = 11;

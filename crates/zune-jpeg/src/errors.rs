@@ -72,7 +72,7 @@ impl DecodeErrors {
         match self {
             DecodeErrors::ExhaustedData => true,
             DecodeErrors::IoErrors(io) => io.is_recoverable_eof(),
-            _ => false,
+            _ => false
         }
     }
 }

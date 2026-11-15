@@ -99,7 +99,6 @@ pub unsafe fn idct_neon(in_vector: &mut [i32; 64], out_vector: &mut [i16], strid
             let idct_value = vdupq_n_s16(coeff);
             // to prevent some bad images from crashing
 
-
             macro_rules! store {
                 ($pos:tt,$value:tt) => {
                     let mut tmp = [0; 8];
@@ -111,7 +110,7 @@ pub unsafe fn idct_neon(in_vector: &mut [i32; 64], out_vector: &mut [i16], strid
                             .unwrap_or(&mut tmp)
                             .as_mut_ptr()
                             .cast(),
-                        $value,
+                        $value
                     );
                     $pos += stride;
                 };
@@ -189,13 +188,13 @@ pub unsafe fn idct_neon(in_vector: &mut [i32; 64], out_vector: &mut [i16], strid
         // Process rows
         dct_pass!(PASS1_ROUND, PASS1_SHIFT);
         transpose(
-            &mut row0, &mut row1, &mut row2, &mut row3, &mut row4, &mut row5, &mut row6, &mut row7,
+            &mut row0, &mut row1, &mut row2, &mut row3, &mut row4, &mut row5, &mut row6, &mut row7
         );
 
         // process columns
         dct_pass!(SCALE_BITS, OUTPUT_SHIFT);
         transpose(
-            &mut row0, &mut row1, &mut row2, &mut row3, &mut row4, &mut row5, &mut row6, &mut row7,
+            &mut row0, &mut row1, &mut row2, &mut row3, &mut row4, &mut row5, &mut row6, &mut row7
         );
 
         // Pack i32 to i16's,
@@ -208,7 +207,7 @@ pub unsafe fn idct_neon(in_vector: &mut [i32; 64], out_vector: &mut [i16], strid
             ($x:tt,$y:tt,$index:tt,$out:tt) => {
                 let a = condense_bottom_16($x, $y);
 
-                let mut tmp = [0;8];
+                let mut tmp = [0; 8];
 
                 // Clamp the values after packing, we can clamp more values at once
                 let b = clamp256_neon(a);
@@ -220,7 +219,7 @@ pub unsafe fn idct_neon(in_vector: &mut [i32; 64], out_vector: &mut [i16], strid
                         .unwrap_or(&mut tmp)
                         .as_mut_ptr()
                         .cast(),
-                    b.0,
+                    b.0
                 );
                 $index += stride;
                 // second vector
@@ -230,7 +229,7 @@ pub unsafe fn idct_neon(in_vector: &mut [i32; 64], out_vector: &mut [i16], strid
                         .unwrap_or(&mut tmp)
                         .as_mut_ptr()
                         .cast(),
-                    b.1,
+                    b.1
                 );
                 $index += stride;
             };
