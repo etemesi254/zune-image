@@ -893,10 +893,16 @@ fn process_image_area<A, BitDepth>(
 }
 
 fn prepare_dc_global_common(
-    is_single_group: bool, width: usize, height: usize, codes: &[PrefixCode],
-    output: &mut BitWriter,
+    is_single_group: bool, width: usize, height: usize, max_bits_per_sample: usize,
+    codes: &[PrefixCode], output: &mut BitWriter,
 ) {
-    let length = if is_single_group { width * height * 16 } else { 0 };
+    // A single group's first channel is written after this header, into
+    // the same writer, so it needs room for every sample at its widest.
+    let length = if is_single_group {
+        width * height * max_bits_per_sample
+    } else {
+        0
+    };
 
     output.allocate(100000 + length);
 
@@ -1018,10 +1024,10 @@ fn write_a_c_section<B: JxlBitEncoder>(
 }
 
 fn prepare_dc_global(
-    is_single_group: bool, width: usize, height: usize, channels: usize, code: &[PrefixCode],
-    output: &mut BitWriter,
+    is_single_group: bool, width: usize, height: usize, max_bits_per_sample: usize,
+    channels: usize, code: &[PrefixCode], output: &mut BitWriter,
 ) {
-    prepare_dc_global_common(is_single_group, width, height, code, output);
+    prepare_dc_global_common(is_single_group, width, height, max_bits_per_sample, code, output);
 
     if channels > 2 {
         output.put_bits(2, 0b01); // 1 transform
@@ -1209,7 +1215,15 @@ impl<'a> JxlSimpleEncoder<'a> {
             {
                 let writer = &mut group_data[0].lock().unwrap()[0];
 
-                prepare_dc_global(one_group, width, height, num_components, &codes, writer);
+                prepare_dc_global(
+                    one_group,
+                    width,
+                    height,
+                    encoder.max_encoded_bits_per_sample(),
+                    num_components,
+                    &codes,
+                    writer
+                );
             }
             let pixels = self.data;
 
@@ -1318,7 +1332,15 @@ impl<'a> JxlSimpleEncoder<'a> {
 
             {
                 let writer = &mut group_data[0][0];
-                prepare_dc_global(one_group, width, height, num_components, &codes, writer);
+                prepare_dc_global(
+                    one_group,
+                    width,
+                    height,
+                    encoder.max_encoded_bits_per_sample(),
+                    num_components,
+                    &codes,
+                    writer
+                );
             }
             let pixels = self.data;
 
@@ -1653,6 +1675,36 @@ mod tests {
         }
         let huge = EncoderOptions::new(usize::MAX / 2, 3, ColorSpace::RGB, BitDepth::Eight);
         assert_eq!(calculate_expected_input(&huge), None);
+    }
+
+    /// Samples nothing predicts take each depth's widest codes, and
+    /// a single group's first channel is written into the header's
+    /// writer: it must have room for them, not 16 bits a sample.
+    #[test]
+    fn incompressible_samples_encode_at_every_depth_and_size() {
+        let mut x: u32 = 0x1234_5678;
+        for (width, height) in [(256, 256), (300, 280)] {
+            for colorspace in [ColorSpace::Luma, ColorSpace::RGB, ColorSpace::RGBA] {
+                for depth in [BitDepth::Eight, BitDepth::Sixteen] {
+                    let len = width * height * colorspace.num_components() * depth.size_of();
+                    let data: Vec<u8> = (0..len)
+                        .map(|_| {
+                            x ^= x << 13;
+                            x ^= x >> 17;
+                            x ^= x << 5;
+                            x as u8
+                        })
+                        .collect();
+                    let options = EncoderOptions::new(width, height, colorspace, depth);
+                    let mut out = Vec::new();
+                    let written = JxlSimpleEncoder::new(&data, options).encode(&mut out);
+                    assert!(
+                        written.is_ok_and(|n| n > len / 2),
+                        "{width}x{height} {colorspace:?} {depth:?}"
+                    );
+                }
+            }
+        }
     }
 
     /// The extra channel fields of a 2 × 2 RGBA image at `depth`'s
