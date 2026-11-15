@@ -83,20 +83,19 @@ macro_rules! decode_huff {
             }
 
             if code_length == 17{
-                // symbol could not be decoded.
-                //
-                // We may think, lets fake zeroes, noo
-                // panic, because Huffman codes are sensitive, probably everything
-                // after this will be corrupt, so no need to continue.
-                // panic!("Bad Huffman code length");
-                return Err(DecodeErrors::FormatStatic("Bad Huffman Code Corrupt JPEG"))
+                if $stream.strict {
+                    return Err(DecodeErrors::FormatStatic("Bad Huffman Code Corrupt JPEG"));
+                }
+                // The sequential recovery rule consumes the invalid 17-bit
+                // code and substitutes a zero symbol, not the rest of the scan.
+                $symbol = 0;
+            } else {
+                $symbol >>= (16-code_length);
+                ($symbol) = i32::from(
+                    ($table).values
+                        [(($symbol + ($table).offset[code_length as usize]) & 0xFF) as usize],
+                );
             }
-
-            $symbol >>= (16-code_length);
-            ($symbol) = i32::from(
-                ($table).values
-                    [(($symbol + ($table).offset[code_length as usize]) & 0xFF) as usize],
-            );
         }
         if code_length> i32::from(($stream).bits_left){
             return Err(DecodeErrors::Format(format!("Code length {code_length}  more than bits left {}",($stream).bits_left)))
@@ -149,6 +148,8 @@ pub(crate) trait BitStream {
     type ACEntropyTable;
 
     fn new() -> Self;
+
+    fn begin_mcu(&mut self) {}
 
     /// Create a new Bitstream for progressive decoding
     fn new_progressive(al: u8, spec_start: u8, spec_end: u8) -> Self;
@@ -314,6 +315,8 @@ pub(crate) struct BitStreamHuffman {
     seen_eoi:            bool,
     /// Strict mode, see [`BitStream::set_strict`].
     strict:              bool,
+    // Latched at the MCU boundary, not between components of the same MCU.
+    skip_mcu:            bool,
 }
 
 impl BitStreamHuffman {
@@ -384,7 +387,6 @@ impl BitStreamHuffman {
         }
     }
 
-
     /// Decode the DC coefficient in a MCU block.
     ///
     /// The decoded coefficient is written to `dc_prediction`
@@ -399,7 +401,7 @@ impl BitStreamHuffman {
         &mut self, reader: &mut ZReader<T>, dc_table: &HuffmanTable, dc_prediction: &mut i32
     ) -> Result<bool, DecodeErrors>
     where
-    T: ZByteReaderTrait
+        T: ZByteReaderTrait
     {
         let (mut symbol, r);
 
@@ -428,7 +430,7 @@ impl BitStreamHuffman {
         &mut self, reader: &mut ZReader<T>, dc_table: &HuffmanTable
     ) -> Result<bool, DecodeErrors>
     where
-    T: ZByteReaderTrait
+        T: ZByteReaderTrait
     {
         let mut symbol;
 
@@ -552,6 +554,7 @@ impl BitStream for BitStreamHuffman {
             stuffed_past_end:    false,
             seen_eoi:            false,
             strict:              false,
+            skip_mcu:            false,
         }
     }
 
@@ -577,11 +580,16 @@ impl BitStream for BitStreamHuffman {
             stuffed_past_end:    false,
             seen_eoi:            false,
             strict:              false,
+            skip_mcu:            false,
         }
     }
 
     fn set_strict(&mut self, strict: bool) {
         self.strict = strict;
+    }
+
+    fn begin_mcu(&mut self) {
+        self.skip_mcu = self.marker_padding_consumed && !self.strict;
     }
 
     #[inline(always)]
@@ -629,18 +637,18 @@ impl BitStream for BitStreamHuffman {
     #[inline(always)]
     fn save_state(&self) -> HuffmanBitstreamState {
         HuffmanBitstreamState {
-            buffer:         self.buffer,
-            aligned_buffer: self.aligned_buffer,
-            bits_left:      self.bits_left,
-            marker:         self.marker,
-            marker_bits:    self.marker_bits,
+            buffer:                  self.buffer,
+            aligned_buffer:          self.aligned_buffer,
+            bits_left:               self.bits_left,
+            marker:                  self.marker,
+            marker_bits:             self.marker_bits,
             marker_padding_consumed: self.marker_padding_consumed,
-            overread_by:      self.overread_by,
-            zeros_past_end:   self.zeros_past_end,
-            exhausted:        self.exhausted,
-            stuffed_past_end: self.stuffed_past_end,
-            seen_eoi:       self.seen_eoi,
-            eob_run:        self.eob_run
+            overread_by:             self.overread_by,
+            zeros_past_end:          self.zeros_past_end,
+            exhausted:               self.exhausted,
+            stuffed_past_end:        self.stuffed_past_end,
+            seen_eoi:                self.seen_eoi,
+            eob_run:                 self.eob_run
         }
     }
 
@@ -671,7 +679,7 @@ impl BitStream for BitStreamHuffman {
             BitstreamStateSnapshot::Huffman(s) => self.restore_state(s),
             BitstreamStateSnapshot::None => {}
             #[cfg(feature = "arith")]
-            _ => unreachable!("Huffman stream given arithmetic snapshot"),
+            _ => unreachable!("Huffman stream given arithmetic snapshot")
         }
     }
 
@@ -745,8 +753,10 @@ impl BitStream for BitStreamHuffman {
                             self.marker = marker;
                             self.marker_bits = Some(self.bits_left);
 
-                            if let Some(Marker::UNKNOWN(_)) = marker{
-                                return Err(DecodeErrors::Format("Unknown marker in bit stream".to_string()));
+                            if let Some(Marker::UNKNOWN(_)) = marker {
+                                return Err(DecodeErrors::Format(
+                                    "Unknown marker in bit stream".to_string()
+                                ));
                             }
                             if next_byte == 0xD9 {
                                 // special handling for eoi, fill some bytes,even if its zero,
@@ -856,7 +866,10 @@ impl BitStream for BitStreamHuffman {
         let (mut symbol, mut r, mut fast_ac);
         // Decode AC coefficients
         let mut pos: usize = 1;
-        if  self.bits_left < 1 && self.marker.is_some() {
+        if self.skip_mcu {
+            return Ok(0);
+        }
+        if self.strict && self.bits_left < 1 && self.marker.is_some() {
             return Err(DecodeErrors::Format(
                 "No more bytes left in stream before marker".to_string()
             ));
@@ -878,7 +891,7 @@ impl BitStream for BitStreamHuffman {
                 pos += ((fast_ac >> 4) & 15) as usize; // run
                 let t_pos = UN_ZIGZAG[self.ac_position(pos)?] & 63;
 
-                block[t_pos] = i32::from(fast_ac >> 8).wrapping_mul (qt_table[t_pos]); // Value
+                block[t_pos] = i32::from(fast_ac >> 8).wrapping_mul(qt_table[t_pos]); // Value
                 self.drop_bits((fast_ac & 15) as u8);
                 pos += 1;
             } else {
@@ -893,10 +906,13 @@ impl BitStream for BitStreamHuffman {
                     symbol = huff_extend(r, symbol);
                     let t_pos = UN_ZIGZAG[self.ac_position(pos)?] & 63;
 
-                    block[t_pos] = symbol .wrapping_mul( qt_table[t_pos]);
+                    block[t_pos] = symbol.wrapping_mul(qt_table[t_pos]);
 
                     pos += 1;
                 } else if r != 15 {
+                    if self.strict && self.marker_padding_consumed {
+                        return Err(DecodeErrors::FormatStatic("Premature marker in JPEG scan"));
+                    }
                     return Ok(pos as u16);
                 } else {
                     pos += 16;
@@ -904,6 +920,9 @@ impl BitStream for BitStreamHuffman {
             }
         }
 
+        if self.strict && self.marker_padding_consumed {
+            return Err(DecodeErrors::FormatStatic("Premature marker in JPEG scan"));
+        }
         return Ok(64);
     }
 
@@ -924,6 +943,9 @@ impl BitStream for BitStreamHuffman {
         let (mut symbol, mut r, mut fast_ac);
         // Decode AC coefficients
         let mut pos: usize = 1;
+        if self.skip_mcu {
+            return Ok(0);
+        }
 
         // decode DC, dc prediction will contain the value
         self.discard_dc(reader, dc_table)?;
@@ -937,8 +959,7 @@ impl BitStream for BitStreamHuffman {
             if fast_ac != 0 {
                 //  FAST AC path
                 pos += ((fast_ac >> 4) & 15) as usize; // run
-
-                // nothing is written, but strict mode must reject the same streams
+                                                       // nothing is written, but strict mode must reject the same streams
                 self.ac_position(pos)?;
                 self.drop_bits((fast_ac & 15) as u8);
                 pos += 1;
@@ -956,6 +977,9 @@ impl BitStream for BitStreamHuffman {
 
                     pos += 1;
                 } else if r != 15 {
+                    if self.strict && self.marker_padding_consumed {
+                        return Err(DecodeErrors::FormatStatic("Premature marker in JPEG scan"));
+                    }
                     return Ok(pos as u16);
                 } else {
                     pos += 16;
@@ -963,6 +987,9 @@ impl BitStream for BitStreamHuffman {
             }
         }
 
+        if self.strict && self.marker_padding_consumed {
+            return Err(DecodeErrors::FormatStatic("Premature marker in JPEG scan"));
+        }
         return Ok(64);
     }
 
@@ -1223,6 +1250,7 @@ impl BitStream for BitStreamHuffman {
         self.eob_run = 0;
         // the zeros went with the buffer
         self.zeros_past_end = 0;
+        self.skip_mcu = false;
     }
 }
 
