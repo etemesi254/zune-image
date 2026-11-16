@@ -872,10 +872,10 @@ impl BitStream for BitStreamArithmetic {
     #[inline]
     fn decode_prog_dc_first<T>(
         &mut self, reader: &mut ZReader<T>, dc_table: &mut ArithDCTables, block: &mut i16,
-        dc_prediction: &mut i32, last_dc_diff: &mut i32,
+        dc_prediction: &mut i32, last_dc_diff: &mut i32, _suspend_at_eof: bool
     ) -> Result<(), DecodeErrors>
     where
-        T: ZByteReaderTrait,
+        T: ZByteReaderTrait
     {
         self.decode_dc(reader, dc_table, dc_prediction, last_dc_diff)?;
         *block = (*dc_prediction as i16).wrapping_mul(self.successive_low_mask);
