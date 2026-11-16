@@ -501,6 +501,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bytestream::ZCursor;
 
     #[test]
     fn not_enough_bytes_is_recoverable() {
@@ -527,5 +528,34 @@ mod tests {
     fn seek_error_is_not_recoverable() {
         let err = ZByteIoError::SeekError("seek failed");
         assert!(!err.is_recoverable_eof());
+    }
+
+    /// Exact reads and single-byte reads must behave the same whether they are served from the
+    /// buffered fast path or the fallback: a short read leaves the position untouched and
+    /// reading at the end yields zero.
+    #[test]
+    fn cursor_exact_reads_and_end_of_data() {
+        let mut reader = ZReader::new(ZCursor::new([1_u8, 2, 3, 4, 5]));
+
+        assert_eq!(
+            reader.read_fixed_bytes_or_error::<4>().unwrap(),
+            [1, 2, 3, 4]
+        );
+        assert_eq!(reader.position().unwrap(), 4);
+        assert!(!reader.eof().unwrap());
+
+        // fewer bytes than asked for: error, position unchanged
+        assert!(reader.read_fixed_bytes_or_error::<4>().is_err());
+        assert_eq!(reader.position().unwrap(), 4);
+
+        assert_eq!(reader.read_u8(), 5);
+        assert!(reader.eof().unwrap());
+        assert_eq!(reader.read_u8(), 0);
+
+        reader.seek(ZSeekFrom::Start(0)).unwrap();
+        assert_eq!(
+            reader.read_fixed_bytes_or_error::<5>().unwrap(),
+            [1, 2, 3, 4, 5]
+        );
     }
 }

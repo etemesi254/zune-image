@@ -15,6 +15,16 @@ impl<T: io::BufRead + io::Seek> ZByteReaderTrait for T {
     }
     #[inline(always)]
     fn read_exact_bytes(&mut self, buf: &mut [u8]) -> Result<(), ZByteIoError> {
+        // Fast path, as in `std::io::BufRead`-based `read_exact`: if the buffered data holds the
+        // whole read, copy it out with a length the compiler knows for small fixed reads
+        // instead of looping over `Read::read`.
+        if let Ok(available) = self.fill_buf() {
+            if let Some(src) = available.get(..buf.len()) {
+                buf.copy_from_slice(src);
+                self.consume(buf.len());
+                return Ok(());
+            }
+        }
         let mut bytes_read = 0;
 
         while bytes_read < buf.len() {
