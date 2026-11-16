@@ -90,15 +90,30 @@ pub fn choose_idct_func(options: &DecoderOptions) -> IDCTPtr {
 /// coefficients are non-zero. All other entries are zeroed.
 ///
 /// **The callee must uphold that contract on return**
-pub fn choose_idct_4x4_func(_options: &DecoderOptions) -> IDCTPtr {
+#[allow(unused_variables)]
+pub fn choose_idct_4x4_func(options: &DecoderOptions) -> IDCTPtr {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[cfg(feature = "x86")]
     {
-        if _options.use_avx2() {
+        if options.use_avx2() {
             debug!("Using vector integer IDCT");
             return |a: &mut [i32; 64], b: &mut [i16], c: usize| {
                 // SAFETY: `options.use_avx2()` only returns true if avx2 is supported.
                 unsafe { avx2::idct_avx2_4x4(a,b,c) }
+            };
+        }
+    }
+    #[cfg(target_arch = "aarch64")]
+    #[cfg(feature = "neon")]
+    {
+        if options.use_neon() {
+            debug!("Using vector integer IDCT");
+            // The full NEON IDCT is faster than the scalar 4x4 one. It never writes to
+            // its input, so a block with only the top-left 4x4 filled stays that way
+            // and the contract above holds.
+            return |a: &mut [i32; 64], b: &mut [i16], c: usize| {
+                // SAFETY: `options.use_neon()` only returns true if neon is supported.
+                unsafe { neon::idct_neon(a, b, c) }
             };
         }
     }
