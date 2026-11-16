@@ -1167,9 +1167,18 @@ impl BitStream for BitStreamHuffman {
         }
         if self.eob_run > 0 {
             // only run if block does not consists of purely zeroes
-            // changing this to iter_any makes perf regress by 10%
-            //   time:   [+10.836% +11.589% +12.376%] (p = 0.00 < 0.05)
-            if &block[1..] != &[0; 63] {
+            //
+            // On aarch64, `!= &[0; 63]` is a 126-byte memcmp call per block; OR-ing everything
+            // together is branch-free and compiles to a few vector instructions. Elsewhere the
+            // memcmp stays: the same fold made progressive decodes 16-22% slower on x86_64 Linux.
+            #[cfg(target_arch = "aarch64")]
+            let any_nonzero = block[1..]
+                .iter()
+                .fold(0, |acc, &coefficient| acc | coefficient)
+                != 0;
+            #[cfg(not(target_arch = "aarch64"))]
+            let any_nonzero = &block[1..] != &[0; 63];
+            if any_nonzero {
                 self.refill(reader)?;
 
                 while k <= self.spec_end {
