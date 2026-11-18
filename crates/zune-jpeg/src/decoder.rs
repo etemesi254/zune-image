@@ -3996,13 +3996,16 @@ where
         for comp in &mut self.components {
             let hs = self.h_max / comp.horizontal_sample;
             let vs = self.v_max / comp.vertical_sample;
+            // Native fancy H/HV needs three visible samples, not three padded samples.
+            let visible_width =
+                (usize::from(self.info.width) * comp.horizontal_sample).div_ceil(self.h_max);
 
             let samp_factor = match (hs, vs) {
                 (1, 1) => {
                     comp.sample_ratio = SampleRatios::None;
                     upsample_no_op
                 }
-                (2, 1) => {
+                (2, 1) if visible_width > 2 => {
                     comp.sample_ratio = SampleRatios::H;
                     choose_horizontal_samp_function(&self.options)
                 }
@@ -4010,7 +4013,7 @@ where
                     comp.sample_ratio = SampleRatios::V;
                     choose_v_samp_function(&self.options)
                 }
-                (2, 2) => {
+                (2, 2) if visible_width > 2 => {
                     comp.sample_ratio = SampleRatios::HV;
                     choose_hv_samp_function(&self.options)
                 }
@@ -4258,6 +4261,38 @@ mod planar_layout_helpers {
     use zune_core::options::DecoderOptions;
 
     use super::{round_up_pow2, JpegDecoder, RawImcuRowStatus, ScanlineReadStatus, ScanlineStatus};
+
+    #[test]
+    fn narrow_chroma_dispatch_uses_visible_width_and_ceiling() {
+        use crate::components::{Components, SampleRatios};
+
+        for width in 1..=6 {
+            for h_max in [2_u8, 4] {
+                for v_max in [1, 2] {
+                    let mut decoder = JpegDecoder::new(ZCursor::new(&[][..]));
+                    decoder.info.width = width;
+                    decoder.h_max = usize::from(h_max);
+                    decoder.v_max = v_max;
+                    let mut component =
+                        Components::from([2, ((h_max / 2) << 4) | 1, 0], 1).unwrap();
+                    component.width_stride = 8;
+                    decoder.components.push(component);
+                    decoder.set_upsampling();
+                    let expected = if width <= 4 {
+                        SampleRatios::Generic(2, v_max)
+                    } else if v_max == 1 {
+                        SampleRatios::H
+                    } else {
+                        SampleRatios::HV
+                    };
+                    assert_eq!(
+                        decoder.components[0].sample_ratio, expected,
+                        "width={width}, h_max={h_max}, v_max={v_max}"
+                    );
+                }
+            }
+        }
+    }
 
     fn dc_only_progressive_jpeg(with_eoi: bool) -> Vec<u8> {
         let mut data = vec![0xFF, 0xD8, 0xFF, 0xDB, 0, 67, 0];

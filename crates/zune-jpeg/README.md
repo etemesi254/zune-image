@@ -51,7 +51,14 @@ restart handling and DNL barriers remain separate.
 
 Packed RGB/BGR and alpha variants retain native 16-bit YCbCr coefficient
 precision and half-up rounding across scalar and SIMD paths. Chroma
-interpolation, edge handling and output scaling are unchanged.
+interpolation kernels, edge handling and output scaling are unchanged.
+
+### Narrow chroma reconstruction
+
+Fancy horizontal and combined horizontal/vertical upsampling require at least
+three visible component samples. Components with one or two samples use the
+existing generic box reconstruction instead. Visible width is ceil-rounded from
+the image width and sampling factors, not the padded MCU storage width.
 
 ### Incremental input
 
