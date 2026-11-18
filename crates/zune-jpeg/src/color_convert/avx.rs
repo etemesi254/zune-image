@@ -13,8 +13,9 @@
 //! Herein lies super optimized codes to do color conversions.
 //!
 //!
-//! YCbCr to RGB preserves native 16-bit coefficients and half-up rounding.
-//! Whole chroma contributions are split out to retain signed i16 multiply-adds.
+//! YCbCr to RGB uses native 16-bit fixed-point coefficients and rounding.
+//! Splitting whole chroma contributions from the fractions keeps the
+//! coefficients in signed 16-bit multiply-add lanes.
 //!
 //! Firstly, we use integers (fun fact:there is no part of this code base where were dealing with
 //! floating points.., fun fact: the first fun fact wasn't even fun.)
@@ -203,6 +204,8 @@ unsafe fn ycbcr_to_rgb_baseline_no_clamp(
 
     let u_v_lo = _mm256_sub_epi16(_mm256_unpacklo_epi8(u_v_8, _mm256_setzero_si256()), uv_bias);
     let u_v_hi = _mm256_sub_epi16(_mm256_unpackhi_epi8(u_v_8, _mm256_setzero_si256()), uv_bias);
+    // Split whole chroma contributions from the 16-bit fractions so every
+    // coefficient still fits the signed 16-bit multiply-add lanes.
     let fraction = |coefficients| {
         let low = _mm256_add_epi32(_mm256_madd_epi16(u_v_lo, coefficients), v_rnd);
         let high = _mm256_add_epi32(_mm256_madd_epi16(u_v_hi, coefficients), v_rnd);

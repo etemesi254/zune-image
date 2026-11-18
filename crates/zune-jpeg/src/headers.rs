@@ -616,6 +616,16 @@ pub(crate) fn parse_sos<T: ZByteReaderTrait>(
         image.succ_high = succ_high;
         image.succ_low = succ_low;
 
+        // A restart interval is scan-local: each scan restarts the counter, since a scan's
+        // data units are counted from its own SOS. Not resetting it here lets a scan whose
+        // data-unit count is not a multiple of the interval leak its remainder into the next
+        // component's scan, shifting every later restart boundary. In a non-interleaved file
+        // each component is its own scan (ITU-T.81 A.2.1), so the leaked remainder misplaces
+        // RST markers for the remaining components.
+        if image.restart_interval != 0 {
+            image.todo = image.restart_interval;
+        }
+
         trace!("Ss={spec_start}, Se={spec_end} Ah={succ_high} Al={succ_low}");
 
         Ok(())

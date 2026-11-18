@@ -215,7 +215,9 @@ impl Components {
     }
 }
 
-/// Component ID's
+/// Role of a component, given by its position in the SOF marker: the first
+/// component is `Y`, the second `Cb`, the third `Cr` and the fourth `Q`,
+/// whatever the image's colorspace.
 #[derive(Copy, Debug, Clone, PartialEq, Eq)]
 pub enum ComponentID {
     /// Luminance channel

@@ -17,7 +17,7 @@ use core::arch::aarch64::{
     vqshrun_n_s32, vshlq_n_s32, vst3q_u8, vst4q_u8, vsubq_s16
 };
 
-// Widened corrections below recover the exact 16-bit coefficients from this base.
+// The widened correction below restores native precision from this 14-bit base.
 const Y_CF: i16 = 16_384;
 const CR_CF: i16 = 22_970;
 const CB_CF: i16 = 29_032;
@@ -118,6 +118,7 @@ unsafe fn ycbcr_to_rgb_baseline_no_clamp(
         let b2 = native_precision(b2, vshlq_n_s32::<1>(cb_wide[2]));
         let b3 = native_precision(b3, vshlq_n_s32::<1>(cb_wide[3]));
 
+        // Saturating shift right with signed -> unsigned saturation
         let qr0 = vqshrun_n_s32::<16>(r0);
         let qr1 = vqshrun_n_s32::<16>(r1);
         let qr2 = vqshrun_n_s32::<16>(r2);
