@@ -156,7 +156,7 @@ impl Debug for UnsupportedSchemes {
                 write!(f, "The library cannot yet decode images encoded using Extended Sequential Huffman  encoding scheme yet.")
             }
             Self::LosslessHuffman => {
-                write!(f, "Unsupported lossless Huffman JPEG configuration: only 8-bit grayscale or full-resolution interleaved YCbCr is supported")
+                write!(f, "Unsupported lossless Huffman JPEG configuration: only 8-bit grayscale or full-resolution interleaved YCbCr/RGB is supported")
             }
             Self::ExtendedSequentialDctArithmetic => {
                 write!(f,"The library cannot yet decode Images Encoded with Extended Sequential DCT Arithmetic scheme")
@@ -165,7 +165,7 @@ impl Debug for UnsupportedSchemes {
                 write!(f,"The library cannot yet decode images encoded with Progressive DCT Arithmetic scheme")
             }
             Self::LosslessArithmetic => {
-                write!(f,"Lossless arithmetic JPEG requires the arith feature and 8-bit grayscale or full-resolution interleaved YCbCr")
+                write!(f,"Lossless arithmetic JPEG requires the arith feature and 8-bit grayscale or full-resolution interleaved YCbCr/RGB")
             }
         }
     }
