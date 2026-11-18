@@ -76,7 +76,7 @@ cargo run -p zune-jpeg --example scaled_decode -- image.jpg 2 > image.rgb
 ### Lossless JPEG
 
 `decode()` and `decode_into()` support original predictive JPEG with 8-bit
-grayscale or three-component, full-resolution interleaved YCbCr. Huffman coding
+grayscale or three-component, full-resolution interleaved YCbCr or RGB. Huffman coding
 (SOF3) is always available; arithmetic coding (SOF11) requires the existing
 `arith` feature. This is not JPEG-LS or JPEG 2000.
 
@@ -93,8 +93,13 @@ RGB/BGR and opaque-alpha variants use the crate's existing color conversion
 contract; component-lossless coding does not make that conversion reversible.
 Samples are reconstructed directly, without quantization, IDCT or minification.
 
+For RGB input, including Adobe APP14 ColorTransform=0 frames, RGB/BGR and
+RGBA/BGRA output preserve the reconstructed component samples with the requested
+channel order and opaque alpha. RGB-to-YCbCr/Luma/LumaA conversion is unsupported
+and returns an error before writing output.
+
 Color frames must use 1x1 sampling and one scan containing all three components.
-Split/non-interleaved scans, sampled color, lossless RGB/CMYK/YCCK, other
+Split/non-interleaved scans, sampled color, lossless CMYK/YCCK, other
 precisions, DNL height discovery, raw planar output and scanline output remain
 unsupported and return errors. Existing grayscale frame-sampling behavior and
 header-only inspection are unchanged. Ordinary DCT interfaces are unaffected.

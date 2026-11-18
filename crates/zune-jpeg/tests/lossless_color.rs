@@ -10,6 +10,58 @@ const COMPONENTS: &[u8] =
 const RGB: &[u8] =
     include_bytes!("../../../test-images/jpeg/lossless/32x32x8_ycbcr_interleaved.rgb");
 
+fn adobe_rgb(data: &[u8]) -> Vec<u8> {
+    let mut encoded = data[..2].to_vec();
+    encoded.extend_from_slice(b"\xff\xee\x00\x0eAdobe\x00\x64\x00\x00\x00\x00\x00");
+    encoded.extend_from_slice(&data[2..]);
+    encoded
+}
+
+#[test]
+fn adobe_rgb_preserves_samples_channel_order_and_alpha() {
+    for data in [
+        HUFFMAN,
+        #[cfg(feature = "arith")]
+        include_bytes!("../../../test-images/jpeg/lossless/arith/32x32x8_ycbcr_interleaved.jpg")
+            .as_slice()
+    ] {
+        let encoded = adobe_rgb(data);
+        for color in [
+            ColorSpace::RGB,
+            ColorSpace::BGR,
+            ColorSpace::RGBA,
+            ColorSpace::BGRA
+        ] {
+            let mut expected = Vec::new();
+            for pixel in COMPONENTS.chunks_exact(3) {
+                if matches!(color, ColorSpace::BGR | ColorSpace::BGRA) {
+                    expected.extend([pixel[2], pixel[1], pixel[0]]);
+                } else {
+                    expected.extend_from_slice(pixel);
+                }
+                if color.has_alpha() {
+                    expected.push(255);
+                }
+            }
+            for vector in [false, true] {
+                check(&encoded, color, &expected, vector);
+            }
+        }
+    }
+}
+
+#[test]
+fn adobe_rgb_rejects_unsupported_conversions_without_writing_output() {
+    let encoded = adobe_rgb(HUFFMAN);
+    for color in [ColorSpace::YCbCr, ColorSpace::Luma, ColorSpace::LumaA] {
+        let options = DecoderOptions::default().jpeg_set_out_colorspace(color);
+        let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&encoded), options);
+        let mut output = [0xa5; 4096];
+        assert!(decoder.decode_into(&mut output).is_err());
+        assert!(output.iter().all(|&byte| byte == 0xa5));
+    }
+}
+
 fn check(data: &[u8], color: ColorSpace, expected: &[u8], vector: bool) {
     check_image(data, color, expected, vector, (32, 32));
 }

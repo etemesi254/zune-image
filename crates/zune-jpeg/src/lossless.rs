@@ -6,7 +6,7 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-//! Predictive Huffman decoding for 8-bit grayscale and interleaved YCbCr SOF3 frames.
+//! Predictive decoding for 8-bit grayscale and interleaved YCbCr/RGB lossless frames.
 
 #[cfg(feature = "arith")]
 use alloc::boxed::Box;
@@ -202,7 +202,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             || !matches!(count, 1 | 3)
             || usize::from(self.num_scans) != count
             || (count == 3
-                && (self.input_colorspace != ColorSpace::YCbCr
+                && (!matches!(self.input_colorspace, ColorSpace::YCbCr | ColorSpace::RGB)
                     || self
                         .components
                         .iter()
@@ -243,6 +243,16 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 "Lossless JPEG restart interval must contain whole rows"
             ));
         }
+        if self.input_colorspace == ColorSpace::RGB
+            && !matches!(
+                self.options.jpeg_get_out_colorspace(),
+                ColorSpace::RGB | ColorSpace::BGR | ColorSpace::RGBA | ColorSpace::BGRA
+            )
+        {
+            return Err(DecodeErrors::FormatStatic(
+                "Unsupported lossless RGB output colorspace"
+            ));
+        }
         if !((count == 3 && self.options.jpeg_get_out_colorspace() == ColorSpace::YCbCr)
             || matches!(
                 self.options.jpeg_get_out_colorspace(),
@@ -267,7 +277,21 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let channels = color.num_components();
         let sample =
             |component: usize, x: usize| (histories[component].current[x] << self.succ_low) as u8;
-        if histories.len() == 1
+        if self.input_colorspace == ColorSpace::RGB {
+            let order = if matches!(color, ColorSpace::BGR | ColorSpace::BGRA) {
+                [2, 1, 0]
+            } else {
+                [0, 1, 2]
+            };
+            for (x, pixel) in output.chunks_exact_mut(channels).enumerate() {
+                for (value, component) in pixel.iter_mut().zip(order) {
+                    *value = sample(component, x);
+                }
+                if color.has_alpha() {
+                    pixel[3] = 255;
+                }
+            }
+        } else if histories.len() == 1
             || matches!(
                 color,
                 ColorSpace::Luma | ColorSpace::LumaA | ColorSpace::YCbCr
