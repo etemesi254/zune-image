@@ -33,6 +33,8 @@ Non-strict baseline Huffman decoding recovers an invalid canonical code by
 consuming 17 bits and substituting symbol zero. This preserves the DC predictor
 or ends an AC block without discarding coefficients already decoded.
 Strict mode continues to reject invalid codes.
+Unknown entropy markers are fatal in both modes; they are not treated as
+recoverable EOF or successful partial output.
 
 A prefetched EOI does not discard usable buffered bits. When entropy actually
 runs out, decoding completes that MCU and reconstructs subsequent missing MCUs

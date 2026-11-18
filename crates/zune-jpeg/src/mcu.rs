@@ -1231,6 +1231,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             if err.is_recoverable_eof() {
                                 return Err(err);
                             }
+                            if matches!(stream.marker(), Some(Marker::UNKNOWN(_))) {
+                                return Err(err);
+                            }
                             if self.stream.eof()? {
                                 return Err(DecodeErrors::ExhaustedData);
                             }

@@ -158,6 +158,34 @@ fn options(color: ColorSpace, strict: bool) -> DecoderOptions {
 }
 
 #[test]
+fn unknown_entropy_markers_remain_fatal_in_permissive_and_incremental_modes() {
+    let mut bits = Bits::default();
+    for _ in 0..99 {
+        bits.block();
+    }
+    let valid = image(9, 11, 1, None, 0, &bits.finish());
+    let sos = valid.windows(2).position(|bytes| bytes == [255, 218]).unwrap();
+    let entropy = sos + 2 + usize::from(u16::from_be_bytes([valid[sos + 2], valid[sos + 3]]));
+    for offset in [0, 3, 12] {
+        let mut malformed = valid[..entropy + offset].to_vec();
+        malformed.extend([255, 0x4b, 0, 2, 255, 217]);
+        for simd in [false, true] {
+            for incremental in [false, true] {
+                let options = options(ColorSpace::Luma, false).set_use_unsafe(simd);
+                let mut decoder =
+                    JpegDecoder::new_with_options(ZCursor::new(&malformed), options);
+                decoder.set_incremental_mode(incremental);
+                let error = match decoder.decode() {
+                    Ok(_) => panic!("unknown entropy markers must not publish success"),
+                    Err(error) => error
+                };
+                assert!(!error.is_recoverable_eof(), "{error:?}");
+            }
+        }
+    }
+}
+
+#[test]
 fn invalid_dc_consumes_seventeen_bits_and_preserves_the_predictor() {
     let data = invalid_dc();
     let mut decoder =
