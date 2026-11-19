@@ -8,6 +8,7 @@
 
 //! Reduced-IDCT decoding with coded and decoded geometry kept separate.
 
+use alloc::boxed::Box;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -64,83 +65,103 @@ impl JpegScale {
     }
 }
 
-/// An owning scaled decoder, created with [`JpegDecoder::into_scaled`].
-///
-/// Entropy checkpoints and reduced component planes survive recoverable input
-/// errors. Output is published only after reconstruction completes. Owning the
-/// decoder prevents raw/full-size output from inheriting scaled geometry.
-pub struct ScaledJpegDecoder<T> {
-    decoder:  JpegDecoder<T>,
+pub(crate) struct ScaledDecodeState {
+    scale:    JpegScale,
     output:   ScaledOutput,
     complete: bool
 }
 
-impl<T: ZByteReaderTrait> ScaledJpegDecoder<T> {
-    pub(crate) fn new(mut decoder: JpegDecoder<T>, scale: JpegScale) -> Result<Self, DecodeErrors> {
-        decoder.decode_headers()?;
-        let output = ScaledOutput::new(&decoder, scale)?;
-        Ok(Self {
-            decoder,
-            output,
-            complete: false
-        })
-    }
-
-    /// Decoded width and height, each rounded up from the coded dimensions.
-    pub fn dimensions(&self) -> (usize, usize) {
-        (self.output.width, self.output.height)
-    }
-
-    /// Required packed output bytes, or `None` if the size overflows.
-    pub fn output_buffer_size(&self) -> Option<usize> {
-        self.output
-            .width
-            .checked_mul(self.output.height)?
-            .checked_mul(
-                self.decoder
-                    .options
-                    .jpeg_get_out_colorspace()
-                    .num_components()
-            )
-    }
-
-    /// Make scan EOF recoverable rather than publishing best-effort output.
+impl<T: ZByteReaderTrait> JpegDecoder<T> {
+    /// Reduced width and height, each rounded up from the coded dimensions.
     ///
-    /// Enable this before decoding when the underlying reader can grow. Retain
-    /// this decoder across recoverable EOF and retry after exposing more input.
-    pub fn set_incremental_mode(&mut self, enabled: bool) {
-        self.decoder.set_incremental_mode(enabled);
+    /// Returns `None` until headers and nonzero image dimensions are known.
+    /// This does not select an output mode or change coded metadata.
+    #[must_use]
+    pub fn scaled_dimensions(&self, scale: JpegScale) -> Option<(usize, usize)> {
+        if !self.headers_decoded || self.info.width == 0 || self.info.height == 0 {
+            return None;
+        }
+        Some((
+            (usize::from(self.info.width) * scale.numerator()).div_ceil(scale.denominator()),
+            (usize::from(self.info.height) * scale.numerator()).div_ceil(scale.denominator())
+        ))
+    }
+
+    /// Required packed reduced-output bytes for the current output colorspace.
+    ///
+    /// Returns `None` until dimensions are known, or if the size overflows.
+    #[must_use]
+    pub fn scaled_output_buffer_size(&self, scale: JpegScale) -> Option<usize> {
+        let (width, height) = self.scaled_dimensions(scale)?;
+        width
+            .checked_mul(height)?
+            .checked_mul(self.options.jpeg_get_out_colorspace().num_components())
     }
 
     /// Decode a complete reduced frame into packed pixels.
     ///
     /// A short buffer is rejected before decoding. Bytes beyond
-    /// [`Self::output_buffer_size`] are untouched. Recoverable scan EOF does not
-    /// publish partial pixels; reduced planes and entropy checkpoints survive
-    /// for the next call. Successful calls may be repeated to copy the frame
-    /// without decoding the input again.
-    pub fn decode_into(&mut self, output: &mut [u8]) -> Result<(), DecodeErrors> {
+    /// [`Self::scaled_output_buffer_size`] are untouched. Enable
+    /// [`Self::set_incremental_mode`] for growing input and retry with the same
+    /// scale: reduced planes and entropy checkpoints survive recoverable scan
+    /// EOF, without publishing partial pixels. Successful calls with the same
+    /// scale copy the cached frame without decoding the input again.
+    ///
+    /// Changing scale, changing options, or switching between scaled and
+    /// full-size/raw/scanline output discards the previous output sequence and
+    /// replays from scan start. Coded metadata and existing full-size sizing
+    /// methods are unchanged. Full-size pixel/preview progress remains zero
+    /// during scaled decoding; this API does not publish progressive previews.
+    pub fn decode_scaled_into(
+        &mut self, scale: JpegScale, output: &mut [u8]
+    ) -> Result<(), DecodeErrors> {
+        self.decode_headers()?;
         let length = self
-            .output_buffer_size()
-            .ok_or(DecodeErrors::FormatStatic("scaled output size overflow"))?;
+            .scaled_output_buffer_size(scale)
+            .ok_or(DecodeErrors::FormatStatic(
+                "scaled output size overflow or unknown image dimensions"
+            ))?;
         if output.len() < length {
             return Err(DecodeErrors::TooSmallOutput(length, output.len()));
         }
-        if !self.complete {
-            self.decoder.prepare_for_scan_decode()?;
-            self.decoder
-                .decode_mcu_output_with_success_cleanup(&mut McuDecodeOutput::Scaled(
-                    &mut self.output
+        self.abort_raw_pull_sequence();
+        self.abort_scanline_sequence();
+        let mut state = match self.scaled_output.take() {
+            Some(state) if state.scale == scale => state,
+            _ => {
+                self.clear_scan_checkpoints();
+                Box::new(ScaledDecodeState {
+                    scale,
+                    output: ScaledOutput::new(self, scale)?,
+                    complete: false
+                })
+            }
+        };
+        let result = (|| {
+            if !state.complete {
+                self.prepare_for_scan_decode()?;
+                self.decode_mcu_output_with_success_cleanup(&mut McuDecodeOutput::Scaled(
+                    &mut state.output
                 ))?;
-            self.complete = true;
+                state.complete = true;
+            }
+            state.output.pack(self, &mut output[..length])
+        })();
+        self.pixels_decoded = 0;
+        self.progressive_displayed_scans = 0;
+        self.scaled_output = Some(state);
+        result
+    }
+
+    pub(crate) fn abort_scaled_sequence(&mut self) {
+        if self.scaled_output.take().is_some() {
+            self.clear_scan_checkpoints();
         }
-        self.output.pack(&self.decoder, &mut output[..length])
     }
 }
 
 pub(crate) struct ScaledOutput {
     width:  usize,
-    height: usize,
     planes: Vec<ScaledPlane>
 }
 
@@ -224,7 +245,6 @@ impl ScaledOutput {
         }
         Ok(Self {
             width: (width * scale.numerator()).div_ceil(scale.denominator()),
-            height: (height * scale.numerator()).div_ceil(scale.denominator()),
             planes
         })
     }

@@ -29,32 +29,36 @@ see additional documentation in the library.
 
 ### Reduced-IDCT output
 
-Select `JpegScale::Half`, `JpegScale::Quarter`, or `JpegScale::Eighth` before
-starting pixel, raw-plane, or scanline decoding:
+Pass a `JpegScale` to `JpegDecoder::decode_scaled_into`. All reduced ratios
+`n/8`, for `n` from 1 through 7, are supported:
 
 ```Rust
 use zune_core::bytestream::ZCursor;
 use zune_jpeg::{JpegDecoder, JpegScale};
 
-let decoder = JpegDecoder::new(ZCursor::new(&jpeg_bytes));
-let mut scaled = decoder.into_scaled(JpegScale::Half)?;
-let (width, height) = scaled.dimensions();
-let mut pixels = vec![0; scaled.output_buffer_size().unwrap()];
-scaled.decode_into(&mut pixels)?;
+let mut decoder = JpegDecoder::new(ZCursor::new(&jpeg_bytes));
+decoder.decode_headers()?;
+let scale = JpegScale::Half;
+let (width, height) = decoder.scaled_dimensions(scale).unwrap();
+let mut pixels = vec![0; decoder.scaled_output_buffer_size(scale).unwrap()];
+decoder.decode_scaled_into(scale, &mut pixels)?;
 ```
 
-The owning `ScaledJpegDecoder` reconstructs genuine reduced-IDCT samples, not
+The decoder reconstructs genuine reduced-IDCT samples, not
 resized full-size pixels. Dimensions are ceil-rounded, and each component uses
-the IDCT size appropriate for its sampling factors. Only 1/2, 1/4, and 1/8 are
-supported. Read coded metadata from `JpegDecoder` before calling `into_scaled`;
-existing full-size, raw-plane, and scanline APIs keep their original geometry.
+the IDCT size appropriate for its sampling factors. Coded metadata and existing
+full-size sizing, pixel, raw-plane, and scanline APIs keep their original geometry.
 
 Scaled output is frame-buffered, not a bounded-memory scanline API. For growing
-input, call `scaled.set_incremental_mode(true)` before decoding and keep the
-same scaled decoder across recoverable EOF. Reduced planes and entropy
+input, call `decoder.set_incremental_mode(true)` before decoding and keep the
+same decoder and scale across recoverable EOF. Reduced planes and entropy
 checkpoints survive retries; no converted pixels are published on recoverable
 scan EOF. A too-small output slice is rejected before decoding, and bytes
 beyond the required output length are left untouched.
+Full-size pixel/preview progress remains zero during scaled decoding; no
+progressive preview is published. Changing scale, changing options, or switching
+between scaled and other output paths restarts decoding from scan start.
+Successful calls with the same scale reuse the reconstructed reduced frame.
 
 The `scaled_decode` example writes packed RGB bytes to stdout:
 
