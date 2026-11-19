@@ -11,17 +11,17 @@
 //! Verifies that `is_recoverable_eof()` is reported on truncated input
 //! and that retrying with more data produces correct output.
 
-use zune_core::bytestream::{ZByteReaderTrait, ZCursor};
-use zune_core::colorspace::ColorSpace;
-use zune_core::options::DecoderOptions;
-use zune_jpeg::errors::DecodeErrors;
-use zune_jpeg::{JpegDecoder, NeverCancel, RawDecodeSession, RawImcuRowStatus};
-
 use std::cell::{Cell, RefCell};
 use std::io::{BufRead, Cursor, Read, Seek, SeekFrom};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+
+use zune_core::bytestream::{ZByteReaderTrait, ZCursor};
+use zune_core::colorspace::ColorSpace;
+use zune_core::options::DecoderOptions;
+use zune_jpeg::errors::DecodeErrors;
+use zune_jpeg::{JpegDecoder, JpegScale, NeverCancel, RawDecodeSession, RawImcuRowStatus};
 
 /// A cursor over a byte slice with an adjustable visibility limit.
 ///
@@ -33,6 +33,97 @@ struct GrowableCursor<'a> {
     position: usize,
     limit:    Rc<Cell<usize>>,
     seek_log: Option<Rc<RefCell<Vec<usize>>>>
+}
+
+#[test]
+fn scaled_output_retries_without_publishing_partial_pixels() {
+    let fixtures: [&[u8]; 3] = [
+        include_bytes!("../../../test-images/jpeg/non_interleaved_444_64x64.jpg"),
+        include_bytes!("../../../test-images/jpeg/non_interleaved_420_64x64.jpg"),
+        include_bytes!("../../../test-images/jpeg/progressive_restart_420.jpg")
+    ];
+    for data in fixtures {
+        for scale in [
+            JpegScale::Half, JpegScale::Quarter, JpegScale::Eighth,
+            JpegScale::ThreeEighths, JpegScale::FiveEighths,
+            JpegScale::ThreeQuarters, JpegScale::SevenEighths
+        ] {
+            let limit = Rc::new(Cell::new(1));
+            let source = GrowableCursor::new(data, Rc::clone(&limit));
+            let mut decoder = JpegDecoder::new(source);
+            assert!(decoder
+                .decode_scaled_into(scale, &mut [])
+                .unwrap_err()
+                .is_recoverable_eof());
+            assert_eq!(decoder.scaled_dimensions(scale), None);
+            limit.set(data.len());
+            decoder.decode_headers().unwrap();
+            decoder.set_incremental_mode(true);
+            let length = decoder.scaled_output_buffer_size(scale).unwrap();
+            let mut output = vec![0xa5; length];
+            limit.set(data.len() / 2);
+            let error = decoder.decode_scaled_into(scale, &mut output).unwrap_err();
+            assert!(error.is_recoverable_eof(), "{error:?}");
+            assert!(output.iter().all(|&byte| byte == 0xa5));
+            assert_eq!(decoder.decoded_output_bytes(), Some(0));
+            let error = decoder.decode_scaled_into(scale, &mut output).unwrap_err();
+            assert!(error.is_recoverable_eof(), "{error:?}");
+            assert!(output.iter().all(|&byte| byte == 0xa5));
+            limit.set(data.len());
+            decoder.decode_scaled_into(scale, &mut output).unwrap();
+
+            let mut reference = JpegDecoder::new(ZCursor::new(data));
+            let mut expected = vec![0; length];
+            reference.decode_scaled_into(scale, &mut expected).unwrap();
+            assert_eq!(output, expected);
+        }
+    }
+}
+
+#[test]
+fn switching_suspended_scaled_and_full_size_output_replays_scan() {
+    let fixtures: [&[u8]; 2] = [
+        include_bytes!("../../../test-images/jpeg/2029.jpg"),
+        include_bytes!("../../../test-images/jpeg/progressive_restart_420.jpg")
+    ];
+    for data in fixtures {
+        let limit = Rc::new(Cell::new(data.len()));
+        let mut decoder = JpegDecoder::new(GrowableCursor::new(data, Rc::clone(&limit)));
+        decoder.decode_headers().unwrap();
+        decoder.set_incremental_mode(true);
+        let scale = JpegScale::Half;
+        let mut reduced = vec![0xa5; decoder.scaled_output_buffer_size(scale).unwrap()];
+        limit.set(data.len() / 2);
+        assert!(decoder
+            .decode_scaled_into(scale, &mut reduced)
+            .unwrap_err()
+            .is_recoverable_eof());
+        limit.set(data.len());
+        let actual = decoder.decode().unwrap();
+        let mut reference = JpegDecoder::new(ZCursor::new(data));
+        assert_eq!(actual, reference.decode().unwrap());
+        limit.set(data.len() / 2);
+        assert!(decoder
+            .decode_into(&mut vec![0; actual.len()])
+            .unwrap_err()
+            .is_recoverable_eof());
+        limit.set(data.len());
+        decoder.decode_scaled_into(scale, &mut reduced).unwrap();
+        let mut expected = vec![0; reduced.len()];
+        reference.decode_scaled_into(scale, &mut expected).unwrap();
+        assert_eq!(reduced, expected);
+
+        let other_scale = JpegScale::Quarter;
+        let mut other = vec![0; decoder.scaled_output_buffer_size(other_scale).unwrap()];
+        limit.set(data.len() / 2);
+        assert!(decoder
+            .decode_scaled_into(other_scale, &mut other)
+            .unwrap_err()
+            .is_recoverable_eof());
+        limit.set(data.len());
+        decoder.decode_scaled_into(scale, &mut reduced).unwrap();
+        assert_eq!(reduced, expected);
+    }
 }
 
 impl<'a> GrowableCursor<'a> {

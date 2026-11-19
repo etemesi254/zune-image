@@ -496,14 +496,16 @@ pub struct JpegDecoder<T> {
     /// Sequential raw iMCU-row progress shared across borrowing sessions.
     raw_pull_state:                         RawPullState,
     /// Sequential converted scanline progress shared across borrowing sessions.
-    scanline_state:                         ScanlineState
+    scanline_state:                         ScanlineState,
+    pub(crate) scaled_output:              Option<Box<crate::scaled::ScaledDecodeState>>
 }
 
 /// Output target for one MCU decode call.
 pub(crate) enum McuDecodeOutput<'planes, 'buf> {
     Pixels(&'planes mut [u8]),
     RawPlanes(RawPlanesSink<'planes, 'buf>),
-    Scanlines(ConvertedScanlineSink<'planes>)
+    Scanlines(ConvertedScanlineSink<'planes>),
+    Scaled(&'planes mut crate::scaled::ScaledOutput)
 }
 
 impl McuDecodeOutput<'_, '_> {
@@ -515,7 +517,7 @@ impl McuDecodeOutput<'_, '_> {
         match self {
             Self::Pixels(pixels) => Some(pixels),
             Self::Scanlines(sink) => Some(sink.pixels),
-            Self::RawPlanes(_) => None
+            Self::RawPlanes(_) | Self::Scaled(_) => None
         }
     }
 
@@ -523,21 +525,21 @@ impl McuDecodeOutput<'_, '_> {
         match self {
             Self::RawPlanes(sink) => sink.requested_stripe,
             Self::Scanlines(sink) => Some(sink.requested_stripe),
-            Self::Pixels(_) => None
+            Self::Pixels(_) | Self::Scaled(_) => None
         }
     }
 
     pub(crate) const fn requested_raw_stripe(&self) -> Option<usize> {
         match self {
             Self::RawPlanes(sink) => sink.requested_stripe,
-            Self::Pixels(_) | Self::Scanlines(_) => None
+            Self::Pixels(_) | Self::Scanlines(_) | Self::Scaled(_) => None
         }
     }
 
     pub(crate) const fn requests_raw_output(&self) -> bool {
         match self {
             Self::RawPlanes(_) => true,
-            Self::Pixels(_) | Self::Scanlines(_) => false
+            Self::Pixels(_) | Self::Scanlines(_) | Self::Scaled(_) => false
         }
     }
 
@@ -1119,7 +1121,9 @@ where
 
         let (rows_written, source_complete) = match output {
             McuDecodeOutput::Scanlines(sink) => (sink.rows_written, sink.source_complete),
-            McuDecodeOutput::Pixels(_) | McuDecodeOutput::RawPlanes(_) => unreachable!()
+            McuDecodeOutput::Pixels(_)
+            | McuDecodeOutput::RawPlanes(_)
+            | McuDecodeOutput::Scaled(_) => unreachable!()
         };
         if let Err(error) = decode_result {
             if error.is_recoverable_eof() {
@@ -1379,7 +1383,9 @@ where
 
         let sink = match output {
             McuDecodeOutput::RawPlanes(sink) => sink,
-            McuDecodeOutput::Pixels(_) | McuDecodeOutput::Scanlines(_) => unreachable!()
+            McuDecodeOutput::Pixels(_)
+            | McuDecodeOutput::Scanlines(_)
+            | McuDecodeOutput::Scaled(_) => unreachable!()
         };
         if sink.source_complete {
             self.decoder.raw_pull_state.buffered_source_complete = true;
@@ -2224,7 +2230,8 @@ where
             pending_dnl_height:          None,
             pending_dnl_stream_position: None,
             raw_pull_state:              RawPullState::default(),
-            scanline_state:              ScanlineState::default()
+            scanline_state:              ScanlineState::default(),
+            scaled_output:               None
         }
     }
     /// Decode a buffer already in memory
@@ -2235,6 +2242,7 @@ where
     /// # Errors
     /// See DecodeErrors for an explanation
     pub fn decode(&mut self) -> Result<Vec<u8>, DecodeErrors> {
+        self.abort_scaled_sequence();
         self.abort_raw_pull_sequence();
         self.decode_headers()?;
         self.ensure_supported_encoding()?;
@@ -2475,6 +2483,7 @@ where
     /// output planes. The session borrows this decoder mutably, preventing
     /// pixel output or option changes until the session is dropped.
     pub fn raw_output(&mut self) -> RawDecodeSession<'_, T> {
+        self.abort_scaled_sequence();
         self.abort_scanline_sequence();
         if self.raw_pull_state.phase == RawPullPhase::Complete {
             self.raw_pull_state = RawPullState::default();
@@ -2498,6 +2507,7 @@ where
     /// Recreating a session after input suspension preserves decoder-owned
     /// scanline state.
     pub fn scanline_output(&mut self) -> ScanlineDecodeSession<'_, T> {
+        self.abort_scaled_sequence();
         self.abort_raw_pull_sequence();
         if self.scanline_state.phase == ScanlinePhase::Complete {
             self.abort_scanline_sequence();
@@ -2754,6 +2764,7 @@ where
     /// Changes rebuild cached output and dispatch state, so the next decode
     /// replays from scan start using the new options.
     pub fn set_options(&mut self, options: DecoderOptions) {
+        self.abort_scaled_sequence();
         self.abort_raw_pull_sequence();
         self.abort_scanline_sequence();
         self.clear_scan_checkpoints();
@@ -3416,22 +3427,22 @@ where
     ///
     ///
     #[allow(clippy::too_many_lines)]
-    fn prepare_for_scan_decode(&mut self) -> Result<(), DecodeErrors> {
+    pub(crate) fn prepare_for_scan_decode(&mut self) -> Result<(), DecodeErrors> {
         // Pull the scan-resume state out into owned locals so the restore
         // below can freely mutate `self`. When headers haven't completed
         // yet, `scan_plan` is `None` and we just run header decoding below.
         struct ScanPlan {
-            scan_start_position:   usize,
-            scan_start_height:     u16,
+            scan_start_position:    usize,
+            scan_start_height:      u16,
             scan_start_expects_dnl: bool,
-            outer_append_snapshot: HeaderAppendStateSnapshot,
-            outer_sos_snapshot:    SosParamsSnapshot,
-            outer_header_snapshot: ScanHeaderStateSnapshot,
+            outer_append_snapshot:  HeaderAppendStateSnapshot,
+            outer_sos_snapshot:     SosParamsSnapshot,
+            outer_header_snapshot:  ScanHeaderStateSnapshot,
             /// Snapshots taken from the checkpoint (if any) so the seek and
             /// SOS-restore steps below do not need to touch `scan_state`.
-            checkpoint_view:       Option<CheckpointView>,
-            progressive_view:      Option<ProgressiveCheckpointView>,
-            progressive_fine_view: Option<ProgressiveFineCheckpointView>
+            checkpoint_view:        Option<CheckpointView>,
+            progressive_view:       Option<ProgressiveCheckpointView>,
+            progressive_fine_view:  Option<ProgressiveFineCheckpointView>
         }
         #[derive(Clone, Copy)]
         struct CheckpointView {
@@ -3652,7 +3663,7 @@ where
         Ok(())
     }
 
-    fn decode_mcu_output_with_success_cleanup(
+    pub(crate) fn decode_mcu_output_with_success_cleanup(
         &mut self, output: &mut McuDecodeOutput<'_, '_>
     ) -> Result<(), DecodeErrors> {
         match self.decode_mcu_output(output) {
@@ -3684,6 +3695,7 @@ where
     }
 
     pub fn decode_into(&mut self, out: &mut [u8]) -> Result<(), DecodeErrors> {
+        self.abort_scaled_sequence();
         self.abort_raw_pull_sequence();
         self.abort_scanline_sequence();
         if self.headers_decoded {
@@ -3792,7 +3804,7 @@ where
         }
     }
 
-    fn clear_scan_checkpoints(&mut self) {
+    pub(crate) fn clear_scan_checkpoints(&mut self) {
         if let Some(state) = self.scan_state.as_deref_mut() {
             state.scan_checkpoint = None;
             state.progressive_checkpoint = None;
@@ -3800,7 +3812,7 @@ where
         }
     }
 
-    fn abort_raw_pull_sequence(&mut self) {
+    pub(crate) fn abort_raw_pull_sequence(&mut self) {
         if self.raw_pull_state.owner == RawPullOwner::None && !self.raw_pull_state.input_complete {
             return;
         }
@@ -3808,7 +3820,7 @@ where
         self.clear_scan_checkpoints();
     }
 
-    fn abort_scanline_sequence(&mut self) {
+    pub(crate) fn abort_scanline_sequence(&mut self) {
         if !self.scanline_state.started {
             return;
         }
