@@ -24,10 +24,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         _ => return Err("unsupported denominator".into())
     };
     let data = std::fs::read(&arguments[1])?;
-    let mut decoder = JpegDecoder::new(ZCursor::new(&data)).into_scaled(scale)?;
-    let mut output = vec![0; decoder.output_buffer_size().ok_or("output size overflow")?];
-    decoder.decode_into(&mut output)?;
-    eprintln!("decoded {:?}", decoder.dimensions());
+    let mut decoder = JpegDecoder::new(ZCursor::new(&data));
+    decoder.decode_headers()?;
+    let mut output = vec![
+        0;
+        decoder
+            .scaled_output_buffer_size(scale)
+            .ok_or("output size overflow")?
+    ];
+    decoder.decode_scaled_into(scale, &mut output)?;
+    eprintln!("decoded {:?}", decoder.scaled_dimensions(scale).unwrap());
     io::stdout().write_all(&output)?;
     Ok(())
 }

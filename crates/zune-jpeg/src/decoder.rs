@@ -496,7 +496,8 @@ pub struct JpegDecoder<T> {
     /// Sequential raw iMCU-row progress shared across borrowing sessions.
     raw_pull_state:                         RawPullState,
     /// Sequential converted scanline progress shared across borrowing sessions.
-    scanline_state:                         ScanlineState
+    scanline_state:                         ScanlineState,
+    pub(crate) scaled_output:              Option<Box<crate::scaled::ScaledDecodeState>>
 }
 
 /// Output target for one MCU decode call.
@@ -2229,7 +2230,8 @@ where
             pending_dnl_height:          None,
             pending_dnl_stream_position: None,
             raw_pull_state:              RawPullState::default(),
-            scanline_state:              ScanlineState::default()
+            scanline_state:              ScanlineState::default(),
+            scaled_output:               None
         }
     }
     /// Decode a buffer already in memory
@@ -2240,6 +2242,7 @@ where
     /// # Errors
     /// See DecodeErrors for an explanation
     pub fn decode(&mut self) -> Result<Vec<u8>, DecodeErrors> {
+        self.abort_scaled_sequence();
         self.abort_raw_pull_sequence();
         self.decode_headers()?;
         self.ensure_supported_encoding()?;
@@ -2480,6 +2483,7 @@ where
     /// output planes. The session borrows this decoder mutably, preventing
     /// pixel output or option changes until the session is dropped.
     pub fn raw_output(&mut self) -> RawDecodeSession<'_, T> {
+        self.abort_scaled_sequence();
         self.abort_scanline_sequence();
         if self.raw_pull_state.phase == RawPullPhase::Complete {
             self.raw_pull_state = RawPullState::default();
@@ -2503,6 +2507,7 @@ where
     /// Recreating a session after input suspension preserves decoder-owned
     /// scanline state.
     pub fn scanline_output(&mut self) -> ScanlineDecodeSession<'_, T> {
+        self.abort_scaled_sequence();
         self.abort_raw_pull_sequence();
         if self.scanline_state.phase == ScanlinePhase::Complete {
             self.abort_scanline_sequence();
@@ -2759,6 +2764,7 @@ where
     /// Changes rebuild cached output and dispatch state, so the next decode
     /// replays from scan start using the new options.
     pub fn set_options(&mut self, options: DecoderOptions) {
+        self.abort_scaled_sequence();
         self.abort_raw_pull_sequence();
         self.abort_scanline_sequence();
         self.clear_scan_checkpoints();
@@ -3689,6 +3695,7 @@ where
     }
 
     pub fn decode_into(&mut self, out: &mut [u8]) -> Result<(), DecodeErrors> {
+        self.abort_scaled_sequence();
         self.abort_raw_pull_sequence();
         self.abort_scanline_sequence();
         if self.headers_decoded {
@@ -3720,22 +3727,6 @@ where
 
         let mut output = McuDecodeOutput::Pixels(out);
         self.decode_mcu_output_with_success_cleanup(&mut output)
-    }
-
-    /// Select true reduced-IDCT output without changing coded image metadata.
-    ///
-    /// The returned decoder owns independent reduced component planes and
-    /// preserves them across incremental retries. Select the scale before
-    /// starting any pixel, scanline, or raw-plane decode.
-    pub fn into_scaled(
-        self, scale: crate::JpegScale
-    ) -> Result<crate::ScaledJpegDecoder<T>, DecodeErrors> {
-        if self.scan_decode_attempted {
-            return Err(DecodeErrors::FormatStatic(
-                "select output scaling before starting scan decoding"
-            ));
-        }
-        crate::ScaledJpegDecoder::new(self, scale)
     }
 
     fn decode_mcu_output(
@@ -3813,7 +3804,7 @@ where
         }
     }
 
-    fn clear_scan_checkpoints(&mut self) {
+    pub(crate) fn clear_scan_checkpoints(&mut self) {
         if let Some(state) = self.scan_state.as_deref_mut() {
             state.scan_checkpoint = None;
             state.progressive_checkpoint = None;
@@ -3821,7 +3812,7 @@ where
         }
     }
 
-    fn abort_raw_pull_sequence(&mut self) {
+    pub(crate) fn abort_raw_pull_sequence(&mut self) {
         if self.raw_pull_state.owner == RawPullOwner::None && !self.raw_pull_state.input_complete {
             return;
         }
@@ -3829,7 +3820,7 @@ where
         self.clear_scan_checkpoints();
     }
 
-    fn abort_scanline_sequence(&mut self) {
+    pub(crate) fn abort_scanline_sequence(&mut self) {
         if !self.scanline_state.started {
             return;
         }

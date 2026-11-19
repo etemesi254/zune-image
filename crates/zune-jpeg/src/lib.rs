@@ -72,15 +72,18 @@
 //!
 //! ## Reduced-IDCT output
 //!
-//! Select a [`JpegScale`] with [`JpegDecoder::into_scaled`] before starting pixel
-//! decoding. All reduced ratios `n/8`, for `n` from 1 through 7, are supported.
+//! Pass a [`JpegScale`] to [`JpegDecoder::decode_scaled_into`]. Query reduced
+//! geometry with [`JpegDecoder::scaled_dimensions`] and
+//! [`JpegDecoder::scaled_output_buffer_size`] after decoding headers.
+//! All reduced ratios `n/8`, for `n` from 1 through 7, are supported.
 //! Multiply coded dimensions by [`JpegScale::numerator`] before rounding division
 //! by [`JpegScale::denominator`]. This produces
 //! native reduced-IDCT samples, not a resized full-size image. Output dimensions
 //! are rounded up; component-specific IDCT sizes account for chroma subsampling.
-//! [`ScaledJpegDecoder`] retains reduced planes across incremental retries and
-//! publishes converted pixels only after reconstruction completes. Existing
-//! full-size, raw-plane, and scanline APIs keep their original geometry.
+//! [`JpegDecoder`] retains reduced planes across incremental retries and publishes
+//! converted pixels only after reconstruction completes. Existing full-size,
+//! raw-plane, and scanline APIs keep their original geometry. Changing scale,
+//! options, or output paths discards cached scaled state and restarts decoding.
 //!
 //! ## Incremental input
 //!
@@ -338,7 +341,7 @@ pub use crate::decoder::{
     ScanlineDecodeSession, ScanlineReadStatus, ScanlineStatus
 };
 pub use crate::marker::Marker;
-pub use crate::scaled::{JpegScale, ScaledJpegDecoder};
+pub use crate::scaled::JpegScale;
 mod bitstream;
 #[cfg(feature = "arith")]
 mod bitstream_arith;
