@@ -184,15 +184,20 @@ fn sos_offsets(bytes: &[u8]) -> Vec<usize> {
     offsets
 }
 
-/// The file with a DQT redefining table 0 inserted before its second SOS.
-fn with_dqt_between_scans(bytes: &[u8]) -> Vec<u8> {
+/// The file with a DQT redefining `table` inserted before its SOS number `scan`.
+fn with_dqt_before_scan(bytes: &[u8], scan: usize, table: u8) -> Vec<u8> {
     let sos = sos_offsets(bytes);
     assert!(sos.len() >= 2, "expected more than one scan");
-    let mut out = bytes[..sos[1]].to_vec();
-    out.extend([0xFF, 0xDB, 0x00, 0x43, 0x00]);
+    let mut out = bytes[..sos[scan]].to_vec();
+    out.extend([0xFF, 0xDB, 0x00, 0x43, table]);
     out.extend([99u8; 64]);
-    out.extend(&bytes[sos[1]..]);
+    out.extend(&bytes[sos[scan]..]);
     out
+}
+
+/// The file with a DQT redefining table 0 inserted before its second SOS.
+fn with_dqt_between_scans(bytes: &[u8]) -> Vec<u8> {
+    with_dqt_before_scan(bytes, 1, 0)
 }
 
 /// A reader that exposes `limit` bytes, so a decode can run out of data and be retried.
@@ -307,4 +312,92 @@ fn quantization_tables_ignore_dqt_between_baseline_scans() {
     check_dqt_between_scans(include_bytes!(
         "../../../test-images/jpeg/non_interleaved_420_64x64.jpg"
     ));
+}
+
+/// Decode the raw planes from a reader that grows by `step` bytes whenever the decoder
+/// runs out of data, and return them with the tables reported after the decode. A step
+/// of the file's length decodes in one call.
+fn decode_planes(bytes: &[u8], step: usize) -> (Vec<Vec<u8>>, Vec<QuantizationTable>) {
+    let limit = Rc::new(Cell::new(0));
+    let mut decoder = JpegDecoder::new(Growing {
+        data:     bytes,
+        position: 0,
+        limit:    Rc::clone(&limit)
+    });
+    loop {
+        limit.set(limit.get() + step);
+        match decoder.decode_headers() {
+            Ok(()) => break,
+            Err(e) if e.is_recoverable_eof() => {}
+            Err(e) => panic!("{e:?}")
+        }
+    }
+    let mut raw = decoder.raw_output();
+    let layout = raw.layout().unwrap();
+    let mut planes: Vec<Vec<u8>> = layout[..raw.num_components().unwrap()]
+        .iter()
+        .map(|l| vec![0; l.byte_size])
+        .collect();
+    loop {
+        let mut refs: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
+        match raw.decode_into_planes(&mut refs) {
+            Ok(()) => break,
+            Err(e) if e.is_recoverable_eof() => limit.set(limit.get() + step),
+            Err(e) => panic!("{e:?}")
+        }
+    }
+    (planes, raw.quantization_tables().unwrap())
+}
+
+/// Files whose first scan holds only the first component. Table 1 serves the other two.
+const LUMA_SCAN_FIRST: [&[u8]; 2] = [
+    include_bytes!("../../../test-images/jpeg/non_interleaved_420_64x64.jpg"),
+    include_bytes!("../../../test-images/jpeg/noninterleaved-dc-table-1-17x19.jpg")
+];
+
+#[test]
+fn dqt_between_scans_applies_to_components_not_yet_scanned() {
+    // T.81 B.2.4.1: a redefined table "shall be used, when referenced, in the remaining
+    // scans". libjpeg-turbo gives a component the table its destination holds when the
+    // component's first scan begins (latch_quant_tables in jdinput.c). A DQT for table 1
+    // after the first scan must act like the same DQT before it.
+    for original in LUMA_SCAN_FIRST {
+        let before_first_scan = with_dqt_before_scan(original, 0, 1);
+        let after_first_scan = with_dqt_before_scan(original, 1, 1);
+
+        let (expected_planes, expected_tables) =
+            decode_planes(&before_first_scan, before_first_scan.len());
+        assert_eq!(expected_tables[0].values, tables_in_file(original)[0].2);
+        assert_eq!(expected_tables[1].values, [99; 64]);
+        assert_eq!(expected_tables[2].values, [99; 64]);
+
+        for step in [after_first_scan.len(), 97] {
+            let (planes, tables) = decode_planes(&after_first_scan, step);
+            assert_eq!(tables, expected_tables, "step {step}");
+            assert!(planes == expected_planes, "step {step}");
+        }
+    }
+}
+
+#[test]
+fn quantization_table_defined_after_the_first_scan() {
+    // libjpeg-turbo needs a component's table when the component's first scan begins,
+    // not when the first scan of the image begins.
+    for original in LUMA_SCAN_FIRST {
+        let dqt = original
+            .windows(5)
+            .position(|bytes| bytes == [0xFF, 0xDB, 0x00, 0x43, 0x01])
+            .unwrap();
+        let mut moved = original.to_vec();
+        let segment: Vec<u8> = moved.drain(dqt..dqt + 69).collect();
+        let second_sos = sos_offsets(&moved)[1];
+        moved.splice(second_sos..second_sos, segment);
+
+        let (expected_planes, expected_tables) = decode_planes(original, original.len());
+        for step in [moved.len(), 97] {
+            let (planes, tables) = decode_planes(&moved, step);
+            assert_eq!(tables, expected_tables, "step {step}");
+            assert!(planes == expected_planes, "step {step}");
+        }
+    }
 }

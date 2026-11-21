@@ -9,7 +9,6 @@
 //!Miscellaneous stuff
 #![allow(dead_code)]
 
-use alloc::format;
 use core::cmp::max;
 use core::fmt;
 
@@ -211,23 +210,12 @@ pub(crate) fn setup_component_params<T: ZByteReaderTrait>(
     };
 
     for component in &mut img.components {
-        // Extract quantization tables from the arrays into components
-        let qt_table = *img.qt_tables[component.quantization_table_number as usize]
-            .as_ref()
-            .ok_or_else(|| {
-                DecodeErrors::DqtError(format!(
-                    "No quantization table for component {:?}",
-                    component.component_id
-                ))
-            })?;
-
         let x = (usize::from(img_width) * component.horizontal_sample).div_ceil(img.h_max);
         let y = (usize::from(img_height) * component.horizontal_sample + img.h_max - 1) / img.v_max;
         component.x = x;
         component.w2 = img.mcu_x * component.horizontal_sample * 8;
         // probably not needed. :)
         component.y = y;
-        component.quantization_table = qt_table;
         // Use direct assignment (not *=) so this is idempotent on retry.
         component.width_stride = component.horizontal_sample * img.mcu_x * 8;
     }
