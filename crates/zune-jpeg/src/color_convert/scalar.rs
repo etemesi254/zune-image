@@ -23,6 +23,9 @@ fn clamp(a: i32) -> u8 {
 
 // Keep exact 16-bit rounding while splitting out whole chroma contributions,
 // leaving fractional coefficients that fit signed 16-bit multiply-adds.
+//
+// Always inlined: the 16-pixel loops of the callers vectorize only without a call.
+#[inline(always)]
 fn native_rgb(y: i16, cb: i16, cr: i16) -> (u8, u8, u8) {
     let y = i32::from(y);
     let cb = i32::from(cb - 128);
