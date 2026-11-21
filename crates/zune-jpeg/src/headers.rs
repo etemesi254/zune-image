@@ -868,19 +868,10 @@ pub(crate) fn parse_app2<T: ZByteReaderTrait>(
             let seq_no = rest[0];
             let num_markers = rest[1];
 
-            // Mirrors libjpeg-turbo jdicc.c: reject num_markers == 0
-            // and seq_no out of [1, num_markers]. No artificial cap on
-            // num_markers — the field is a u8 so 255 is the natural limit.
-            if num_markers == 0 {
-                return Err(DecodeErrors::Format(format!(
-                    "ICC profile claims {num_markers} chunks (must be >= 1)"
-                )));
-            }
-            if seq_no == 0 || seq_no > num_markers {
-                return Err(DecodeErrors::Format(format!(
-                    "ICC chunk seq_no {seq_no} out of range for {num_markers} chunks"
-                )));
-            }
+            // The profile is optional metadata. libjpeg-turbo stores every chunk and
+            // decodes the image; only jpeg_read_icc_profile() (jdicc.c) refuses bad
+            // numbering, with a warning. Keep the chunk, so that `icc_profile()`
+            // returns `None` for the whole inconsistent profile.
 
             let data = rest[2..].to_vec();
             App2Payload::IccChunk(ICCChunk {

@@ -1,6 +1,7 @@
 use std::io::Cursor;
 
 use zune_core::bytestream::ZCursor;
+use zune_core::options::DecoderOptions;
 use zune_jpeg::errors::{DecodeErrors, UnsupportedSchemes};
 use zune_jpeg::JpegDecoder;
 
@@ -177,6 +178,53 @@ fn iptc_metadata() {
     let mut decoder = JpegDecoder::new(Cursor::new(image));
     decoder.decode_headers().unwrap();
     assert_eq!(decoder.iptc(), Some(&EXPECTED_DATA.to_vec()))
+}
+
+#[test]
+fn bad_icc_chunk_numbering_drops_the_profile_not_the_image() {
+    fn with_icc_chunks(base: &[u8], chunks: &[(u8, u8)]) -> Vec<u8> {
+        let mut data = base[..2].to_vec();
+        for &(seq_no, num_markers) in chunks {
+            data.extend_from_slice(&[0xFF, 0xE2, 0x00, 0x14]);
+            data.extend_from_slice(b"ICC_PROFILE\0");
+            data.extend_from_slice(&[seq_no, num_markers, b'i', b'c', b'c', b'0' + seq_no]);
+        }
+        data.extend_from_slice(&base[2..]);
+        data
+    }
+
+    let base: &[u8] = include_bytes!("../../../test-images/jpeg/sampling_factors.jpg");
+    let expected = JpegDecoder::new(ZCursor::new(base)).decode().unwrap();
+
+    // libjpeg-turbo keeps every APP2 segment and decodes these images. Only
+    // jpeg_read_icc_profile() refuses the numbering, with a warning.
+    let bad_numbering: [&[(u8, u8)]; 5] = [
+        &[(0, 0)],
+        &[(1, 0)],
+        &[(0, 1)],
+        &[(2, 1)],
+        &[(1, 1), (3, 2)]
+    ];
+    for chunks in bad_numbering {
+        let data = with_icc_chunks(base, chunks);
+        for strict in [false, true] {
+            let options = DecoderOptions::default().set_strict_mode(strict);
+            let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&data), options);
+            let pixels = decoder
+                .decode()
+                .unwrap_or_else(|error| panic!("{chunks:?}, strict {strict}: {error:?}"));
+            assert_eq!(pixels, expected, "{chunks:?}, strict {strict}");
+            assert_eq!(decoder.icc_profile(), None, "{chunks:?}, strict {strict}");
+        }
+    }
+
+    let data = with_icc_chunks(base, &[(2, 2), (1, 2)]);
+    let mut decoder = JpegDecoder::new(ZCursor::new(&data));
+    decoder.decode_headers().unwrap();
+    assert_eq!(
+        decoder.icc_profile().as_deref(),
+        Some(b"icc1icc2".as_slice())
+    );
 }
 
 #[test]
