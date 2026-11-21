@@ -504,6 +504,48 @@ fn validate_scan_parameters(
     Ok(())
 }
 
+/// Strict mode: check a progressive scan against the scans accepted before it
+/// (ITU-T T.81 G.1.1.1 and B.2.3).
+///
+/// libjpeg-turbo refuses scans that break the first two checks, and warns about
+/// scans that break the others, which its strict mode turns into errors. Like
+/// libjpeg-turbo, this accepts a band sent again at full precision (Ah 0 after Al 0).
+fn validate_progression(
+    components: &[Components], scan: &[usize], spec_start: u8, spec_end: u8, succ_high: u8,
+    succ_low: u8
+) -> Result<(), DecodeErrors> {
+    let dc = spec_start == 0;
+    if (dc && spec_end != 0) || (!dc && (spec_start > spec_end || scan.len() != 1)) {
+        return Err(DecodeErrors::SosError(format!(
+            "Invalid progressive scan, Ns={} Ss={spec_start} Se={spec_end}",
+            scan.len()
+        )));
+    }
+    if succ_high != 0 && succ_low + 1 != succ_high {
+        return Err(DecodeErrors::SosError(format!(
+            "Invalid successive approximation, Ah={succ_high} Al={succ_low}"
+        )));
+    }
+    for &index in scan {
+        // Al of the last scan of each coefficient, or -1 before its first scan
+        let bits = &components[index].progressive_bits;
+        if !dc && bits[0] < 0 {
+            return Err(DecodeErrors::SosError(format!(
+                "AC scan of component {index} before its first DC scan"
+            )));
+        }
+        for k in spec_start..=spec_end {
+            let expected = bits[usize::from(k)].max(0);
+            if i16::from(succ_high) != i16::from(expected) {
+                return Err(DecodeErrors::SosError(format!(
+                    "Inconsistent progression for component {index} coefficient {k}: Ah={succ_high}, expected {expected}"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Parse a start of scan data
 pub(crate) fn parse_sos<T: ZByteReaderTrait>(
     image: &mut JpegDecoder<T>
@@ -595,6 +637,16 @@ pub(crate) fn parse_sos<T: ZByteReaderTrait>(
             succ_high,
             succ_low
         )?;
+        if image.is_progressive && image.options.strict_mode() {
+            validate_progression(
+                &image.components,
+                &z_order[..usize::from(ns)],
+                spec_start,
+                spec_end,
+                succ_high,
+                succ_low
+            )?;
+        }
 
         // Commit phase: all reads and validations succeeded.
         image.num_scans = ns;

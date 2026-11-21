@@ -307,6 +307,108 @@ fn ac_run_past_end_of_block() {
     assert!(failures.is_empty(), "\n{}", failures.join("\n"));
 }
 
+/// A scan of a progressive frame: component ids, Ss, Se, Ah, Al.
+type Scan = (&'static [u8], u8, u8, u8, u8);
+
+/// A progressive (8 * BLOCKS)x8 frame of `components` components, ids 1, 2 and so on,
+/// coded in `scans`. Every coefficient is zero, so a scan codes each block in one `0` bit:
+/// a DC difference of 0, a refinement bit of 0 or an EOB.
+fn progression(components: u8, scans: &[Scan]) -> Vec<u8> {
+    let mut data = vec![0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0x00];
+    data.extend([0x10; 64]);
+    let [w_hi, w_lo] = (8 * BLOCKS).to_be_bytes();
+    data.extend([
+        0xff,
+        0xc2,
+        0x00,
+        8 + 3 * components,
+        0x08,
+        0x00,
+        0x08,
+        w_hi,
+        w_lo,
+        components
+    ]);
+    for id in 1..=components {
+        data.extend([id, 0x11, 0x00]);
+    }
+    // DC table: size 0, code `0`; AC table: EOB, code `0`
+    for class in [0x00, 0x10] {
+        data.extend([0xff, 0xc4, 0x00, 0x14, class, 0x01]);
+        data.extend([0x00; 16]);
+    }
+    for &(ids, ss, se, ah, al) in scans {
+        let n = ids.len() as u8;
+        data.extend([0xff, 0xda, 0x00, 6 + 2 * n, n]);
+        for &id in ids {
+            data.extend([id, 0x00]);
+        }
+        data.extend([ss, se, (ah << 4) | al]);
+        let mut bits = Bits::new();
+        for _ in 0..usize::from(BLOCKS) * ids.len() {
+            bits.put(0, 1);
+        }
+        data.extend(bits.finish());
+    }
+    data.extend([0xff, 0xd9]);
+    data
+}
+
+#[test]
+fn strict_mode_rejects_scans_out_of_progression() {
+    // ITU-T T.81 G.1.1.1 and B.2.3: a DC scan codes only DC; an AC scan codes one
+    // component, with Ss <= Se, after that component's first DC scan; a band's first scan
+    // has Ah 0, and every later scan of it has the previous Al as Ah and lowers Al by one.
+    // libjpeg-turbo refuses the first three kinds of scan below and decodes the others with
+    // a warning, which its strict mode makes an error. Strict mode rejects them all, and
+    // lenient mode still decodes them.
+    const Y: &[u8] = &[1];
+    const YCC: &[u8] = &[1, 2, 3];
+    #[rustfmt::skip]
+    let legal: &[(u8, &[Scan])] = &[
+        (1, &[(Y, 0, 0, 0, 1), (Y, 1, 63, 0, 1), (Y, 0, 0, 1, 0), (Y, 1, 63, 1, 0)]),
+        (1, &[(Y, 0, 0, 0, 2), (Y, 0, 0, 2, 1), (Y, 0, 0, 1, 0)]),
+        (1, &[(Y, 0, 0, 0, 0), (Y, 6, 63, 0, 0), (Y, 1, 5, 0, 0)]),
+        // a band sent again at full precision, which libjpeg-turbo accepts
+        (1, &[(Y, 0, 0, 0, 0), (Y, 0, 0, 0, 0)]),
+        (3, &[(YCC, 0, 0, 0, 1), (&[3], 1, 63, 0, 0), (YCC, 0, 0, 1, 0), (Y, 1, 63, 0, 0)])
+    ];
+    #[rustfmt::skip]
+    let illegal: &[(&str, u8, &[Scan])] = &[
+        ("Ss after Se", 1, &[(Y, 0, 0, 0, 0), (Y, 5, 3, 0, 0)]),
+        ("interleaved AC scan", 3, &[(YCC, 0, 0, 0, 0), (YCC, 1, 63, 0, 0)]),
+        ("Al not Ah - 1", 1, &[(Y, 0, 0, 0, 2), (Y, 0, 0, 2, 0)]),
+        ("AC before DC", 1, &[(Y, 1, 63, 0, 0), (Y, 0, 0, 0, 0)]),
+        ("AC before DC, component 2", 3, &[(Y, 0, 0, 0, 0), (&[2], 1, 63, 0, 0)]),
+        ("refined before coded", 1, &[(Y, 0, 0, 1, 0)]),
+        ("refined twice", 1, &[(Y, 0, 0, 0, 1), (Y, 0, 0, 1, 0), (Y, 0, 0, 1, 0)]),
+        ("bit skipped", 1, &[(Y, 0, 0, 0, 2), (Y, 0, 0, 1, 0)]),
+        ("band restarted", 1, &[(Y, 0, 0, 0, 0), (Y, 1, 63, 0, 1), (Y, 1, 9, 0, 0)])
+    ];
+    let decode = |data: &[u8], strict: bool| {
+        let options = DecoderOptions::default().set_strict_mode(strict);
+        JpegDecoder::new_with_options(ZCursor::new(data), options).decode()
+    };
+    let mut failures = vec![];
+    for (i, &(components, scans)) in legal.iter().enumerate() {
+        if let Err(e) = decode(&progression(components, scans), true) {
+            failures.push(format!("legal progression {i}: strict: {e:?}"));
+        }
+    }
+    for &(case, components, scans) in illegal {
+        let data = progression(components, scans);
+        if let Err(e) = decode(&data, false) {
+            failures.push(format!("{case}: lenient: {e:?}"));
+        }
+        match decode(&data, true) {
+            Err(DecodeErrors::SosError(_)) => {}
+            Err(e) => failures.push(format!("{case}: strict: {e:?}")),
+            Ok(_) => failures.push(format!("{case}: strict: accepted"))
+        }
+    }
+    assert!(failures.is_empty(), "\n{}", failures.join("\n"));
+}
+
 #[test]
 fn test_panic_on_slice() {
     const JPEG_DATA: [u8; 1394] = [
