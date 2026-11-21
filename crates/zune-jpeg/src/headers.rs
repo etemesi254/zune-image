@@ -571,12 +571,38 @@ pub(crate) fn parse_sos<T: ZByteReaderTrait>(
                 )));
             }
 
+            // T.81 B.2.3: a scan lists its components in the order of the frame header.
+            if image.options.strict_mode()
+                && huff_assignments
+                    .last()
+                    .is_some_and(|&(previous, _)| usize::from(j) <= previous)
+            {
+                return Err(DecodeErrors::SosError(format!(
+                    "Component {id} is out of frame order in the scan"
+                )));
+            }
+
             huff_assignments.push((usize::from(j), y));
             z_order[i as usize] = j as usize;
 
             let component = &image.components[usize::from(j)];
             if component.vertical_sample != 1 || component.horizontal_sample != 1 {
                 scan_subsampled = true;
+            }
+        }
+
+        // T.81 B.2.3: an interleaved scan has at most 10 blocks in an MCU.
+        if image.options.strict_mode() && ns > 1 {
+            let blocks: usize = huff_assignments
+                .iter()
+                .map(|&(j, _)| {
+                    image.components[j].horizontal_sample * image.components[j].vertical_sample
+                })
+                .sum();
+            if blocks > 10 {
+                return Err(DecodeErrors::SosError(format!(
+                    "Interleaved scan with {blocks} blocks in an MCU, the limit is 10"
+                )));
             }
         }
 
