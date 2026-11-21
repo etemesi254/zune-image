@@ -284,11 +284,25 @@ fn transform_one_is_ycbcr_and_transform_two_is_ycck() {
 }
 
 #[test]
-fn app14_overrides_jfif_and_component_id_heuristics() {
-    let jfif_with_rgb_transform = with_adobe_transform(
-        include_bytes!("../../../test-images/jpeg/app14/baseline_ycbcr.jpg"),
-        0
-    );
+fn jfif_overrides_app14_and_app14_overrides_component_ids() {
+    // libjpeg-turbo: a JFIF segment makes three components YCbCr, whatever APP14 says.
+    let jfif = include_bytes!("../../../test-images/jpeg/app14/baseline_ycbcr.jpg");
+    let expected = JpegDecoder::new(ZCursor::new(jfif)).decode().unwrap();
+    for transform in 0..=2 {
+        let data = with_adobe_transform(jfif, transform);
+        for strict in [false, true] {
+            let options = DecoderOptions::default().set_strict_mode(strict);
+            let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&data), options);
+            decoder.decode_headers().unwrap();
+            assert_eq!(
+                decoder.input_colorspace(),
+                Some(ColorSpace::YCbCr),
+                "transform {transform}"
+            );
+            assert_eq!(decoder.decode().unwrap(), expected, "transform {transform}");
+        }
+    }
+
     let rgb_ids_with_ycbcr_transform = with_component_ids(
         &with_adobe_transform(
             include_bytes!("../../../test-images/jpeg/app14/baseline_rgb_interleaved.jpg"),
@@ -297,14 +311,59 @@ fn app14_overrides_jfif_and_component_id_heuristics() {
         b"RGB"
     );
 
-    assert_rgb_headers(
-        "APP14 transform zero overrides JFIF",
-        &jfif_with_rgb_transform
-    );
-
     let mut decoder = JpegDecoder::new(ZCursor::new(&rgb_ids_with_ycbcr_transform));
     decoder.decode_headers().unwrap();
     assert_eq!(decoder.input_colorspace(), Some(ColorSpace::YCbCr));
+}
+
+#[test]
+fn single_component_is_luma_for_every_transform() {
+    let data =
+        include_bytes!("../../../test-images/jpeg/app14/single_component_transform_zero.jpg");
+    let luma = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::Luma);
+    let expected = JpegDecoder::new_with_options(ZCursor::new(data), luma)
+        .decode()
+        .unwrap();
+
+    for transform in 1..=2 {
+        let data = with_adobe_transform(data, transform);
+        for strict in [false, true] {
+            let mut decoder =
+                JpegDecoder::new_with_options(ZCursor::new(&data), luma.set_strict_mode(strict));
+            decoder.decode_headers().unwrap();
+            assert_eq!(
+                decoder.input_colorspace(),
+                Some(ColorSpace::Luma),
+                "transform {transform}"
+            );
+            assert_eq!(decoder.decode().unwrap(), expected, "transform {transform}");
+        }
+    }
+}
+
+#[test]
+fn unexpected_transform_is_ycbcr_or_ycck() {
+    // libjpeg-turbo warns about a transform that does not fit the component count, and
+    // assumes YCCK for four components and YCbCr for three.
+    let three = include_bytes!("../../../test-images/jpeg/app14/baseline_rgb.jpg");
+    let four = include_bytes!("../../../test-images/jpeg/app14/baseline_cmyk.jpg");
+
+    for (data, unexpected, assumed, colorspace) in [
+        (four.as_slice(), 1, 2, ColorSpace::YCCK),
+        (three.as_slice(), 2, 1, ColorSpace::YCbCr)
+    ] {
+        let expected = JpegDecoder::new(ZCursor::new(&with_adobe_transform(data, assumed)))
+            .decode()
+            .unwrap();
+        let data = with_adobe_transform(data, unexpected);
+        for strict in [false, true] {
+            let options = DecoderOptions::default().set_strict_mode(strict);
+            let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&data), options);
+            decoder.decode_headers().unwrap();
+            assert_eq!(decoder.input_colorspace(), Some(colorspace));
+            assert_eq!(decoder.decode().unwrap(), expected, "{colorspace:?}");
+        }
+    }
 }
 
 #[test]

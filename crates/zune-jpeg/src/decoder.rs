@@ -223,6 +223,7 @@ pub(crate) struct ScanHeaderStateSnapshot {
     pub(crate) restart_interval: usize,
     pub(crate) input_colorspace: ColorSpace,
     pub(crate) adobe_transform:  Option<u8>,
+    pub(crate) is_jfif:          bool,
     pub(crate) is_mjpeg:         bool
 }
 
@@ -344,6 +345,8 @@ pub struct JpegDecoder<T> {
     pub(crate) input_colorspace: ColorSpace,
     /// Adobe APP14 transform, resolved with the SOF component count at SOS.
     pub(crate) adobe_transform:  Option<u8>,
+    /// Whether a JFIF APP0 segment was seen. It makes a three-component image YCbCr.
+    pub(crate) is_jfif:          bool,
     // Is the image using arithmetic coding?
     pub(crate) is_arithmetic:    bool,
     // Progressive image details
@@ -1869,6 +1872,7 @@ where
             restart_interval: self.restart_interval,
             input_colorspace: self.input_colorspace,
             adobe_transform:  self.adobe_transform,
+            is_jfif:          self.is_jfif,
             is_mjpeg:         self.is_mjpeg
         }
     }
@@ -1879,6 +1883,7 @@ where
         self.restart_interval = snapshot.restart_interval;
         self.input_colorspace = snapshot.input_colorspace;
         self.adobe_transform = snapshot.adobe_transform;
+        self.is_jfif = snapshot.is_jfif;
         self.is_mjpeg = snapshot.is_mjpeg;
     }
 
@@ -2188,6 +2193,7 @@ where
             color_convert_16:            color_convert,
             input_colorspace:            ColorSpace::YCbCr,
             adobe_transform:             None,
+            is_jfif:                     false,
             z_order:                     [0; MAX_COMPONENTS],
             restart_interval:            0,
             todo:                        0x7fff_ffff,
@@ -2959,17 +2965,14 @@ where
     }
 
     fn resolve_input_colorspace(&mut self) -> Result<(), DecodeErrors> {
-        self.input_colorspace = match self.adobe_transform {
-            Some(0) if self.components.len() == 1 => ColorSpace::Luma,
-            Some(0) if self.components.len() == 3 => ColorSpace::RGB,
-            Some(0) => ColorSpace::CMYK,
-            Some(1) => ColorSpace::YCbCr,
-            Some(2) => ColorSpace::YCCK,
-            Some(_) => unreachable!("APP14 parser rejects unknown transforms"),
-            None if self.components.len() == 1 => ColorSpace::Luma,
-            None if self.components.len() == 4 => ColorSpace::CMYK,
-            None if self.components.len() == 3
-                && self
+        // The rules of libjpeg-turbo's default_decompress_parms (jdapimin.c).
+        self.input_colorspace = match (self.components.len(), self.adobe_transform) {
+            (1, _) => ColorSpace::Luma,
+            // JFIF implies YCbCr, whatever APP14 says.
+            (3, _) if self.is_jfif => ColorSpace::YCbCr,
+            (3, Some(0)) => ColorSpace::RGB,
+            (3, None)
+                if self
                     .components
                     .iter()
                     .zip(b"RGB")
@@ -2977,7 +2980,9 @@ where
             {
                 ColorSpace::RGB
             }
-            None => ColorSpace::YCbCr
+            (4, None | Some(0)) => ColorSpace::CMYK,
+            (4, Some(_)) => ColorSpace::YCCK,
+            _ => ColorSpace::YCbCr
         };
 
         if self.input_colorspace.num_components() > self.components.len() {
@@ -2989,10 +2994,7 @@ where
                 )));
             }
 
-            if self.input_colorspace == ColorSpace::YCCK && self.components.len() == 3 {
-                warn!("Treating YCCK colorspace as YCbCr because component count is 3");
-                self.input_colorspace = ColorSpace::YCbCr;
-            } else if let Some(component_count) = u32::try_from(self.components.len())
+            if let Some(component_count) = u32::try_from(self.components.len())
                 .ok()
                 .and_then(NonZeroU32::new)
             {
@@ -3111,6 +3113,11 @@ where
                 //
                 // Atomic read: full body buffered first, then inspected.
                 with_marker_body(self, |decoder, body| {
+                    // A JFIF segment makes a three-component image YCbCr. Like
+                    // libjpeg-turbo, only count one with the 14 bytes of a JFIF header.
+                    if body.body().len() >= 14 && &body.body()[..5] == b"JFIF\0" {
+                        decoder.is_jfif = true;
+                    }
                     if body.body().len() >= 5 && &body.body()[..5] == b"AVI1\0" {
                         decoder.is_mjpeg = true;
                     }
