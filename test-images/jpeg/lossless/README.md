@@ -91,6 +91,11 @@ Clamp each result to 0..255. Its SHA-256 is
 `ac9848d008072491d3dc14a054d967d19e1d68ff563191d7db5c00313e5c7e4a`.
 No ordinary-JPEG conversion constants or logical-edge behavior are changed.
 
+The Adobe transform-0 RGB tests replace the public color fixtures' leading
+18-byte JFIF APP0 segment with APP14. Keeping JFIF would still declare the
+three components to be YCbCr, so it is not a valid control for direct RGB
+sample preservation. The original checked-in fixtures remain unchanged.
+
 ### Synthetic controls
 
 The `generated` directory retains known source planes (`source-*.raw`) and

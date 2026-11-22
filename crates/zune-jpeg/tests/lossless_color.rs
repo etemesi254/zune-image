@@ -11,9 +11,11 @@ const RGB: &[u8] =
     include_bytes!("../../../test-images/jpeg/lossless/32x32x8_ycbcr_interleaved.rgb");
 
 fn adobe_rgb(data: &[u8]) -> Vec<u8> {
+    assert_eq!(&data[2..11], b"\xff\xe0\x00\x10JFIF\0");
     let mut encoded = data[..2].to_vec();
     encoded.extend_from_slice(b"\xff\xee\x00\x0eAdobe\x00\x64\x00\x00\x00\x00\x00");
-    encoded.extend_from_slice(&data[2..]);
+    // Replace JFIF: retaining it would declare these samples to be YCbCr.
+    encoded.extend_from_slice(&data[20..]);
     encoded
 }
 
