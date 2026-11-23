@@ -52,11 +52,15 @@ impl<'a> PngEncoder<'a> {
     }
 
     /// Write an indexed (palette) image: `data` holds one 8-bit palette index per pixel,
-    /// the colorspace must be `Luma` with depth 8. `alpha` (tRNS) gives alpha for the
-    /// first entries; it may be shorter than the palette.
-    pub fn set_palette(&mut self, palette: &'a [[u8; 3]], alpha: Option<&'a [u8]>) {
+    /// the colorspace must be `Luma` with depth 8. Alpha for the entries is set with
+    /// [`set_trns`](Self::set_trns).
+    pub fn set_palette(&mut self, palette: &'a [[u8; 3]]) {
         self.palette = Some(palette);
-        self.trns = alpha.filter(|a| !a.is_empty());
+    }
+    /// Alpha (tRNS chunk) for the first palette entries of an image written with
+    /// [`set_palette`](Self::set_palette); it may be shorter than the palette.
+    pub fn set_trns(&mut self, alpha: &'a [u8]) {
+        self.trns = Some(alpha).filter(|a| !a.is_empty());
     }
 
     /// Physical pixel size (pHYs): pixels per unit along x and y; unit 1 = metre, 0 = unknown.
@@ -245,7 +249,8 @@ fn test_palette_write() {
         .set_height(3)
         .set_depth(BitDepth::Eight);
     let mut encoder = PngEncoder::new(&data, options);
-    encoder.set_palette(&palette, Some(&alpha));
+    encoder.set_palette(&palette);
+    encoder.set_trns(&alpha);
     encoder.set_physical_size(3780, 3780, 1);
     let mut sink = vec![];
     encoder.encode(&mut sink).unwrap();
