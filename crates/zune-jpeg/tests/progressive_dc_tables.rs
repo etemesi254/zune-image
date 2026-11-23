@@ -1,4 +1,5 @@
 use zune_core::bytestream::ZCursor;
+use zune_core::options::DecoderOptions;
 use zune_jpeg::JpegDecoder;
 
 fn assert_native_colors(
@@ -73,4 +74,35 @@ fn noninterleaved_dc_scan_uses_table_three() {
             (148, 115, [20, 200, 39]),
         ],
     );
+}
+
+#[test]
+fn strict_mode_rejects_noninterleaved_dc_table_selectors_above_three() {
+    let valid: &[u8] =
+        include_bytes!("../../../test-images/jpeg/noninterleaved-dc-table-1-17x19.jpg");
+    let expected = JpegDecoder::new(ZCursor::new(valid)).decode().unwrap();
+    // The Cb DC scan: one component, id 2, DC table 1.
+    let sos = valid
+        .windows(7)
+        .position(|bytes| bytes == [0xFF, 0xDA, 0x00, 0x08, 0x01, 0x02, 0x10])
+        .unwrap();
+
+    // Only tables 0 to 3 exist. libjpeg-turbo refuses these scans.
+    for table in [5, 9, 13] {
+        let mut jpeg = valid.to_vec();
+        jpeg[sos + 6] = table << 4;
+
+        let strict = DecoderOptions::default().set_strict_mode(true);
+        let error = JpegDecoder::new_with_options(ZCursor::new(&jpeg), strict)
+            .decode()
+            .unwrap_err();
+        assert!(
+            format!("{error:?}").contains(&format!("No huffman table for DC component: {table}")),
+            "{error:?}"
+        );
+
+        // Default mode still decodes the scan, with the selector wrapped to table 1.
+        let pixels = JpegDecoder::new(ZCursor::new(&jpeg)).decode().unwrap();
+        assert_eq!(pixels, expected, "table {table}");
+    }
 }

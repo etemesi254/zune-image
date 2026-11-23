@@ -851,7 +851,13 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         resume_position: Option<(usize, usize)>, require_real_dc: bool
     ) -> Result<(), DecodeErrors> {
         let (mcu_width, mcu_height) = self.get_non_interleaved_dimensions(k);
-        let dc_pos = self.components[k].dc_huff_table % MAX_COMPONENTS;
+        // Only tables 0 to 3 exist. Strict mode looks the selector up as written, so a
+        // higher one is an error; otherwise it wraps and the scan is still decoded.
+        let dc_pos = if self.options.strict_mode() {
+            self.components[k].dc_huff_table
+        } else {
+            self.components[k].dc_huff_table % MAX_COMPONENTS
+        };
         let width_stride = self.components[k].width_stride / 8;
         let (resume_row, resume_col) = resume_position.unwrap_or((0, 0));
 
