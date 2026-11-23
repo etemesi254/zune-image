@@ -13,6 +13,9 @@
 //! for decoding and [`jpeg-encoder`](jpeg_encoder) for encoding
 //!
 //! The decoder and encoder both support metadata extraction and saving.
+//! With `uhdr` enabled, the image and packed-buffer decode APIs reject
+//! reduced-IDCT output for JPEGs identified as Ultra HDR in their headers:
+//! reduced decoding does not apply the gain map.
 //!
 use jpeg_encoder::{ColorType, EncodingError, JfifWrite};
 use log::{info, trace};
@@ -43,38 +46,38 @@ impl<'a, T: ZByteWriterTrait> JfifWrite for TempVt<'a, T> {
         })
     }
 }
+
+#[cfg(feature = "uhdr")]
+fn is_uhdr<T: ZByteReaderTrait>(decoder: &JpegDecoder<T>) -> bool {
+    decoder.info().is_some_and(|info| !info.gain_map_info.is_empty())
+}
+
+#[cfg(feature = "uhdr")]
+fn check_packed_scale<T: ZByteReaderTrait>(decoder: &JpegDecoder<T>) -> Result<(), ImageErrors> {
+    if decoder.options().jpeg_get_scale().is_some() && is_uhdr(decoder) {
+        return Err(DecodeErrors::FormatStatic(
+            "reduced JPEG output is unavailable for Ultra HDR tone mapping"
+        )
+        .into());
+    }
+    Ok(())
+}
+
 impl<T: ZByteReaderTrait> DecoderTrait for zune_jpeg::JpegDecoder<T> {
     fn decode(&mut self) -> Result<Image, crate::errors::ImageErrors> {
         self.read_headers()?;
-        // best case uhdr identification
-
-        let is_uhdr = {
-            let info = self.info().unwrap();
-            !info.gain_map_info.is_empty()
-            // TODO: Add more checks
-        };
-        if is_uhdr {
-            #[cfg(feature = "uhdr")]
-            {
-                if self.options().jpeg_get_scale().is_some() {
-                    return Err(DecodeErrors::FormatStatic(
-                        "reduced JPEG output is unavailable for Ultra HDR tone mapping"
-                    )
-                    .into());
-                }
-                info!("Treating this JPEG as uhdr");
-                // seek to start, we will destroy this later so its safe
-                let reader = self.inner_reader();
-                let current_pos = reader.position()?;
-                let data = reader.seek(ZSeekFrom::Start(0))?;
-                // read whole data to vec
-                let mut data = vec![];
-                reader.read_all(&mut data)?;
-                let image = uhdr::decode_uhdr_tone_mapped(ZCursor::new(data), 1.2f32)?;
-                // set the pos back to original so that the invariants of this decode are held
-                reader.set_position(current_pos as usize)?;
-                return Ok(image);
-            }
+        #[cfg(feature = "uhdr")]
+        if is_uhdr(self) {
+            check_packed_scale(self)?;
+            info!("Treating this JPEG as uhdr");
+            let reader = self.inner_reader();
+            let current_pos = reader.position()?;
+            reader.seek(ZSeekFrom::Start(0))?;
+            let mut data = vec![];
+            reader.read_all(&mut data)?;
+            let image = uhdr::decode_uhdr_tone_mapped(ZCursor::new(data), 1.2f32)?;
+            reader.set_position(current_pos as usize)?;
+            return Ok(image);
         }
 
         let pixels = self
@@ -174,6 +177,44 @@ mod tests {
         let image = DecoderTrait::decode(&mut decoder).unwrap();
         assert_eq!(image.dimensions(), (24, 24));
         assert_eq!(image.metadata.dimensions(), (24, 24));
+    }
+
+    #[test]
+    fn configured_scale_on_jpeg_with_gain_map_metadata() {
+        use zune_core::options::{DecoderOptions, JpegScale};
+
+        let base = include_bytes!("../../../../test-images/jpeg/non_interleaved_420_64x64.jpg");
+        let mut data = base[..2].to_vec();
+        data.extend(marker_segment(0xE2, b"urn:iso:std:iso:ts:21496:-1\0\0\0\0\0"));
+        data.extend_from_slice(&base[2..]);
+        let options = DecoderOptions::default().jpeg_set_scale(JpegScale::Half);
+        let decoder = || JpegDecoder::new_with_options(ZCursor::new(data.as_slice()), options);
+        let mut base_decoder = decoder();
+        let pixels = base_decoder.decode().unwrap();
+        assert!(!base_decoder.info().unwrap().gain_map_info.is_empty());
+        assert_eq!(pixels.len(), 32 * 32 * 3);
+        let mut output = vec![0xa5; pixels.len()];
+
+        #[cfg(feature = "uhdr")]
+        {
+            let message = "reduced JPEG output is unavailable for Ultra HDR tone mapping";
+            let error = DecoderTrait::decode(&mut decoder()).err().unwrap();
+            assert!(error.to_string().contains(message));
+            let error = DecodeInto::decode_output_buffer_size(&mut decoder()).unwrap_err();
+            assert!(error.to_string().contains(message));
+            let error = DecodeInto::decode_into(&mut decoder(), &mut output).unwrap_err();
+            assert!(error.to_string().contains(message));
+            assert!(output.iter().all(|&byte| byte == 0xa5));
+        }
+        #[cfg(not(feature = "uhdr"))]
+        {
+            let image = DecoderTrait::decode(&mut decoder()).unwrap();
+            assert_eq!(image.dimensions(), (32, 32));
+            let len = DecodeInto::decode_output_buffer_size(&mut decoder()).unwrap();
+            assert_eq!(len, pixels.len());
+            DecodeInto::decode_into(&mut decoder(), &mut output).unwrap();
+            assert_eq!(output, pixels);
+        }
     }
 
     #[test]
@@ -394,6 +435,11 @@ where
     type BufferType = u8;
 
     fn decode_into(&mut self, buffer: &mut [u8]) -> Result<(), ImageErrors> {
+        #[cfg(feature = "uhdr")]
+        if self.options().jpeg_get_scale().is_some() {
+            self.decode_headers()?;
+            check_packed_scale(self)?;
+        }
         self.decode_into(buffer)
             .map_err(<DecodeErrors as Into<ImageErrors>>::into)?;
 
@@ -404,6 +450,8 @@ where
         self.decode_headers()
             .map_err(<DecodeErrors as Into<ImageErrors>>::into)?;
 
+        #[cfg(feature = "uhdr")]
+        check_packed_scale(self)?;
         self.output_buffer_size()
             .ok_or_else(|| DecodeErrors::FormatStatic("JPEG packed output size is unavailable").into())
     }
