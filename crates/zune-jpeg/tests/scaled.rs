@@ -25,6 +25,59 @@ const SCALES: [JpegScale; 7] = [
     JpegScale::SevenEighths
 ];
 
+#[test]
+fn configured_scale_matches_explicit_decode_and_packed_geometry() {
+    let data = include_bytes!("../../../test-images/jpeg/2029.jpg").as_slice();
+    let options = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::RGBA);
+    let mut reference = JpegDecoder::new_with_options(ZCursor::new(data), options);
+    reference.decode_headers().unwrap();
+    let coded = reference.dimensions().unwrap();
+    for scale in SCALES {
+        let mut decoder =
+            JpegDecoder::new_with_options(ZCursor::new(data), options.jpeg_set_scale(scale));
+        assert_eq!(decoder.output_dimensions(), None);
+        decoder.decode_headers().unwrap();
+        let (width, height) = reference.scaled_dimensions(scale).unwrap();
+        let len = width * height * 4;
+        let mut expected = vec![0; len];
+        reference.decode_scaled_into(scale, &mut expected).unwrap();
+        assert_eq!(decoder.dimensions(), Some(coded));
+        assert_eq!(decoder.output_dimensions(), Some((width, height)));
+        assert_eq!(decoder.output_buffer_size(), Some(len));
+        let mut output = vec![0xa5; len + 3];
+        assert!(matches!(
+            decoder.decode_into(&mut output[..len - 1]),
+            Err(DecodeErrors::TooSmallOutput(..))
+        ));
+        assert!(output.iter().all(|&byte| byte == 0xa5));
+        decoder.decode_into(&mut output).unwrap();
+        assert_eq!(&output[..len], expected);
+        assert_eq!(&output[len..], &[0xa5; 3]);
+        assert_eq!(decoder.decoded_output_bytes(), Some(len));
+        assert_eq!(decoder.decoded_scanlines(), Some(height));
+        assert_eq!(decoder.decode().unwrap(), expected);
+    }
+}
+
+#[test]
+fn explicit_scale_overrides_configured_scale_for_one_call() {
+    let data = include_bytes!("../../../test-images/jpeg/non_interleaved_420_64x64.jpg").as_slice();
+    let options = DecoderOptions::default().jpeg_set_scale(JpegScale::Half);
+    let mut decoder = JpegDecoder::new_with_options(ZCursor::new(data), options);
+    let half = decoder.decode().unwrap();
+    let mut quarter = vec![0; decoder.scaled_output_buffer_size(JpegScale::Quarter).unwrap()];
+    decoder.decode_scaled_into(JpegScale::Quarter, &mut quarter).unwrap();
+    let mut reference = JpegDecoder::new(ZCursor::new(data));
+    let mut expected = vec![0; quarter.len()];
+    reference.decode_scaled_into(JpegScale::Quarter, &mut expected).unwrap();
+    assert_eq!(quarter, expected);
+    assert_eq!(decoder.output_dimensions(), Some((32, 32)));
+    assert_eq!(decoder.decode().unwrap(), half);
+    decoder.set_options(options.jpeg_set_scale(None));
+    assert_eq!(decoder.output_dimensions(), Some((64, 64)));
+    assert_eq!(decoder.decode().unwrap(), reference.decode().unwrap());
+}
+
 fn check_native_output(data: &[u8], expected: [u64; 7]) {
     for use_simd in [false, true] {
         let options = DecoderOptions::default().set_use_unsafe(use_simd);

@@ -81,6 +81,36 @@ fn scaled_output_retries_without_publishing_partial_pixels() {
 }
 
 #[test]
+fn configured_scale_retries_without_publishing_partial_pixels() {
+    let data = include_bytes!("../../../test-images/jpeg/progressive_restart_420.jpg").as_slice();
+    let scale = JpegScale::ThreeEighths;
+    let options = DecoderOptions::default().jpeg_set_scale(scale);
+    let limit = Rc::new(Cell::new(data.len()));
+    let mut decoder = JpegDecoder::new_with_options(
+        GrowableCursor::new(data, Rc::clone(&limit)),
+        options
+    );
+    decoder.decode_headers().unwrap();
+    decoder.set_incremental_mode(true);
+    let length = decoder.output_buffer_size().unwrap();
+    let mut output = vec![0xa5; length];
+    limit.set(data.len() / 2);
+    for _ in 0..2 {
+        assert!(decoder.decode_into(&mut output).unwrap_err().is_recoverable_eof());
+        assert!(output.iter().all(|&byte| byte == 0xa5));
+        assert_eq!(decoder.decoded_output_bytes(), Some(0));
+        assert_eq!(decoder.decoded_preview_output_bytes(), Some(0));
+    }
+    limit.set(data.len());
+    decoder.decode_into(&mut output).unwrap();
+    let mut reference = JpegDecoder::new(ZCursor::new(data));
+    let mut expected = vec![0; length];
+    reference.decode_scaled_into(scale, &mut expected).unwrap();
+    assert_eq!(output, expected);
+    assert_eq!(decoder.decoded_output_bytes(), Some(length));
+}
+
+#[test]
 fn switching_suspended_scaled_and_full_size_output_replays_scan() {
     let fixtures: [&[u8]; 2] = [
         include_bytes!("../../../test-images/jpeg/2029.jpg"),
