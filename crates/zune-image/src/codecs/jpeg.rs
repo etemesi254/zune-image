@@ -56,6 +56,12 @@ impl<T: ZByteReaderTrait> DecoderTrait for zune_jpeg::JpegDecoder<T> {
         if is_uhdr {
             #[cfg(feature = "uhdr")]
             {
+                if self.options().jpeg_get_scale().is_some() {
+                    return Err(DecodeErrors::FormatStatic(
+                        "reduced JPEG output is unavailable for Ultra HDR tone mapping"
+                    )
+                    .into());
+                }
                 info!("Treating this JPEG as uhdr");
                 // seek to start, we will destroy this later so its safe
                 let reader = self.inner_reader();
@@ -76,7 +82,9 @@ impl<T: ZByteReaderTrait> DecoderTrait for zune_jpeg::JpegDecoder<T> {
             .map_err(<DecodeErrors as Into<ImageErrors>>::into)?;
 
         let colorspace = self.output_colorspace().unwrap();
-        let (width, height) = self.dimensions().unwrap();
+        let (width, height) = self.output_dimensions().ok_or(DecodeErrors::FormatStatic(
+            "JPEG packed output dimensions are unavailable"
+        ))?;
         let mut metadata = self.read_headers()?.unwrap();
         metadata.set_dimensions(width, height);
 
@@ -87,7 +95,7 @@ impl<T: ZByteReaderTrait> DecoderTrait for zune_jpeg::JpegDecoder<T> {
     }
 
     fn dimensions(&self) -> Option<(usize, usize)> {
-        self.dimensions().map(|dims| (dims.0, dims.1))
+        self.output_dimensions()
     }
 
     fn out_colorspace(&self) -> ColorSpace {
@@ -102,7 +110,9 @@ impl<T: ZByteReaderTrait> DecoderTrait for zune_jpeg::JpegDecoder<T> {
         self.decode_headers()
             .map_err(<DecodeErrors as Into<ImageErrors>>::into)?;
 
-        let (width, height) = self.dimensions().unwrap();
+        let (width, height) = self.output_dimensions().ok_or(DecodeErrors::FormatStatic(
+            "JPEG packed output dimensions are unavailable"
+        ))?;
 
         let mut metadata = ImageMetadata {
             format: Some(ImageFormat::JPEG),
@@ -147,6 +157,26 @@ mod tests {
     }
 
     #[test]
+    fn jpeg_wrapper_reports_configured_packed_dimensions() {
+        use zune_core::options::{DecoderOptions, JpegScale};
+
+        let data = include_bytes!("../../../../test-images/jpeg/non_interleaved_420_64x64.jpg");
+        let options = DecoderOptions::default().jpeg_set_scale(JpegScale::ThreeEighths);
+        let mut decoder = JpegDecoder::new_with_options(ZCursor::new(data.as_slice()), options);
+        let metadata = DecoderTrait::read_headers(&mut decoder).unwrap().unwrap();
+        assert_eq!(decoder.dimensions(), Some((64, 64)));
+        assert_eq!(DecoderTrait::dimensions(&decoder), Some((24, 24)));
+        assert_eq!(metadata.dimensions(), (24, 24));
+        assert_eq!(
+            DecodeInto::decode_output_buffer_size(&mut decoder).unwrap(),
+            24 * 24 * 3
+        );
+        let image = DecoderTrait::decode(&mut decoder).unwrap();
+        assert_eq!(image.dimensions(), (24, 24));
+        assert_eq!(image.metadata.dimensions(), (24, 24));
+    }
+
+    #[test]
     fn dnl_decode_refreshes_public_image_metadata_dimensions() {
         let base = include_bytes!("../../../zune-jpeg/tests/images/dnl_read_ahead.jpg");
         let sof = base
@@ -167,6 +197,16 @@ mod tests {
         let expected = (usize::from(width), usize::from(height));
         assert_eq!(image.dimensions(), expected);
         assert_eq!(image.metadata.dimensions(), expected);
+
+        decoder.set_options(
+            decoder.options().jpeg_set_scale(zune_core::options::JpegScale::Half)
+        );
+        // DNL height was resolved by full-size decoding, but is unknown again
+        // at the scan start where a scaled decode would have to replay.
+        assert!(DecodeInto::decode_output_buffer_size(&mut decoder).is_err());
+        let mut output = [0xa5; 8];
+        assert!(DecodeInto::decode_into(&mut decoder, &mut output).is_err());
+        assert_eq!(output, [0xa5; 8]);
     }
 
     #[test]
@@ -364,8 +404,8 @@ where
         self.decode_headers()
             .map_err(<DecodeErrors as Into<ImageErrors>>::into)?;
 
-        // unwrap is okay because we successfully decoded image headers
-        Ok(self.output_buffer_size().unwrap())
+        self.output_buffer_size()
+            .ok_or_else(|| DecodeErrors::FormatStatic("JPEG packed output size is unavailable").into())
     }
 }
 

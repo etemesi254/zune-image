@@ -12,6 +12,48 @@
 use crate::bit_depth::ByteEndian;
 use crate::colorspace::ColorSpace;
 
+/// Native JPEG reduced-IDCT output ratios. Dimensions are rounded up.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum JpegScale {
+    /// Decode at one half of the coded width and height.
+    Half,
+    /// Decode at one quarter of the coded width and height.
+    Quarter,
+    /// Decode at one eighth of the coded width and height.
+    Eighth,
+    /// Decode at three eighths of the coded width and height.
+    ThreeEighths,
+    /// Decode at five eighths of the coded width and height.
+    FiveEighths,
+    /// Decode at three quarters of the coded width and height.
+    ThreeQuarters,
+    /// Decode at seven eighths of the coded width and height.
+    SevenEighths
+}
+
+impl JpegScale {
+    /// The numerator of the reduced output ratio.
+    #[must_use]
+    pub const fn numerator(self) -> usize {
+        match self {
+            Self::Half | Self::Quarter | Self::Eighth => 1,
+            Self::ThreeEighths | Self::ThreeQuarters => 3,
+            Self::FiveEighths => 5,
+            Self::SevenEighths => 7
+        }
+    }
+
+    /// The denominator of the reduced output ratio (2, 4, or 8).
+    #[must_use]
+    pub const fn denominator(self) -> usize {
+        match self {
+            Self::Half => 2,
+            Self::Quarter | Self::ThreeQuarters => 4,
+            Self::Eighth | Self::ThreeEighths | Self::FiveEighths | Self::SevenEighths => 8
+        }
+    }
+}
+
 /// A decoder that can handle errors
 fn decoder_error_tolerance_mode() -> DecoderFlags {
     // similar to fast options currently, so no need to write a new one
@@ -145,6 +187,7 @@ pub struct DecoderOptions {
     /// - Default value: `ColorSpace::RGB`
     /// - Respected by: `jpeg`
     out_colorspace: ColorSpace,
+    jpeg_scale:     Option<JpegScale>,
 
     /// Maximum number of scans allowed
     /// for progressive jpeg images
@@ -454,6 +497,22 @@ impl DecoderOptions {
         self.out_colorspace = colorspace;
         self
     }
+
+    /// Get the scale for packed JPEG output, or `None` for full size.
+    #[must_use]
+    pub const fn jpeg_get_scale(&self) -> Option<JpegScale> {
+        self.jpeg_scale
+    }
+
+    /// Select native reduced-IDCT output for packed JPEG decoding.
+    ///
+    /// Pass `None` to restore full-size output. This does not change coded
+    /// dimensions, raw component output, or scanline sessions.
+    #[must_use]
+    pub fn jpeg_set_scale(mut self, scale: impl Into<Option<JpegScale>>) -> Self {
+        self.jpeg_scale = scale.into();
+        self
+    }
 }
 
 /// Intrinsics support
@@ -718,6 +777,7 @@ impl Default for DecoderOptions {
     fn default() -> Self {
         Self {
             out_colorspace:     ColorSpace::RGB,
+            jpeg_scale:         None,
             max_width:          1 << 14,
             max_height:         1 << 14,
             max_scans:          100,

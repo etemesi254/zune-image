@@ -23,47 +23,7 @@ use crate::idct::scalar::{
 use crate::worker::color_convert;
 use crate::JpegDecoder;
 
-/// Native reduced-IDCT output ratios. Dimensions are rounded up.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum JpegScale {
-    /// Decode at one half of the coded width and height.
-    Half,
-    /// Decode at one quarter of the coded width and height.
-    Quarter,
-    /// Decode at one eighth of the coded width and height.
-    Eighth,
-    /// Decode at three eighths of the coded width and height.
-    ThreeEighths,
-    /// Decode at five eighths of the coded width and height.
-    FiveEighths,
-    /// Decode at three quarters of the coded width and height.
-    ThreeQuarters,
-    /// Decode at seven eighths of the coded width and height.
-    SevenEighths
-}
-
-impl JpegScale {
-    /// The numerator of the reduced output ratio.
-    #[must_use]
-    pub const fn numerator(self) -> usize {
-        match self {
-            Self::Half | Self::Quarter | Self::Eighth => 1,
-            Self::ThreeEighths | Self::ThreeQuarters => 3,
-            Self::FiveEighths => 5,
-            Self::SevenEighths => 7
-        }
-    }
-
-    /// The denominator of the reduced output ratio (2, 4, or 8).
-    #[must_use]
-    pub const fn denominator(self) -> usize {
-        match self {
-            Self::Half => 2,
-            Self::Quarter | Self::ThreeQuarters => 4,
-            Self::Eighth | Self::ThreeEighths | Self::FiveEighths | Self::SevenEighths => 8
-        }
-    }
-}
+use crate::JpegScale;
 
 pub(crate) struct ScaledDecodeState {
     scale:    JpegScale,
@@ -74,11 +34,16 @@ pub(crate) struct ScaledDecodeState {
 impl<T: ZByteReaderTrait> JpegDecoder<T> {
     /// Reduced width and height, each rounded up from the coded dimensions.
     ///
-    /// Returns `None` until headers and nonzero image dimensions are known.
+    /// Returns `None` if headers or nonzero dimensions are unavailable at
+    /// scan start, including images whose height is declared after SOS.
     /// This does not select an output mode or change coded metadata.
     #[must_use]
     pub fn scaled_dimensions(&self, scale: JpegScale) -> Option<(usize, usize)> {
-        if !self.headers_decoded || self.info.width == 0 || self.info.height == 0 {
+        if !self.headers_decoded
+            || self.info.width == 0
+            || self.info.height == 0
+            || self.scan_starts_with_unknown_height()
+        {
             return None;
         }
         Some((
@@ -109,18 +74,18 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     ///
     /// Changing scale, changing options, or switching between scaled and
     /// full-size/raw/scanline output discards the previous output sequence and
-    /// replays from scan start. Coded metadata and existing full-size sizing
-    /// methods are unchanged. Full-size pixel/preview progress remains zero
-    /// during scaled decoding; this API does not publish progressive previews.
+    /// replays from scan start. The explicit ratio takes precedence over the
+    /// scale in `DecoderOptions` for this call only. Coded metadata is unchanged.
+    /// This API does not publish packed progress or progressive previews.
     pub fn decode_scaled_into(
         &mut self, scale: JpegScale, output: &mut [u8]
     ) -> Result<(), DecodeErrors> {
+        self.pixels_decoded = 0;
+        self.progressive_displayed_scans = 0;
         self.decode_headers()?;
         let length = self
             .scaled_output_buffer_size(scale)
-            .ok_or(DecodeErrors::FormatStatic(
-                "scaled output size overflow or unknown image dimensions"
-            ))?;
+            .ok_or(Self::SCALED_OUTPUT_SIZE_ERROR)?;
         if output.len() < length {
             return Err(DecodeErrors::TooSmallOutput(length, output.len()));
         }
@@ -152,6 +117,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         self.scaled_output = Some(state);
         result
     }
+
+    pub(crate) const SCALED_OUTPUT_SIZE_ERROR: DecodeErrors =
+        DecodeErrors::FormatStatic("scaled output size overflow or unknown image dimensions");
 
     pub(crate) fn abort_scaled_sequence(&mut self) {
         if self.scaled_output.take().is_some() {

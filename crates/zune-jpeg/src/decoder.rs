@@ -1950,6 +1950,12 @@ where
         self.dnl_image
     }
 
+    pub(crate) fn scan_starts_with_unknown_height(&self) -> bool {
+        self.scan_state
+            .as_ref()
+            .is_some_and(|state| state.scan_start_expects_dnl)
+    }
+
     fn republish_resolved_dnl_height(&mut self) {
         if let Some(height) = self.resolved_dnl_height() {
             self.info.set_height(height);
@@ -2248,6 +2254,13 @@ where
     /// # Errors
     /// See DecodeErrors for an explanation
     pub fn decode(&mut self) -> Result<Vec<u8>, DecodeErrors> {
+        if self.options.jpeg_get_scale().is_some() {
+            self.decode_headers()?;
+            let size = self.output_buffer_size().ok_or(Self::SCALED_OUTPUT_SIZE_ERROR)?;
+            let mut out = vec![0; size];
+            self.decode_into(&mut out)?;
+            return Ok(out);
+        }
         self.abort_scaled_sequence();
         self.abort_raw_pull_sequence();
         self.decode_headers()?;
@@ -2327,10 +2340,14 @@ where
     ///  - `None`: Indicates headers are unavailable or image dimensions overflow `usize`
     ///
     /// DNL images return a buffer size based on the configured maximum height
-    /// until their actual height is known.
+    /// until their actual height is known in full-size mode. Reduced output
+    /// requires known dimensions.
     ///
     #[must_use]
     pub fn output_buffer_size(&self) -> Option<usize> {
+        if let Some(scale) = self.options.jpeg_get_scale() {
+            return self.scaled_output_buffer_size(scale);
+        }
         let height = self.resolved_dnl_height().map_or_else(
             || {
                 if self.expects_dnl {
@@ -2473,13 +2490,13 @@ where
     #[must_use]
     pub fn decoded_scanlines(&self) -> Option<usize> {
         let decoded_output_bytes = self.decoded_output_bytes()?;
-        let row_stride = usize::from(self.width())
-            .checked_mul(self.options.jpeg_get_out_colorspace().num_components())?;
+        let (width, height) = self.output_dimensions()?;
+        let row_stride = width.checked_mul(self.options.jpeg_get_out_colorspace().num_components())?;
         if row_stride == 0 {
             return Some(0);
         }
 
-        Some((decoded_output_bytes / row_stride).min(usize::from(self.height())))
+        Some((decoded_output_bytes / row_stride).min(height))
     }
 
     /// Begin an exclusive raw component-output session.
@@ -3702,6 +3719,13 @@ where
     }
 
     pub fn decode_into(&mut self, out: &mut [u8]) -> Result<(), DecodeErrors> {
+        if let Some(scale) = self.options.jpeg_get_scale() {
+            self.decode_scaled_into(scale, out)?;
+            self.pixels_decoded = self
+                .scaled_output_buffer_size(scale)
+                .ok_or(Self::SCALED_OUTPUT_SIZE_ERROR)?;
+            return Ok(());
+        }
         self.abort_scaled_sequence();
         self.abort_raw_pull_sequence();
         self.abort_scanline_sequence();
@@ -4058,7 +4082,7 @@ where
         self.info.height
     }
 
-    /// Get image dimensions as a tuple of width and height
+    /// Get coded image dimensions as a tuple of width and height
     /// or `None` if the image hasn't been decoded.
     ///
     /// # Returns
@@ -4071,6 +4095,17 @@ where
         } else {
             None
         };
+    }
+
+    /// Dimensions of packed output from [`Self::decode`] or [`Self::decode_into`],
+    /// accounting for the scale in `DecoderOptions`. Raw and scanline output
+    /// still use coded dimensions. A reduced output size requires known dimensions.
+    #[must_use]
+    pub fn output_dimensions(&self) -> Option<(usize, usize)> {
+        match self.options.jpeg_get_scale() {
+            Some(scale) => self.scaled_dimensions(scale),
+            None => self.dimensions()
+        }
     }
 }
 
