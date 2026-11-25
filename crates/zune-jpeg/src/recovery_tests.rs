@@ -167,6 +167,19 @@ fn repeated_sequential_scan_preserves_ac_and_resets_dc_prediction() {
     let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&data), options(false));
     decoder.decode().unwrap();
     assert_eq!(&decoder.baseline_coefficients[0][..2], &[8, 8]);
+
+    // A single scan with the final DC and the retained AC is the pixel oracle.
+    let mut reference = frame(8, 8, &[(1, 0x11), (2, 0x11), (3, 0x11)]);
+    scan(&mut reference, &[1, 2, 3], &[(1, true), (0, false), (0, false)]);
+    reference.extend_from_slice(&[0xFF, 0xD9]);
+    let scaled_options = options(false).jpeg_set_scale(crate::JpegScale::Half);
+    let expected = JpegDecoder::new_with_options(ZCursor::new(&reference), scaled_options)
+        .decode()
+        .unwrap();
+    let actual = JpegDecoder::new_with_options(ZCursor::new(&data), scaled_options)
+        .decode()
+        .unwrap();
+    assert_eq!(actual, expected);
 }
 
 #[test]
