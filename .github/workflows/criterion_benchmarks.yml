@@ -1,4 +1,4 @@
-name: Benchmark Regression
+name: JPEG Benchmark Report
 
 on:
   pull_request:
@@ -8,109 +8,120 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
-  bench:
-    name: Criterion Bench (${{ matrix.os }})
+  jpeg:
+    name: JPEG Criterion (exact base vs head)
     runs-on: ubuntu-latest
-
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest]
+    timeout-minutes: 45
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      RUSTUP_TOOLCHAIN: 1.89.0
+      JPEG_RUSTFLAGS: -C target-cpu=native
 
     steps:
-      - uses: actions/checkout@v6
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install criterion dependencies
-        run: cargo install cargo-criterion
-
-      # ----------------------------
-      # Run benchmarks (current ref)
-      # ----------------------------
-      - name: Run benchmarks
+      - name: Initialize diagnostics
         run: |
-          cargo criterion --message-format=json | tee bench.json
+          set -euo pipefail
+          mkdir -p benchmark-report
+          printf 'event=%s\nbase=%s\nhead=%s\n' \
+            "$GITHUB_EVENT_NAME" "$BASE_SHA" "$HEAD_SHA" > benchmark-report/event.txt
+          uname -a > benchmark-report/runner.txt
+          lscpu >> benchmark-report/runner.txt
 
-      - name: Upload benchmark results
+      - uses: actions/checkout@v6
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ env.HEAD_SHA }}
+          persist-credentials: false
+          path: benchmark-ci
+
+      - name: Checkout exact event base
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.BASE_SHA }}
+          persist-credentials: false
+          path: benchmark-base
+
+      - name: Checkout actual PR head (not the merge ref)
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ env.HEAD_SHA }}
+          persist-credentials: false
+          path: benchmark-head
+
+      - name: Install benchmark toolchain
+        uses: dtolnay/rust-toolchain@1.89.0
+
+      - name: Install JPEG benchmark build prerequisites
+        run: |
+          set -euo pipefail
+          {
+            sudo apt-get update
+            sudo apt-get install -y nasm cmake pkg-config zlib1g-dev
+          } 2>&1 | tee benchmark-report/prerequisites.log
+
+      - name: Install pinned comparator
+        run: |
+          set -euo pipefail
+          cargo install critcmp --version 0.1.8 --locked 2>&1 | tee benchmark-report/install.log
+
+      - name: Test export validation and failure propagation
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s benchmark-ci/.github/scripts \
+            -p 'test_*.py' -v 2>&1 | tee benchmark-report/tests.log
+
+      # No shared Cargo target directory, result cache, or PR write token.
+      - name: Measure, export, validate and compare JPEG
+        run: |
+          set -euo pipefail
+          bash benchmark-ci/.github/scripts/jpeg-benchmark.sh \
+            benchmark-base benchmark-head benchmark-report "$BASE_SHA" "$HEAD_SHA" \
+            2>&1 | tee benchmark-report/pipeline.log
+
+      - name: Collect toolchain diagnostics
+        if: always()
+        run: |
+          set -euo pipefail
+          {
+            rustc -vV || true
+            cargo -V || true
+            critcmp --version || true
+            printf 'JPEG_RUSTFLAGS=%s\nRUSTUP_TOOLCHAIN=%s\n' \
+              "$JPEG_RUSTFLAGS" "$RUSTUP_TOOLCHAIN"
+          } > benchmark-report/toolchain.txt 2>&1
+
+      - name: Publish job summary
+        if: always()
+        run: |
+          set -euo pipefail
+          {
+            echo '## JPEG benchmark report'
+            echo "Base: \`$BASE_SHA\`"
+            echo "Head: \`$HEAD_SHA\`"
+            echo 'Informational measurements, not a regression-threshold gate.'
+            echo 'Non-PR runs compare the selected SHA with itself as a pipeline check.'
+            echo 'See the artifact for validation status, raw results and failure diagnostics.'
+            if [[ -f benchmark-report/comparison.txt ]]; then
+              echo '```text'
+              cat benchmark-report/comparison.txt
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload raw results and diagnostics (including failures)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: bench-${{ github.sha }}
-          path: bench.json
-  compare:
-    name: Benchmark Diff (PR vs dev)
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install criterion
-        run: cargo install cargo-criterion
-
-      # ----------------------------
-      # Benchmark PR branch
-      # ----------------------------
-      - name: Run PR benchmarks
-        run: cargo criterion --message-format=json > pr.json
-
-      # ----------------------------
-      # Run base branch benchmark in an isolated worktree
-      # ----------------------------
-      - name: Run base branch benchmark
-        run: |
-          base_sha="${{ github.event.pull_request.base.sha }}"
-          base_worktree="${RUNNER_TEMP}/zune-image-benchmark-base"
-
-          git fetch --no-tags origin "${base_sha}"
-          git worktree add --detach "${base_worktree}" "${base_sha}"
-          trap 'git worktree remove --force "${base_worktree}"' EXIT
-
-          (
-            cd "${base_worktree}"
-            cargo criterion --message-format=json
-          ) > dev.json
-
-      # ----------------------------
-      # Compare results
-      # ----------------------------
-      - name: Install critcmp
-        run: cargo install critcmp
-
-      - name: Compare benchmarks
-        run: |
-          critcmp dev.json pr.json | tee diff.txt
-
-      # ----------------------------
-      # Comment PR
-      # ----------------------------
-      - name: Comment PR with benchmark diff
-        if: github.event.pull_request.head.repo.full_name == github.repository
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-
-            const diff = fs.readFileSync('diff.txt', 'utf8');
-
-            const body = `## Benchmark Regression Report
-
-            \`\`\`
-            ${diff}
-            \`\`\`
-
-            _Generated by Criterion CI bot_`;
-
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body
-            });
+          name: jpeg-benchmarks-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          path: |
+            benchmark-report/**
+            !benchmark-report/targets/**
