@@ -1080,8 +1080,7 @@ where
     ) -> Result<ScanlineReadStatus, DecodeErrors> {
         let prepared = if self.decoder.scanline_state.phase == ScanlinePhase::Start {
             self.decoder.prepare_for_scan_decode()?;
-            let buffered = self.decoder.is_progressive
-                || usize::from(self.decoder.num_scans) != self.decoder.components.len();
+            let buffered = self.decoder.must_buffer_all_coefficients();
             self.decoder.scanline_state.phase = if buffered {
                 ScanlinePhase::BufferedRows
             } else {
@@ -1505,8 +1504,7 @@ where
         n: usize
     ) -> Result<(), DecodeErrors> {
         self.prepare_pull_scan()?;
-        let buffered = self.decoder.is_progressive
-            || usize::from(self.decoder.num_scans) != self.decoder.components.len();
+        let buffered = self.decoder.must_buffer_all_coefficients();
         self.decoder.raw_pull_state.phase = if buffered {
             RawPullPhase::BufferedRows
         } else {
@@ -2407,6 +2405,23 @@ where
             return None;
         }
         Some(self.progressive_completed_scans)
+    }
+
+    /// Return whether decoding keeps the coefficients of the whole image in
+    /// memory.
+    ///
+    /// Progressive images, and baseline images whose first scan does not hold
+    /// every component, keep the coefficients of every component for the
+    /// whole image until the last scan is decoded. Other images are decoded
+    /// one MCU row at a time.
+    ///
+    /// Returns `None` until headers are decoded.
+    #[must_use]
+    pub fn buffers_all_coefficients(&self) -> Option<bool> {
+        if !self.headers_decoded {
+            return None;
+        }
+        Some(self.must_buffer_all_coefficients())
     }
 
     /// Return the number of output bytes currently holding a progressive
@@ -3779,6 +3794,10 @@ where
         } else {
             self.decode_mcu_ycbcr_baseline::<BitStreamHuffman>(output)
         }
+    }
+
+    fn must_buffer_all_coefficients(&self) -> bool {
+        self.is_progressive || usize::from(self.num_scans) != self.components.len()
     }
 
     fn render_buffered_output_stripe(
