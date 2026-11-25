@@ -416,15 +416,14 @@ pub struct JpegDecoder<T> {
     /// Number of output bytes known to be stable after the most recent
     /// `decode_into` attempt.
     pub(crate) pixels_decoded:              usize,
-    /// Persistent coefficient buffers for multi-SOS baseline decoding.
-    ///
-    /// Owned by the decoder so contents survive a recoverable EOF and the
-    /// next `decode_into` retry can resume from where it stopped without
-    /// copying anything. Progressive decoding also uses these as the committed
-    /// coefficient buffers for completed scans. The inner `Vec`s are reused
-    /// across `decode_into` calls; capacity is reclaimed only when the decoder
-    /// is dropped.
+    /// Committed quantized coefficients for completed progressive scans.
     pub(crate) progressive_mcus_buffer: [Vec<i16>; MAX_COMPONENTS],
+    /// Persistent dequantized coefficients for multi-SOS sequential decoding.
+    /// Repeated scans update existing blocks, including across suspended input.
+    pub(crate) baseline_coefficients: [Vec<i32>; MAX_COMPONENTS],
+    pub(crate) baseline_seen_components: [bool; MAX_COMPONENTS],
+    pub(crate) baseline_eoi_seen: bool,
+    pub(crate) baseline_corrupt: bool,
     /// Active progressive scan scratch buffers.
     ///
     /// Storage is retained across EOF or cancellation so retries can reuse its
@@ -439,6 +438,8 @@ pub struct JpegDecoder<T> {
     pub(crate) progressive_last_good_row: usize,
     /// Pending row position; discarded scans must not change smoothing precision.
     pub(crate) progressive_scan_last_good_row: usize,
+    pub(crate) progressive_input_rows: usize,
+    pub(crate) progressive_eoi_seen: bool,
     /// The first progressive scan has no previous precision to fall back to.
     pub(crate) progressive_smoothing_first_scan: bool,
     /// Number of committed progressive scans currently rendered as preview
@@ -2227,11 +2228,17 @@ where
             incremental_mode:            false,
             scan_decode_attempted:       false,
             progressive_mcus_buffer:     core::array::from_fn(|_| Vec::new()),
+            baseline_coefficients:       core::array::from_fn(|_| Vec::new()),
+            baseline_seen_components:    [false; MAX_COMPONENTS],
+            baseline_eoi_seen: false,
+            baseline_corrupt: false,
             progressive_scan_buffer: core::array::from_fn(|_| Vec::new()),
             upsampler_scratch: Vec::new(),
             progressive_completed_scans: 0,
             progressive_last_good_row: 0,
             progressive_scan_last_good_row: 0,
+            progressive_input_rows: 0,
+            progressive_eoi_seen: false,
             progressive_smoothing_first_scan: true,
             progressive_displayed_scans: 0,
             progressive_render_incomplete: false,
@@ -2409,6 +2416,54 @@ where
         Some(self.progressive_completed_scans)
     }
 
+    /// Return the coded-pixel row prefix available from buffered scan decoding.
+    ///
+    /// After a successful buffered decode, incremental consumers can publish this
+    /// prefix instead of displaying the previous completed scan's full-frame preview.
+    /// Every progressive DC component must be present before publication.
+    /// Synthetic EOF or marker padding does not advance the current scan's prefix.
+    /// A later restart cannot make a gap in that prefix publishable.
+    /// DC smoothing requires two future iMCU rows until a real EOI is seen.
+    /// Buffered sequential images cannot publish before EOI or after corruption
+    /// halted input before EOI.
+    /// Full-frame best-effort decoding and raw output are unchanged.
+    /// Returns `None` before headers, for ordinary stripe-based sequential output,
+    /// or for legacy best-effort merged DC/AC scans without progressive row bounds.
+    #[must_use]
+    pub fn buffered_output_rows(&self) -> Option<usize> {
+        if !self.headers_decoded {
+            return None;
+        }
+        let height = usize::from(self.height());
+        if !self.is_progressive {
+            return self
+                .baseline_coefficients
+                .iter()
+                .any(|buffer| !buffer.is_empty())
+                .then_some(if self.baseline_eoi_seen && !self.baseline_corrupt {
+                    height
+                } else {
+                    0
+                });
+        }
+        if self.spec_start == 0 && self.spec_end != 0 {
+            return None;
+        }
+        if self
+            .components
+            .iter()
+            .any(|component| component.progressive_bits[0] < 0)
+        {
+            return Some(0);
+        }
+        if self.progressive_eoi_seen {
+            return Some(height);
+        }
+        let lookahead =
+            if self.spec_start == 0 && self.progressive_smoothing_enabled() { 2 } else { 0 };
+        Some((self.progressive_input_rows.saturating_sub(lookahead) * self.v_max * 8).min(height))
+    }
+
     /// Return the number of output bytes currently holding a progressive
     /// preview image.
     ///
@@ -2556,7 +2611,10 @@ where
                     .get(index)
                     .map_or(0, |component| component.raw_coeff.capacity())
             }),
-            core::array::from_fn(|index| self.progressive_mcus_buffer[index].capacity())
+            core::array::from_fn(|index| {
+                self.progressive_mcus_buffer[index].capacity()
+                    + self.baseline_coefficients[index].capacity()
+            })
         )
     }
 
@@ -4529,6 +4587,10 @@ mod planar_layout_helpers {
 
         assert!(decoder
             .progressive_mcus_buffer
+            .iter()
+            .all(|buffer| buffer.capacity() == 0));
+        assert!(decoder
+            .baseline_coefficients
             .iter()
             .all(|buffer| buffer.capacity() == 0));
         assert!(decoder.scanline_state.staging.capacity() <= row_bytes * 36);
