@@ -2256,6 +2256,7 @@ where
     pub fn decode(&mut self) -> Result<Vec<u8>, DecodeErrors> {
         if self.options.jpeg_get_scale().is_some() {
             self.decode_headers()?;
+            self.ensure_scaled_encoding()?;
             let size = self.output_buffer_size().ok_or(Self::SCALED_OUTPUT_SIZE_ERROR)?;
             let mut out = vec![0; size];
             self.decode_into(&mut out)?;
@@ -3378,8 +3379,19 @@ where
 
     fn ensure_supported_encoding(&self) -> Result<(), DecodeErrors> {
         let unsupported = match self.info.sof {
-            SOFMarkers::LosslessHuffman => Some(UnsupportedSchemes::LosslessHuffman),
-            SOFMarkers::LosslessArithmetic => Some(UnsupportedSchemes::LosslessArithmetic),
+            SOFMarkers::LosslessHuffman => {
+                self.validate_lossless_encoding()?;
+                None
+            }
+            SOFMarkers::LosslessArithmetic => {
+                #[cfg(feature = "arith")]
+                {
+                    self.validate_lossless_encoding()?;
+                    None
+                }
+                #[cfg(not(feature = "arith"))]
+                Some(UnsupportedSchemes::LosslessArithmetic)
+            }
             _ => None
         };
         if let Some(unsupported) = unsupported {
@@ -3763,6 +3775,17 @@ where
     fn decode_mcu_output(
         &mut self, output: &mut McuDecodeOutput<'_, '_>
     ) -> Result<(), DecodeErrors> {
+        if self.info.sof.is_lossless() {
+            return match output {
+                McuDecodeOutput::Pixels(pixels) => self.decode_lossless(pixels),
+                McuDecodeOutput::Scaled(_) => Err(Self::LOSSLESS_SCALE_ERROR),
+                McuDecodeOutput::RawPlanes(_) | McuDecodeOutput::Scanlines(_) => {
+                    Err(DecodeErrors::FormatStatic(
+                        "Lossless JPEG supports decode and decode_into, not raw or scanline output"
+                    ))
+                }
+            };
+        }
         if self.is_arithmetic {
             #[cfg(feature = "arith")]
             {
