@@ -15,7 +15,8 @@ use crate::decoder::PngChunk;
 use crate::enums::{FilterMethod, PngChunkType};
 use crate::filters::{choose_compression_filter, filter_scanline};
 use crate::headers::writers::{
-    write_chunk, write_exif, write_gamma, write_header_fn, write_iend, write_ihdr
+    write_chunk, write_exif, write_gamma, write_header_fn, write_iend, write_ihdr, write_phys,
+    write_plte, write_trns
 };
 
 #[derive(Default)]
@@ -26,7 +27,11 @@ pub struct PngEncoder<'a> {
     pub(crate) encoded_chunks:  Vec<u8>,
     pub(crate) filter_scanline: Vec<u8>,
     pub(crate) gamma:           Option<f32>,
-    pub(crate) exif:            Option<&'a [u8]>
+    pub(crate) exif:            Option<&'a [u8]>,
+    // indexed images (PLTE + tRNS) and physical pixel size (pHYs)
+    pub(crate) palette:         Option<&'a [[u8; 3]]>,
+    pub(crate) trns:            Option<&'a [u8]>,
+    pub(crate) phys:            Option<(u32, u32, u8)>
 }
 
 impl<'a> PngEncoder<'a> {
@@ -46,6 +51,23 @@ impl<'a> PngEncoder<'a> {
         }
     }
 
+    /// Write an indexed (palette) image: `data` holds one 8-bit palette index per pixel,
+    /// the colorspace must be `Luma` with depth 8. Alpha for the entries is set with
+    /// [`set_trns`](Self::set_trns).
+    pub fn set_palette(&mut self, palette: &'a [[u8; 3]]) {
+        self.palette = Some(palette);
+    }
+    /// Alpha (tRNS chunk) for the first palette entries of an image written with
+    /// [`set_palette`](Self::set_palette); it may be shorter than the palette.
+    pub fn set_trns(&mut self, alpha: &'a [u8]) {
+        self.trns = Some(alpha).filter(|a| !a.is_empty());
+    }
+
+    /// Physical pixel size (pHYs): pixels per unit along x and y; unit 1 = metre, 0 = unknown.
+    pub fn set_physical_size(&mut self, x: u32, y: u32, unit: u8) {
+        self.phys = Some((x, y, unit));
+    }
+
     /// Add exif data which will be encoded
     pub fn add_exif_segment(&mut self, exif: &'a [u8]) {
         self.exif = Some(exif);
@@ -62,6 +84,18 @@ impl<'a> PngEncoder<'a> {
         // extra headers
         // need to check their existence because  write_header_fn will do
         // some writing even if they don't exist
+        if let Some(p) = self.palette {
+            if p.is_empty() || p.len() > 256 || self.trns.is_some_and(|t| t.len() > p.len()) {
+                return Err(ZByteIoError::Generic("Invalid palette"));
+            }
+            write_header_fn(self, writer, b"PLTE", write_plte)?;
+            if self.trns.is_some() {
+                write_header_fn(self, writer, b"tRNS", write_trns)?;
+            }
+        }
+        if self.phys.is_some() {
+            write_header_fn(self, writer, b"pHYs", write_phys)?;
+        }
         if self.exif.is_some() {
             write_header_fn(self, writer, b"eXIf", write_exif)?;
         }
@@ -196,4 +230,33 @@ fn test_simple_write() {
     let mut hello = PngDecoder::new(ZCursor::new(&sink));
     let bytes = hello.decode_raw().unwrap();
     assert_eq!(&data, &bytes);
+}
+
+#[test]
+fn test_palette_write() {
+    use zune_core::bit_depth::BitDepth;
+    use zune_core::bytestream::ZCursor;
+    use zune_core::colorspace::ColorSpace;
+
+    use crate::PngDecoder;
+
+    let palette = [[255, 0, 0], [0, 255, 0], [0, 0, 255]];
+    let alpha = [128];
+    let data: Vec<u8> = (0..12).map(|i| (i % 3) as u8).collect();
+    let options = EncoderOptions::default()
+        .set_colorspace(ColorSpace::Luma)
+        .set_width(4)
+        .set_height(3)
+        .set_depth(BitDepth::Eight);
+    let mut encoder = PngEncoder::new(&data, options);
+    encoder.set_palette(&palette);
+    encoder.set_trns(&alpha);
+    encoder.set_physical_size(3780, 3780, 1);
+    let mut sink = vec![];
+    encoder.encode(&mut sink).unwrap();
+    assert_eq!(sink[25], 3);
+    let mut d = PngDecoder::new(ZCursor::new(&sink));
+    let px = d.decode_raw().unwrap();
+    assert_eq!(d.colorspace(), Some(ColorSpace::RGBA));
+    assert_eq!(&px[..12], &[255, 0, 0, 128, 0, 255, 0, 255, 0, 0, 255, 255]);
 }

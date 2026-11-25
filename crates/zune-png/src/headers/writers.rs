@@ -23,6 +23,7 @@ pub(crate) fn write_ihdr(ctx: &PngEncoder, output: &mut ZWriter<&mut Vec<u8>>) {
     let color = ctx.options.colorspace();
 
     let color_int = match color {
+        _ if ctx.palette.is_some() => 3,
         ColorSpace::Luma => 0,
         ColorSpace::RGB => 2,
         ColorSpace::LumaA => 4,
@@ -49,6 +50,24 @@ pub fn write_gamma(ctx: &PngEncoder, writer: &mut ZWriter<&mut Vec<u8>>) {
         // scale by 100000.0
         let gamma_value = (gamma * 100000.0) as u32;
         writer.write_u32_be(gamma_value);
+    }
+}
+
+pub fn write_plte(ctx: &PngEncoder, writer: &mut ZWriter<&mut Vec<u8>>) {
+    for entry in ctx.palette.unwrap_or_default() {
+        writer.write_all(entry).unwrap();
+    }
+}
+
+pub fn write_trns(ctx: &PngEncoder, writer: &mut ZWriter<&mut Vec<u8>>) {
+    writer.write_all(ctx.trns.unwrap_or_default()).unwrap();
+}
+
+pub fn write_phys(ctx: &PngEncoder, writer: &mut ZWriter<&mut Vec<u8>>) {
+    if let Some((x, y, unit)) = ctx.phys {
+        writer.write_u32_be(x);
+        writer.write_u32_be(y);
+        writer.write_u8(unit);
     }
 }
 
