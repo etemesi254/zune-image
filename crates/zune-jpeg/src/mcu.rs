@@ -48,6 +48,35 @@ struct McuWidthContext<'a, B: BitStream> {
 }
 
 impl<T: ZByteReaderTrait> JpegDecoder<T> {
+    /// Give each component of the scan that is about to be decoded its quantization table,
+    /// unless an earlier scan of the component already did.
+    ///
+    /// Like libjpeg-turbo (`latch_quant_tables`), a component keeps the table its DQT
+    /// destination held when its first scan began: a DQT between scans applies to the
+    /// components that no scan has coded yet, and to no other.
+    pub(crate) fn latch_quantization_tables(&mut self) -> Result<(), DecodeErrors> {
+        let z_order = self.z_order;
+        for &component_index in &z_order[..usize::from(self.num_scans)] {
+            let Some(component) = self.components.get_mut(component_index) else {
+                return Err(DecodeErrors::Format(format!(
+                    "Invalid component index {component_index} in scan"
+                )));
+            };
+            if component.quantization_table_set {
+                continue;
+            }
+            let table = self.qt_tables[usize::from(component.quantization_table_number)];
+            component.quantization_table = table.ok_or_else(|| {
+                DecodeErrors::DqtError(format!(
+                    "No quantization table for component {:?}",
+                    component.component_id
+                ))
+            })?;
+            component.quantization_table_set = true;
+        }
+        Ok(())
+    }
+
     /// Check for existence of DC and AC Huffman Tables
     pub(crate) fn check_tables<B: BitStream>(&mut self) -> Result<(), DecodeErrors> {
         // check that dc and AC tables exist outside the hot path
@@ -296,6 +325,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             }
             // Later scans may use Huffman tables defined by inter-scan DHT markers.
             self.check_tables::<B>()?;
+            self.latch_quantization_tables()?;
 
             let scan_components = self.z_order;
             let scan_component_count = usize::from(self.num_scans);

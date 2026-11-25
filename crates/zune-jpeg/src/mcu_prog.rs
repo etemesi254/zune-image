@@ -446,6 +446,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         scan_block: &mut [Vec<i16>; MAX_COMPONENTS], output: &mut McuDecodeOutput<'_, '_>,
         use_scratch_coefficients: bool, upsampler_scratch: &mut Vec<i16>
     ) -> Result<bool, DecodeErrors> {
+        self.latch_quantization_tables()?;
         self.progressive_scan_last_good_row = 0;
         let dc_seen_before = self.capture_progressive_dc_seen();
         if !use_scratch_coefficients {

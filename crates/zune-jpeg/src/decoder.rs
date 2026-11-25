@@ -219,6 +219,8 @@ pub(crate) struct SosParamsSnapshot {
 #[derive(Clone)]
 pub(crate) struct ScanHeaderStateSnapshot {
     pub(crate) qt_tables:        [Option<[i32; 64]>; MAX_COMPONENTS],
+    /// The table each component has taken from `qt_tables`, if its first scan has begun.
+    pub(crate) component_tables: [Option<[i32; 64]>; MAX_COMPONENTS],
     pub(crate) entropy_tables:   EntropyTables,
     pub(crate) restart_interval: usize,
     pub(crate) input_colorspace: ColorSpace,
@@ -1216,13 +1218,18 @@ where
     /// Each entry names its component, both by role and by SOF selector, and
     /// carries the DQT destination the component's SOF entry selects and the
     /// table it is reconstructed with: the one that destination held when the
-    /// first scan began, in natural (row-major) coefficient order rather than
-    /// the zig-zag order it is stored in. Together with the raw planes, this
-    /// lets a caller reason about the precision the encoder kept for each
-    /// component.
+    /// component's first scan began, in natural (row-major) coefficient order
+    /// rather than the zig-zag order it is stored in. Together with the raw
+    /// planes, this lets a caller reason about the precision the encoder kept
+    /// for each component.
+    ///
+    /// Until a component's first scan has begun, its entry is the table its
+    /// destination held when the image's first scan began. The two differ only
+    /// when a DQT between scans redefines the destination before the
+    /// component's first scan.
     ///
     /// Returns `None` when headers have not been decoded yet, contain no
-    /// components, or a component selects a table that was never defined.
+    /// components, or a component selects a table that has not been defined.
     #[must_use]
     pub fn quantization_tables(&self) -> Option<Vec<QuantizationTable>> {
         self.decoder.raw_quantization_tables()
@@ -1874,6 +1881,12 @@ where
     pub(crate) fn capture_scan_header_state(&self) -> ScanHeaderStateSnapshot {
         ScanHeaderStateSnapshot {
             qt_tables:        self.qt_tables,
+            component_tables: core::array::from_fn(|index| {
+                self.components
+                    .get(index)
+                    .filter(|component| component.quantization_table_set)
+                    .map(|component| component.quantization_table)
+            }),
             entropy_tables:   self.entropy_tables.clone(),
             restart_interval: self.restart_interval,
             input_colorspace: self.input_colorspace,
@@ -1885,6 +1898,10 @@ where
 
     pub(crate) fn restore_scan_header_state(&mut self, snapshot: &ScanHeaderStateSnapshot) {
         self.qt_tables = snapshot.qt_tables;
+        for (component, table) in self.components.iter_mut().zip(snapshot.component_tables) {
+            component.quantization_table_set = table.is_some();
+            component.quantization_table = table.unwrap_or([0; 64]);
+        }
         self.entropy_tables = snapshot.entropy_tables.clone();
         self.restart_interval = snapshot.restart_interval;
         self.input_colorspace = snapshot.input_colorspace;
@@ -3649,10 +3666,6 @@ where
                     }
                 }
             }
-            // Components take their quantization tables once, from the tables in
-            // effect at the first SOS (`setup_component_params`). A DQT between
-            // later scans must not change them when resuming from a later checkpoint.
-            self.qt_tables = outer_header_snapshot.qt_tables;
             if checkpoint_view.is_none() && !had_progressive_view {
                 // First-SOS replay restarts progressive coefficient assembly;
                 // scan-boundary retries restore `todo` in `parse_entropy_coded_data`.
@@ -3879,7 +3892,11 @@ where
         self.components
             .iter()
             .map(|component| {
-                let table = qt_tables[usize::from(component.quantization_table_number)].as_ref()?;
+                let table = if component.quantization_table_set {
+                    &component.quantization_table
+                } else {
+                    qt_tables[usize::from(component.quantization_table_number)].as_ref()?
+                };
                 Some(QuantizationTable {
                     component:    component.component_id,
                     id:           component.id,

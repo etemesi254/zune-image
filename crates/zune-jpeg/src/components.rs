@@ -49,6 +49,9 @@ pub(crate) struct Components {
     pub quantization_table_number: u8,
     /// Specifies quantization table to use with this component
     pub quantization_table: [i32; 64],
+    /// Whether `quantization_table` holds the component's table, which it takes
+    /// from its DQT destination when its first scan begins.
+    pub quantization_table_set: bool,
     /// dc prediction for the component
     pub dc_pred: i32,
     /// most recent difference in dc prediction for the component
@@ -162,6 +165,7 @@ impl Components {
             dc_huff_table: 0,
             ac_huff_table: 0,
             quantization_table: [0; 64],
+            quantization_table_set: false,
             dc_pred: 0,
             dc_diff: 0,
             progressive_bits: [-1; 64],
