@@ -91,7 +91,8 @@ fn decode_non_interleaved_420_64x64() {
     assert_eq!(info.width, 64);
     assert_eq!(info.height, 64);
     assert_eq!(pixels.len(), 64 * 64 * 3);
-    assert_eq!(pixel_digest(&pixels), 0xcb8faa9b4c94a0e5);
+    // Production libjpeg-turbo RGB with native fancy upsampling.
+    assert_eq!(pixel_digest(&pixels), 0x613ee1f9b28ed265);
 
     // All pixels should have color (no large black regions from failed upsampling)
     let non_black = pixels.chunks(3).filter(|c| c[0] > 5 || c[1] > 5 || c[2] > 5).count();
@@ -130,7 +131,7 @@ fn decode_non_interleaved_440_64x64() {
     assert_eq!(info.width, 64);
     assert_eq!(info.height, 64);
     assert_eq!(pixels.len(), 64 * 64 * 3);
-    assert_eq!(pixel_digest(&pixels), 0xcb8faa9b4c94a0e5);
+    assert_eq!(pixel_digest(&pixels), 0x6d4109e3c2ef2765);
 }
 
 /// Test that the existing sos_news.jpeg (non-interleaved) still works.
@@ -245,7 +246,7 @@ fn read_ahead_marker_does_not_drop_final_scan_row() {
         (hash ^ u64::from(*byte)).wrapping_mul(0x100_0000_01b3)
     });
     assert_eq!(
-        hash, 0x1a6e_8556_3a98_c3bc,
+        hash, 0x65f9_7c0f_ecfc_1d6e,
         "final eight rows differ from the libjpeg-turbo reference"
     );
 }

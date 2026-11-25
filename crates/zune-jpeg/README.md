@@ -27,6 +27,13 @@ fn main()->Result<(),DecoderErrors> {
 The decoder supports more manipulations via `DecoderOptions`,
 see additional documentation in the library.
 
+### Chroma reconstruction
+
+Full-size output uses native-compatible fancy chroma reconstruction. For
+horizontal or combined horizontal/vertical subsampling, components with a visible
+width of at most two samples use box duplication instead, matching libjpeg-turbo.
+Padded storage does not count toward this threshold.
+
 ### Reduced-IDCT output
 
 Pass a `JpegScale` to `JpegDecoder::decode_scaled_into`. All reduced ratios
