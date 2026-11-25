@@ -509,6 +509,10 @@ impl BitStreamHuffman {
             self.refill(reader)?;
             return Ok(());
         }
+        // Match libjpeg-turbo's native word-sized refill frontier, not the
+        // width of our accumulator. At physical EOF a partial refill can
+        // leave this local bitstream changed; the caller drops it and retries
+        // from the decoder's scan checkpoint.
         let minimum_bits = (usize::BITS - 7) as u8;
         while self.bits_left < minimum_bits {
             if !self.refill_byte::<T, true>(reader)? {

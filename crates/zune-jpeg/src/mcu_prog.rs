@@ -2320,6 +2320,34 @@ mod tests {
     }
 
     #[test]
+    fn reduced_progressive_dc_only_smoothing_matches_libjpeg() {
+        use crate::JpegScale;
+
+        let mut data = smoothing_jpeg(false);
+        // Isolate smoothing from the missing-EOI refill policy.
+        data.extend_from_slice(&[0xFF, 0xD9]);
+        let options = DecoderOptions::new_safe()
+            .set_strict_mode(false)
+            .jpeg_set_out_colorspace(zune_core::colorspace::ColorSpace::Luma);
+        // libjpeg-turbo afad69da, djpeg -dct int -scale 1/{2,4,8}.
+        for (scale, width, height, hash) in [
+            (JpegScale::Half, 11, 10, 0xe573_aa2a_fec2_1de8),
+            (JpegScale::Quarter, 6, 5, 0x059f_0191_f054_b098),
+            (JpegScale::Eighth, 3, 3, 0xba4d_ad14_3831_6b98)
+        ] {
+            let mut decoder =
+                JpegDecoder::new_with_options(ZCursor::new(&data), options.jpeg_set_scale(scale));
+            let pixels = decoder.decode().unwrap();
+            assert_eq!(decoder.output_dimensions(), Some((width, height)));
+            assert_eq!(pixels.len(), width * height);
+            assert_eq!(logical_plane_hash(&pixels, width, width), hash, "{scale:?}");
+            assert!(decoder.progressive_mcus_buffer[0]
+                .chunks_exact(64)
+                .all(|block| block[1..].iter().all(|&value| value == 0)));
+        }
+    }
+
+    #[test]
     fn smoothing_preserves_known_coefficients_and_precision_bounds() {
         let mut blocks = [0; 9 * 64];
         for (block, dc) in [-512, -256, 0, -256, 0, 256, 0, 256, 512]
