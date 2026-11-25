@@ -191,6 +191,18 @@ fn repeated_sequential_scan_after_complete_image_keeps_committed_coefficients() 
     complete_data.extend_from_slice(&[0xFF, 0xD9]);
     let mut complete = JpegDecoder::new_with_options(ZCursor::new(&complete_data), options(false));
     let expected = complete.decode().unwrap();
+    let mut direct = data.clone();
+    scan(&mut direct, &[1], &[(1, false)]);
+    direct.extend_from_slice(&[0xFF, 0xD9]);
+    let mut lenient = JpegDecoder::new_with_options(ZCursor::new(&direct), options(false));
+    assert_eq!(lenient.decode().unwrap(), expected);
+    let mut strict = JpegDecoder::new_with_options(ZCursor::new(&direct), options(true));
+    assert!(matches!(
+        strict.decode(),
+        Err(crate::errors::DecodeErrors::FormatStatic(
+            "SOS after a baseline scan that already had all components"
+        ))
+    ));
     data.extend_from_slice(&[0xFF, 0xC4, 0, 20, 0x10]);
     data.extend_from_slice(&[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     data.push(0);
@@ -277,26 +289,48 @@ fn raw_rows_preserve_caller_padding() {
 }
 
 #[test]
+fn truncated_next_sos_preserves_completed_component_data() {
+    let mut data = frame(8, 8, &[(1, 0x11), (2, 0x11), (3, 0x11)]);
+    scan(&mut data, &[1], &[(4, true)]);
+    let mut control = data.clone();
+    control.extend_from_slice(&[0xFF, 0xD9]);
+    data.extend_from_slice(&[0xFF, 0xDA, 0, 8, 1]);
+    for opts in [options(false), options(false).jpeg_set_scale(crate::JpegScale::Half)] {
+        let mut expected = JpegDecoder::new_with_options(ZCursor::new(&control), opts);
+        let mut actual = JpegDecoder::new_with_options(ZCursor::new(&data), opts);
+        let expected = expected.decode().unwrap();
+        assert!(expected.iter().any(|&value| value != 128));
+        assert_eq!(actual.decode().unwrap(), expected);
+    }
+}
+
+#[test]
 fn raw_subset_scan_does_not_publish_never_seen_components() {
     let mut data = frame(8, 8, &[(1, 0x11), (2, 0x11), (3, 0x11)]);
     scan(&mut data, &[2, 3], &[(1, false); 2]);
-    data.extend_from_slice(&[0xFF, 0xD9]);
-    let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&data), options(false));
-    decoder.decode_headers().unwrap();
-    let mut raw = decoder.raw_output();
-    raw.set_input_complete();
-    let mut y = [0xA5; 64];
-    let mut cb = y;
-    let mut cr = y;
-    assert!(raw
-        .decode_next_imcu_row(&mut [&mut y, &mut cb, &mut cr], &[8; 3])
-        .unwrap_err()
-        .is_recoverable_eof());
-    assert!(y
-        .iter()
-        .chain(cb.iter())
-        .chain(cr.iter())
-        .all(|&value| value == 0xA5));
+    for empty_scan in [false, true] {
+        let mut data = data.clone();
+        if empty_scan {
+            scan(&mut data, &[1], &[]);
+        }
+        data.extend_from_slice(&[0xFF, 0xD9]);
+        let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&data), options(false));
+        decoder.decode_headers().unwrap();
+        let mut raw = decoder.raw_output();
+        raw.set_input_complete();
+        let mut y = [0xA5; 64];
+        let mut cb = y;
+        let mut cr = y;
+        assert!(raw
+            .decode_next_imcu_row(&mut [&mut y, &mut cb, &mut cr], &[8; 3])
+            .unwrap_err()
+            .is_recoverable_eof());
+        assert!(y
+            .iter()
+            .chain(cb.iter())
+            .chain(cr.iter())
+            .all(|&value| value == 0xA5));
+    }
 }
 
 #[cfg(feature = "std")]
@@ -357,11 +391,9 @@ mod growing {
                 data[len - 2..].copy_from_slice(&[1, 0]);
             }
             scan_with_codes(&mut data, &[1], &[(1, true); 16], zero_is_ac);
-            scan_with_codes(&mut data, &[2, 3], &[(1, true); 16], zero_is_ac);
             // Resuming inside an all-component scan must not change the first
             // scan's buffered reconstruction strategy.
             scan_with_codes(&mut data, &[1, 2, 3], &[(0, false); 32], zero_is_ac);
-            scan_with_codes(&mut data, &[1], &[(0, false); 16], zero_is_ac);
             data.extend_from_slice(&[0xFF, 0xD9]);
             assert_retry(data);
         }
@@ -425,8 +457,8 @@ mod growing {
         let mut data = frame(32, 16, &[(1, 0x11), (2, 0x11), (3, 0x11)]);
         data.extend_from_slice(&[0xFF, 0xDD, 0, 4, 0, 1]);
         restarted_scan(&mut data, &[1], 1, &[(1, true); 8]);
-        restarted_scan(&mut data, &[2, 3], 2, &[(1, true); 16]);
         restarted_scan(&mut data, &[1], 1, &[(0, false); 8]);
+        restarted_scan(&mut data, &[2, 3], 2, &[(1, true); 16]);
         data.extend_from_slice(&[0xFF, 0xD9]);
         assert_retry(data);
     }

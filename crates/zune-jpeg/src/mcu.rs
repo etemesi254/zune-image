@@ -390,6 +390,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         // Set when the scan loop stopped at an SOS that follows a complete image; that SOS
         // was not parsed, so there is no EOI to look for after it.
         let mut stopped_at_extra_sos = false;
+        let mut row_backup: [Vec<i32>; MAX_COMPONENTS] = core::array::from_fn(|_| Vec::new());
         let mut last_scan_rows_decoded: usize;
         'sos: loop {
             last_scan_rows_decoded = 0;
@@ -497,26 +498,31 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 // A truncated refill can speculatively decode zero-padded
                 // symbols before detecting EOF. Replaying a repeated scan
                 // must start with the original coefficients, not those writes.
-                let row_backup: Vec<_> = if !all_components_in_first_scan
-                    && self.mcu_checkpoints_enabled
-                {
-                    self.z_order[..usize::from(self.num_scans)]
-                        .iter()
-                        .map(|&index| {
-                            let component = &self.components[index];
-                            let rows = if self.num_scans > 1 {
-                                component.vertical_sample
-                            } else {
-                                1
-                            };
-                            let start = i * rows * component.width_stride * 8;
-                            let end = start + rows * component.width_stride * 8;
-                            (index, start, progressive_mcus[index][start..end].to_vec())
-                        })
-                        .collect()
-                } else {
-                    Vec::new()
-                };
+                let mut backed_up: [Option<core::ops::Range<usize>>; MAX_COMPONENTS] =
+                    core::array::from_fn(|_| None);
+                if !all_components_in_first_scan && self.mcu_checkpoints_enabled {
+                    for &index in &scan_components[..scan_component_count] {
+                        let component = &self.components[index];
+                        let rows = if scan_component_count > 1 {
+                            component.vertical_sample
+                        } else {
+                            1
+                        };
+                        let len = rows * component.width_stride * 8;
+                        let start = i * len;
+                        let range = start..start + len;
+                        let coefficients = progressive_mcus[index].get(range.clone()).ok_or(
+                            DecodeErrors::FormatStatic("Invalid baseline coefficient row")
+                        )?;
+                        let backup = &mut row_backup[index];
+                        backup.clear();
+                        backup.try_reserve_exact(len).map_err(|_| {
+                            DecodeErrors::FormatStatic("Could not allocate baseline row backup")
+                        })?;
+                        backup.extend_from_slice(coefficients);
+                        backed_up[index] = Some(range);
+                    }
+                }
                 let seen_components = self.baseline_seen_components;
 
                 // decode a whole MCU width,
@@ -563,21 +569,29 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     }
                 };
 
-                if terminate_result.as_ref().is_err_and(|error| {
-                    !error.is_recoverable_eof() || self.scan_eof_is_error()
-                })
-                    || (stream.overread_by() > 0 && self.scan_eof_is_error())
-                {
-                    for (index, start, coefficients) in &row_backup {
-                        progressive_mcus[*index][*start..][..coefficients.len()]
-                            .copy_from_slice(coefficients);
+                let pull_stripe = output.requested_output_stripe().is_some();
+                let past_end = stream.consumed_past_end();
+                let eof_is_error = self.scan_eof_is_error();
+                let overread_rejected =
+                    stream.overread_by() > 0 && (eof_is_error || pull_stripe);
+                let rollback_row = match &terminate_result {
+                    Err(error) => !error.is_recoverable_eof() || eof_is_error,
+                    Ok(_) if past_end => eof_is_error,
+                    Ok(terminate) => overread_rejected
+                        || (pull_stripe && matches!(terminate, McuContinuation::Terminate(_)))
+                };
+                if rollback_row {
+                    for (index, range) in backed_up.into_iter().enumerate() {
+                        if let Some(range) = range {
+                            progressive_mcus[index][range].copy_from_slice(&row_backup[index]);
+                        }
                     }
                     self.baseline_seen_components = seen_components;
                 }
 
                 let terminate = match terminate_result {
                     Ok(terminate) => terminate,
-                    Err(e) if e.is_recoverable_eof() && !self.scan_eof_is_error() => {
+                    Err(e) if e.is_recoverable_eof() && !eof_is_error => {
                         error!("{e}");
                         if all_components_in_first_scan {
                             match output {
@@ -643,8 +657,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 // return a recoverable EOF and resume from this row's checkpoint,
                 // which was saved while the row still started on real bits;
                 // lenient ones leave the row and everything after it neutral.
-                if stream.consumed_past_end() {
-                    if self.scan_eof_is_error() {
+                if past_end {
+                    if eof_is_error {
                         return Err(DecodeErrors::ExhaustedData);
                     }
                     if all_components_in_first_scan {
@@ -660,12 +674,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
                 // Neither a pull request nor the stable packed prefix may
                 // publish a row assembled after exhausting growing input.
-                if stream.overread_by() > 0
-                    && (self.scan_eof_is_error() || output.requested_output_stripe().is_some())
-                {
+                if overread_rejected {
                     return Err(DecodeErrors::ExhaustedData);
                 }
-                if output.requested_output_stripe().is_some() {
+                if pull_stripe {
                     if let McuContinuation::Terminate(reason) = &terminate {
                         return Err(reason.raw_error());
                     }
@@ -777,7 +789,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             "JPEG with DNL cannot contain multiple scans",
                         ));
                     }
-                    McuContinuation::AnotherSos if all_components_in_first_scan => {
+                    McuContinuation::AnotherSos
+                        if all_components_in_first_scan || all_required_components_seen =>
+                    {
                         // Decided before parsing the SOS header, so the committed SOS
                         // and checkpoint state still describe the scan that was decoded.
                         if self.options.strict_mode() {
@@ -785,6 +799,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         }
                         stream.marker().take();
                         warn!("More than one SOS despite already having all components");
+                        if !all_components_in_first_scan {
+                            stopped_at_extra_sos = true;
+                            break 'sos;
+                        }
                         if let McuDecodeOutput::RawPlanes(raw_planes) = output {
                             self.copy_raw_planes_for_mcu_stripe(i, raw_planes)?;
                             self.invalidate_scan_checkpoint();
@@ -798,10 +816,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             // (this header used to be parsed during the row decode).
                             Err(e) if e.is_recoverable_eof() && !self.scan_eof_is_error() => {
                                 error!("{e}");
-                                if let Some(pixels) = output.pixels_mut() {
-                                    pixels.fill(128);
-                                }
-                                return Ok(());
+                                stream.marker().take();
+                                break 'sos;
                             }
                             Err(e) => return Err(e)
                         }
@@ -882,7 +898,22 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         break;
                     }
                     Ok(Marker::SOS) => {
-                        self.parse_marker_inner(Marker::SOS)?;
+                        if all_required_components_seen {
+                            if self.options.strict_mode() {
+                                return Err(DecodeErrors::FormatStatic(SOS_AFTER_COMPLETE_SCAN));
+                            }
+                            warn!("More than one SOS despite already having all components");
+                            stopped_at_extra_sos = true;
+                            break 'sos;
+                        }
+                        match self.parse_marker_inner(Marker::SOS) {
+                            Ok(()) => {}
+                            Err(e) if e.is_recoverable_eof() && !self.scan_eof_is_error() => {
+                                error!("{e}");
+                                break 'sos;
+                            }
+                            Err(e) => return Err(e)
+                        }
                         self.invalidate_scan_checkpoint();
                         stream.reset();
                         B::reset_arith_tables(&mut self.entropy_tables);
@@ -1140,7 +1171,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 for row in 0..blocks_high {
                     for col in 0..blocks_wide {
                         let offset = ((i * blocks_high + row) * blocks_wide + col) * 64;
-                        coefficients.copy_from_slice(&block[position][offset..][..64]);
+                        let source = block[position].get(offset..offset + 64).ok_or(
+                            DecodeErrors::FormatStatic("Component buffer too small")
+                        )?;
+                        coefficients.copy_from_slice(source);
                         if let McuDecodeOutput::Scaled(scaled) = output {
                             scaled.write_block(position, col, i * blocks_high + row, &coefficients)?;
                             continue;
@@ -1403,7 +1437,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
                             if PROGRESSIVE {
                                 progressive[k][block_offset..][..64].copy_from_slice(tmp);
-                                self.baseline_seen_components[k] = true;
+                                self.baseline_seen_components[k] |=
+                                    !stream.consumed_marker_padding() && !stream.consumed_past_end();
                                 continue;
                             }
                             if let Some(scaled) = context.scaled.as_deref_mut() {
@@ -1570,6 +1605,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         if self.pending_dnl_height.is_some() {
             return self.handle_pending_dnl(mcu_row);
         }
+        let bits_left = stream.bits_left();
         if let Some(m) = stream.marker() {
             if *m == Marker::DNL && self.dnl_image {
                 self.check_cancelled()?;
@@ -1600,7 +1636,13 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     | Marker::COM
                     | Marker::APP(_)
             );
-            if (ends_scan || *m == Marker::EOI) && !is_last_row {
+            if !is_last_row
+                && if B::marker_ends_data() {
+                    ends_scan || *m == Marker::EOI
+                } else {
+                    ends_scan && bits_left > 0
+                }
+            {
                 return Ok(McuContinuation::Ok);
             }
             if *m == Marker::EOI {
