@@ -1,4 +1,6 @@
 use zune_core::bytestream::ZCursor;
+use zune_core::options::DecoderOptions;
+use zune_jpeg::errors::DecodeErrors;
 use zune_jpeg::JpegDecoder;
 
 fn assert_native_colors(
@@ -73,4 +75,35 @@ fn noninterleaved_dc_scan_uses_table_three() {
             (148, 115, [20, 200, 39]),
         ],
     );
+}
+
+#[test]
+fn noninterleaved_dc_scan_does_not_alias_table_selectors() {
+    let valid = include_bytes!("../../../test-images/jpeg/noninterleaved-dc-table-1-17x19.jpg");
+    let expected = JpegDecoder::new(ZCursor::new(valid)).decode().unwrap();
+    let sos = valid
+        .windows(7)
+        .position(|bytes| bytes == [0xFF, 0xDA, 0x00, 0x08, 0x01, 0x02, 0x10])
+        .unwrap();
+
+    for table in 4..=15 {
+        let mut jpeg = valid.to_vec();
+        jpeg[sos + 6] = table << 4;
+        let strict = DecoderOptions::default().set_strict_mode(true);
+        let error = JpegDecoder::new_with_options(ZCursor::new(&jpeg), strict)
+            .decode()
+            .unwrap_err();
+        assert!(
+            matches!(&error, DecodeErrors::SosError(message)
+            if message == &format!(
+                "Invalid Huffman table selectors DC={table}, AC=0; expected 0-3"
+            )),
+            "table {table}: {error:?}"
+        );
+
+        // Lenient decoding may keep earlier scans, but must not alias a valid table.
+        let pixels = JpegDecoder::new(ZCursor::new(&jpeg)).decode().unwrap();
+        assert_eq!(pixels.len(), expected.len());
+        assert_ne!(pixels, expected, "table {table} decoded as table 1");
+    }
 }
