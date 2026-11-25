@@ -344,9 +344,12 @@ where
                     trace!("Color used : {color_used}");
                     trace!("Important Colors: {important_colors}");
 
-                    self.rgb_bitfields[0] = self.bytes.get_u32_le_err()?;
-                    self.rgb_bitfields[1] = self.bytes.get_u32_le_err()?;
-                    self.rgb_bitfields[2] = self.bytes.get_u32_le_err()?;
+                    // after a 40 byte BITMAPINFOHEADER, masks are only present for BI_BITFIELDS
+                    if ihsize > 40 || compression == BmpCompression::BITFIELDS {
+                        self.rgb_bitfields[0] = self.bytes.get_u32_le_err()?;
+                        self.rgb_bitfields[1] = self.bytes.get_u32_le_err()?;
+                        self.rgb_bitfields[2] = self.bytes.get_u32_le_err()?;
+                    }
 
                     let mut colorspace_type = 0;
 
@@ -1181,9 +1184,14 @@ where
                         // move to the next line
                         line -= 1;
                         if line < 0 {
-                            return Err(BmpDecoderErrors::Generic(format!(
-                                "Line less than 0 {line}"
-                            )));
+                            return if self.bytes.get_u16_be_err()? == 1 {
+                                // end of picture
+                                Ok(pixels)
+                            } else {
+                                Err(BmpDecoderErrors::Generic(format!(
+                                    "Line less than 0 {line}"
+                                )))
+                            };
                         }
                         // move to the next line
                         output = &mut pixels

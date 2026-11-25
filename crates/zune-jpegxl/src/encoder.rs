@@ -14,8 +14,11 @@ use core::marker::PhantomData;
 
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::{ZByteWriterTrait, ZWriter};
+use zune_core::colorspace::{ColorCharacteristics, ColorPrimaries};
 use zune_core::log::{log_enabled, trace, Level};
 use zune_core::options::EncoderOptions;
+
+use crate::color_encoding::ColorEncoding;
 
 use crate::bit_depth::{JxlBitEncoder, MoreThan14Bits, UpTo8Bits};
 use crate::bit_writer::{
@@ -42,6 +45,7 @@ const K_MAX_NUM_SYMBOLS: usize = if K_NUM_RAW_SYMBOLS + 1 < K_NUM_LZ77 {
 
 pub(crate) struct FrameState {
     option: EncoderOptions,
+    color_encoding: ColorEncoding,
     header: BitWriter,
     group_data: Vec<[BitWriter; 4]>,
     current_bit_writer: usize,
@@ -96,6 +100,8 @@ pub(crate) struct FrameState {
 /// }
 /// ```
 pub struct JxlSimpleEncoder<'a> {
+    color_trc: ColorCharacteristics,
+    color_primaries: Option<ColorPrimaries>,
     data: &'a [u8],
     options: EncoderOptions,
 }
@@ -893,10 +899,16 @@ fn process_image_area<A, BitDepth>(
 }
 
 fn prepare_dc_global_common(
-    is_single_group: bool, width: usize, height: usize, codes: &[PrefixCode],
-    output: &mut BitWriter,
+    is_single_group: bool, width: usize, height: usize, max_bits_per_sample: usize,
+    codes: &[PrefixCode], output: &mut BitWriter,
 ) {
-    let length = if is_single_group { width * height * 16 } else { 0 };
+    // A single group's first channel is written after this header, into
+    // the same writer, so it needs room for every sample at its widest.
+    let length = if is_single_group {
+        width * height * max_bits_per_sample
+    } else {
+        0
+    };
 
     output.allocate(100000 + length);
 
@@ -1018,10 +1030,10 @@ fn write_a_c_section<B: JxlBitEncoder>(
 }
 
 fn prepare_dc_global(
-    is_single_group: bool, width: usize, height: usize, channels: usize, code: &[PrefixCode],
-    output: &mut BitWriter,
+    is_single_group: bool, width: usize, height: usize, max_bits_per_sample: usize,
+    channels: usize, code: &[PrefixCode], output: &mut BitWriter,
 ) {
-    prepare_dc_global_common(is_single_group, width, height, code, output);
+    prepare_dc_global_common(is_single_group, width, height, max_bits_per_sample, code, output);
 
     if channels > 2 {
         output.put_bits(2, 0b01); // 1 transform
@@ -1043,7 +1055,48 @@ impl<'a> JxlSimpleEncoder<'a> {
     /// - data: Raw pixel data
     /// - options: Encoder options for the raw pixels, this include the width, height colorspace, depth etc
     pub fn new(data: &'a [u8], options: EncoderOptions) -> JxlSimpleEncoder<'a> {
-        JxlSimpleEncoder { data, options }
+        JxlSimpleEncoder {
+            data,
+            options,
+            color_trc: ColorCharacteristics::sRGB,
+            color_primaries: None,
+        }
+    }
+
+    /// Whether the image header can name `color_trc`, so that
+    /// [`set_color_characteristics`](Self::set_color_characteristics)
+    /// with it lets [`encode`](Self::encode) succeed.
+    pub fn names_color_characteristics(color_trc: ColorCharacteristics) -> bool {
+        crate::color_encoding::Transfer::of(color_trc).is_some()
+    }
+
+    /// Set the transfer function the image header names, sRGB's by
+    /// default.
+    ///
+    /// The samples are written as given: this says how a decoder should
+    /// read them. sRGB, Rec. 709, linear, PQ, HLG and SMPTE 428 are
+    /// written by name, and gamma 2.2 and 2.8 as a gamma. Any other
+    /// makes [`encode`](Self::encode) fail, JPEG XL having no name for
+    /// it.
+    pub fn set_color_characteristics(&mut self, color_trc: ColorCharacteristics) -> &mut Self {
+        self.color_trc = color_trc;
+        self
+    }
+
+    /// Set the primaries and white point the image header names for
+    /// an RGB image, sRGB's and D65 by default; a grayscale image takes
+    /// the white point alone.
+    ///
+    /// The samples are written as given. Each primary and the white
+    /// point is read as its CIE x and y, `z` unused, as a PNG's `cHRM`
+    /// gives them. sRGB's, BT.2100's and P3's primaries, and the D65,
+    /// DCI and E white points, are written by name, and any others as
+    /// their chromaticities. sRGB's primaries and transfer function
+    /// with D65 are written as the header's `all_default`, as before
+    /// these options.
+    pub fn set_color_primaries(&mut self, color_primaries: ColorPrimaries) -> &mut Self {
+        self.color_primaries = Some(color_primaries);
+        self
     }
 
     /// Encode a jxl image producing the raw encoded
@@ -1092,6 +1145,7 @@ impl<'a> JxlSimpleEncoder<'a> {
         if !SUPPORTED_COLORSPACES.contains(&colorspace) {
             return Err(JxlEncodeErrors::UnsupportedColorspace(colorspace));
         }
+        let color_encoding = ColorEncoding::of(self.color_trc, self.color_primaries.as_ref())?;
         if width == 0 {
             return Err(JxlEncodeErrors::ZeroDimension("width"));
         }
@@ -1209,7 +1263,15 @@ impl<'a> JxlSimpleEncoder<'a> {
             {
                 let writer = &mut group_data[0].lock().unwrap()[0];
 
-                prepare_dc_global(one_group, width, height, num_components, &codes, writer);
+                prepare_dc_global(
+                    one_group,
+                    width,
+                    height,
+                    encoder.max_encoded_bits_per_sample(),
+                    num_components,
+                    &codes,
+                    writer
+                );
             }
             let pixels = self.data;
 
@@ -1303,6 +1365,7 @@ impl<'a> JxlSimpleEncoder<'a> {
 
             Ok(FrameState {
                 option: self.options,
+                color_encoding,
                 header: BitWriter::new(),
                 group_data,
                 current_bit_writer: 0,
@@ -1318,7 +1381,15 @@ impl<'a> JxlSimpleEncoder<'a> {
 
             {
                 let writer = &mut group_data[0][0];
-                prepare_dc_global(one_group, width, height, num_components, &codes, writer);
+                prepare_dc_global(
+                    one_group,
+                    width,
+                    height,
+                    encoder.max_encoded_bits_per_sample(),
+                    num_components,
+                    &codes,
+                    writer
+                );
             }
             let pixels = self.data;
 
@@ -1359,6 +1430,7 @@ impl<'a> JxlSimpleEncoder<'a> {
 
             Ok(FrameState {
                 option: self.options,
+                color_encoding,
                 header: BitWriter::new(),
                 group_data,
                 current_bit_writer: 0,
@@ -1517,7 +1589,19 @@ fn prepare_header(frame: &mut FrameState, add_image_header: bool, is_last: bool)
         }
         if have_alpha {
             output.put_bits(2, 1); // extra channel
-            output.put_bits(1, 1); // all default (8 bit alpha)
+            if depth == BitDepth::Eight {
+                output.put_bits(1, 1); // all default (8 bit alpha)
+            } else {
+                // The alpha channel's samples are as deep as the color's.
+                output.put_bits(1, 0); // not all default
+                output.put_bits(2, 0); // type: alpha, enum value 0
+                output.put_bits(1, 0); // integer samples
+                output.put_bits(2, 0b11);
+                output.put_bits(6, (depth.bit_size() - 1) as u64);
+                output.put_bits(2, 0); // dim_shift 0
+                output.put_bits(2, 0); // no name
+                output.put_bits(1, 0); // not premultiplied
+            }
         } else {
             output.put_bits(2, 0); // no extra channel
         }
@@ -1525,17 +1609,14 @@ fn prepare_header(frame: &mut FrameState, add_image_header: bool, is_last: bool)
         // TODO: Support XYB
         output.put_bits(1, 0); // not xyb
 
-        if colorspace.num_components() > 2 {
+        let rgb = colorspace.num_components() > 2;
+        if rgb && frame.color_encoding == ColorEncoding::SRGB {
             output.put_bits(1, 1); // color_encoding.all_default (sRGB)
         } else {
             output.put_bits(1, 0); // color_encoding.all_default false
-            output.put_bits(1, 0); // color_encoding.want_icc false
-            output.put_bits(2, 1); // grayscale
-            output.put_bits(2, 1); // D65
-            output.put_bits(1, 0); // no gamma transfer function
-            output.put_bits(2, 0b10); // tf: 2 + u(4)
-            output.put_bits(4, 11); // tf of sRGB
-            output.put_bits(2, 1); // relative rendering intent
+            frame
+                .color_encoding
+                .write(rgb, &mut |count, bits| output.put_bits(count, bits));
         }
         output.put_bits(2, 0b00); // No extensions.
 
@@ -1598,9 +1679,133 @@ fn calculate_expected_input(options: &EncoderOptions) -> Option<usize> {
     options
         .width()
         .checked_mul(options.depth().size_of())
-        .and_then(|x| x.checked_add(options.height()))
-        .and_then(|x| x.checked_add(options.width()))
-        .and_then(|x| x.checked_add(options.colorspace().num_components()))
+        .and_then(|x| x.checked_mul(options.height()))
+        .and_then(|x| x.checked_mul(options.colorspace().num_components()))
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::vec;
+    use alloc::vec::Vec;
+
+    use zune_core::bit_depth::BitDepth;
+    use zune_core::colorspace::ColorSpace;
+    use zune_core::options::EncoderOptions;
+
+    use super::*;
+
+    /// The input is one sample of each component a pixel, of the
+    /// depth's size, for each of width × height pixels: more or fewer
+    /// bytes are refused.
+    #[test]
+    fn the_input_is_width_by_height_pixels_of_samples() {
+        for (colorspace, depth) in [
+            (ColorSpace::Luma, BitDepth::Eight),
+            (ColorSpace::RGB, BitDepth::Eight),
+            (ColorSpace::RGBA, BitDepth::Sixteen)
+        ] {
+            let options = EncoderOptions::new(3, 2, colorspace, depth);
+            let size = 3 * 2 * colorspace.num_components() * depth.size_of();
+            assert_eq!(calculate_expected_input(&options), Some(size));
+            let encode = |len: usize| {
+                let data = vec![7_u8; len];
+                let mut out = Vec::new();
+                JxlSimpleEncoder::new(&data, options).encode(&mut out)
+            };
+            assert!(encode(size).is_ok(), "{colorspace:?}");
+            for len in [size - 1, size + 1] {
+                assert!(
+                    matches!(encode(len), Err(JxlEncodeErrors::LengthMismatch(..))),
+                    "{colorspace:?} {len}"
+                );
+            }
+        }
+        let huge = EncoderOptions::new(usize::MAX / 2, 3, ColorSpace::RGB, BitDepth::Eight);
+        assert_eq!(calculate_expected_input(&huge), None);
+    }
+
+    /// Samples nothing predicts take each depth's widest codes, and
+    /// a single group's first channel is written into the header's
+    /// writer: it must have room for them, not 16 bits a sample.
+    #[test]
+    fn incompressible_samples_encode_at_every_depth_and_size() {
+        let mut x: u32 = 0x1234_5678;
+        for (width, height) in [(256, 256), (300, 280)] {
+            for colorspace in [ColorSpace::Luma, ColorSpace::RGB, ColorSpace::RGBA] {
+                for depth in [BitDepth::Eight, BitDepth::Sixteen] {
+                    let len = width * height * colorspace.num_components() * depth.size_of();
+                    let data: Vec<u8> = (0..len)
+                        .map(|_| {
+                            x ^= x << 13;
+                            x ^= x >> 17;
+                            x ^= x << 5;
+                            x as u8
+                        })
+                        .collect();
+                    let options = EncoderOptions::new(width, height, colorspace, depth);
+                    let mut out = Vec::new();
+                    let written = JxlSimpleEncoder::new(&data, options).encode(&mut out);
+                    assert!(
+                        written.is_ok_and(|n| n > len / 2),
+                        "{width}x{height} {colorspace:?} {depth:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// The extra channel fields of a 2 × 2 RGBA image at `depth`'s
+    /// header, its bits read least significant first: `None` where it
+    /// is all_default, else its type, its bits per sample, dim_shift,
+    /// name length and premultiplication.
+    fn alpha_info(depth: BitDepth) -> Option<[u32; 5]> {
+        let data = vec![100_u8; 16 * depth.size_of()];
+        let options = EncoderOptions::new(2, 2, ColorSpace::RGBA, depth);
+        let mut out = Vec::new();
+        JxlSimpleEncoder::new(&data, options)
+            .encode(&mut out)
+            .unwrap();
+        let mut at = 0;
+        let mut read = |count: usize| {
+            let mut value = 0;
+            for i in 0..count {
+                value |= u32::from((out[at / 8] >> (at % 8)) & 1) << i;
+                at += 1;
+            }
+            value
+        };
+        // Signature, size and the metadata up to its bit depth.
+        for _ in 0..16 + 1 + 11 + 3 + 11 + 1 + 1 + 1 {
+            read(1);
+        }
+        if read(2) == 3 {
+            assert_eq!(read(6) + 1, depth.bit_size() as u32, "bits");
+        }
+        read(1);
+        assert_eq!(read(2), 1, "one extra channel");
+        if read(1) == 1 {
+            return None;
+        }
+        let kind = match read(2) {
+            2 => 2 + read(4),
+            3 => 18 + read(6),
+            v => v
+        };
+        assert_eq!(read(1), 0, "integer samples");
+        let per_sample = match read(2) {
+            0 => 8,
+            1 => 10,
+            2 => 12,
+            _ => read(6) + 1
+        };
+        Some([kind, per_sample, read(2), read(2), read(1)])
+    }
+
+    #[test]
+    fn alpha_is_as_deep_as_the_colors() {
+        assert_eq!(alpha_info(BitDepth::Eight), None);
+        assert_eq!(alpha_info(BitDepth::Sixteen), Some([0, 16, 0, 0, 0]));
+    }
 }
 
 // #[test]

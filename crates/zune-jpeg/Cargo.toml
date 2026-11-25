@@ -1,6 +1,6 @@
 [package]
 name = "zune-jpeg"
-version = "0.5.16-rc3"
+version = "0.5.16-rc4"
 rust-version = "1.77.1"
 authors = ["caleb <etemesicaleb@gmail.com>"]
 edition = "2021"
@@ -30,7 +30,7 @@ default = ["x86", "neon", "std"]
 
 
 [dependencies]
-zune-core = { path = "../zune-core", version = "0.5.2" }
+zune-core = { path = "../zune-core", version = "0.5.4" }
 
 
 [dev-dependencies]

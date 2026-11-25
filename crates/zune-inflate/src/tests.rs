@@ -1,6 +1,7 @@
 #![cfg(test)]
 #[allow(clippy::module_inception)]
 mod tests {
+    use crate::errors::DecodeErrorStatus;
     use crate::{DecodeStatus,StreamingDecoder};
     use miniz_oxide::deflate::compress_to_vec;
     use nanorand::{Rng, WyRand};
@@ -300,6 +301,40 @@ mod tests {
         assert_eq!(status, "finished");
         assert_eq!(out.len(), data.len());
         assert!(out == data);
+    }
+
+    /// A stored block that crosses the output limit: the bytes up to the limit are
+    /// decoded before the limit error is reported, as they are for Huffman blocks.
+    #[test]
+    fn test_store_block_crossing_limit() {
+        let data: Vec<u8> = (0..1000).map(|i| (i * 7) as u8).collect();
+        for chunk_size in [data.len() + 5, 3] {
+            let mut compressed = vec![1];
+            compressed.extend_from_slice(&(data.len() as u16).to_le_bytes());
+            compressed.extend_from_slice(&(!(data.len() as u16)).to_le_bytes());
+            compressed.extend_from_slice(&data);
+
+            let mut decoder = StreamingDecoder::new();
+            decoder.set_limit(600);
+            let mut out = vec![0u8; data.len()];
+            let mut start = 0;
+            let error = loop {
+                let end = (start + chunk_size).min(compressed.len());
+                let is_final = end == compressed.len();
+                decoder.reset_position();
+                match decoder.decode_chunk(&compressed[start..end], is_final, &mut out) {
+                    DecodeStatus::NeedsMoreInput if !is_final => start = end,
+                    DecodeStatus::Error(e) => break e.error,
+                    _ => panic!("chunk size {chunk_size}: unexpected status")
+                }
+            };
+            assert!(
+                matches!(error, DecodeErrorStatus::OutputLimitExceeded(600, _)),
+                "chunk size {chunk_size}: {error:?}"
+            );
+            assert_eq!(decoder.decoded_bytes(), 600, "chunk size {chunk_size}");
+            assert!(out[..600] == data[..600], "chunk size {chunk_size}");
+        }
     }
 
     /// Uncompressed block with tiny output buffer — exercises NeedsMoreOutput

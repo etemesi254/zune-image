@@ -27,6 +27,52 @@ fn main()->Result<(),DecoderErrors> {
 The decoder supports more manipulations via `DecoderOptions`,
 see additional documentation in the library.
 
+### Chroma reconstruction
+
+Full-size output uses native-compatible fancy chroma reconstruction. For
+horizontal or combined horizontal/vertical subsampling, components with a visible
+width of at most two samples use box duplication instead, matching libjpeg-turbo.
+Padded storage does not count toward this threshold.
+
+### Reduced-IDCT output
+
+Pass a `JpegScale` to `JpegDecoder::decode_scaled_into`. All reduced ratios
+`n/8`, for `n` from 1 through 7, are supported:
+
+```Rust
+use zune_core::bytestream::ZCursor;
+use zune_jpeg::{JpegDecoder, JpegScale};
+
+let mut decoder = JpegDecoder::new(ZCursor::new(&jpeg_bytes));
+decoder.decode_headers()?;
+let scale = JpegScale::Half;
+let (width, height) = decoder.scaled_dimensions(scale).unwrap();
+let mut pixels = vec![0; decoder.scaled_output_buffer_size(scale).unwrap()];
+decoder.decode_scaled_into(scale, &mut pixels)?;
+```
+
+The decoder reconstructs genuine reduced-IDCT samples, not
+resized full-size pixels. Dimensions are ceil-rounded, and each component uses
+the IDCT size appropriate for its sampling factors. Coded metadata and existing
+full-size sizing, pixel, raw-plane, and scanline APIs keep their original geometry.
+
+Scaled output is frame-buffered, not a bounded-memory scanline API. For growing
+input, call `decoder.set_incremental_mode(true)` before decoding and keep the
+same decoder and scale across recoverable EOF. Reduced planes and entropy
+checkpoints survive retries; no converted pixels are published on recoverable
+scan EOF. A too-small output slice is rejected before decoding, and bytes
+beyond the required output length are left untouched.
+Full-size pixel/preview progress remains zero during scaled decoding; no
+progressive preview is published. Changing scale, changing options, or switching
+between scaled and other output paths restarts decoding from scan start.
+Successful calls with the same scale reuse the reconstructed reduced frame.
+
+The `scaled_decode` example writes packed RGB bytes to stdout:
+
+```sh
+cargo run -p zune-jpeg --example scaled_decode -- image.jpg 2 > image.rgb
+```
+
 ### Incremental input
 
 `JpegDecoder` can be retried on the same decoder when the underlying reader can

@@ -1,20 +1,20 @@
 [
   {
     "name": "incomplete_image.jpg",
-    "hash": 99412466882579045767153730293824826535,
+    "hash": 42547575023304585359781883424391926350,
     "comment": "Truncated input: completed rows plus neutral filler after EOF recovery"
   },
   {
     "name": "weird_components.jpg",
-    "hash": 23607575189683992407066572154861787923
+    "hash": 216390954112440000402727408064386436774
   },
   {
     "name": "Kiara_limited_progressive_four_components.jpg",
-    "hash": 317584839462440192032609803364242390612
+    "hash": 105202687214848242467228135504008199629
   },
   {
     "name": "rebuilt_relax_fill_bytes_before_marker.jpg",
-    "hash": 51012870490327283191019841563983371142
+    "hash": 202503456785374583636568023394582663844
   },
   {
     "name": "large_no_samp_7680_4320.jpg",
@@ -35,15 +35,15 @@
   {
     "name": "large_horiz_samp_7680_4320.jpg",
     "colorspace": "ycbcr",
-    "hash": 181646090826465488460321580282434434813
+    "hash": 330213105151464360984434571598833373559
   },
   {
     "name": "large_vertical_samp_7680_4320.jpg",
-    "hash": 108058895475066298885855102185000394297
+    "hash": 335716114125403098709897582227199508631
   },
   {
     "name": "medium_no_samp_2500x1786.jpg",
-    "hash": 33711794797330507995213487246814708266
+    "hash": 159419842192126241110943859480880754783
   },
   {
     "name": "medium_no_samp_2500x1786.jpg",
@@ -52,7 +52,7 @@
   },
   {
     "name": "medium_horiz_samp_2500x1786.jpg",
-    "hash": 120002830345720719416257974548809807397
+    "hash": 132316188546473174843862042290412032810
   },
   {
     "name": "medium_horiz_samp_2500x1786.jpg",
@@ -61,7 +61,7 @@
   },
   {
     "name": "medium_horiz_samp_2500x1786.jpg",
-    "hash": 276805905266762568722245056998326127711,
+    "hash": 216366866158709708032371549630119440429,
     "colorspace": "ycbcr"
   },
   {
@@ -71,7 +71,7 @@
   },
   {
     "name": "four_components.jpg",
-    "hash": 313038075596423662094554141526308454027
+    "hash": 139085112411114451735288760923706383364
   },
   {
     "name": "huge_sof_number.jpg",
@@ -79,12 +79,12 @@
   },
   {
     "name": "weid_sampling_factors.jpg",
-    "hash": 320393585810008004730315366182192135776,
+    "hash": 144317578263030054153360044769488800795,
     "comment": "Non normal sampling factors, h2v1 for all components"
   },
   {
     "name": "2029.jpg",
-    "hash": 267293865311634838760748185895215334996
+    "hash": 185163821390765795142333248799689330377
   },
   {
     "name": "down_sampled_grayscale_prog.jpg",
@@ -93,43 +93,43 @@
   },
   {
     "name": "progressive_dc_huffman_table_1.jpg",
-    "hash": 204969760276138072481815463426009913564,
+    "hash": 49119395303591695542871046509538417692,
     "comment": "Progressive non-interleaved scan selecting DC Huffman table 1; from image-rs/image tests/images/jpg/progressive/3.jpg"
   },
   {
     "name": "weird_sampling_2.jpeg",
-    "hash": 77476115291612913865309303518039602096,
+    "hash": 203255395166741824411999063436065281035,
     "comment": "Y and Cb not sub-sampled, Cr sub-sampled, jxl effect"
   },
   {
     "name": "2029.jpg",
-    "hash": 32639816655703166376264725960866714347,
+    "hash": 191757472130024882102653271634503968494,
     "comment": "testing-bgr support",
     "colorspace": "bgr"
   },
   {
     "name": "mjpeg_huffman.jpg",
-    "hash": 298858959244580096351030876189888334479,
+    "hash": 121914768446512637890763216041010806675,
     "comment": "Image needs to be filled with default huffman tables"
   },
   {
     "name": "sampling_factors.jpg",
-    "hash": 2138032936591059846496326932750168604,
+    "hash": 167796174335298387717364643729383321651,
     "comment": "Another weird sampling factor,(when will it end)"
   },
   {
     "name": "fox410.jpg",
-    "hash": 255214882220537855574483106676973733510,
+    "hash": 215230173834415910297769384386579337801,
     "comment": "4:1:0 chroma subsampling"
   },
   {
     "name": "sos_news.jpeg",
-    "hash": 75560093847610594389769615423004966224,
+    "hash": 307238806245050956683916652963830115049,
     "comment": "SOS interleaved with markers"
   },
   {
     "name": "synthetic_image.jpg",
-    "hash": 227404429493772307321352105035704751995,
+    "hash": 304671589529040634085261903215413891713,
     "comment": "Tripped up MCU decoding, see https://github.com/etemesi254/zune-image/pull/346"
   },
   {
@@ -139,23 +139,23 @@
   },
   {
     "name": "arith/seq.jpg",
-    "hash": 240955232124395161524736474803374379873
+    "hash": 129695676284767652085453613450783141609
   },
   {
     "name": "arith/seq-restart.jpg",
-    "hash": 240955232124395161524736474803374379873
+    "hash": 129695676284767652085453613450783141609
   },
   {
     "name": "arith/seq-restart-block.jpg",
-    "hash": 240955232124395161524736474803374379873
+    "hash": 129695676284767652085453613450783141609
   },
   {
     "name": "arith/prog.jpg",
-    "hash": 240955232124395161524736474803374379873
+    "hash": 129695676284767652085453613450783141609
   },
   {
     "name": "arith/prog-restart.jpg",
-    "hash": 240955232124395161524736474803374379873
+    "hash": 129695676284767652085453613450783141609
   },
   {
     "name": "noninterleaved-dc-table-1-17x19.jpg",
@@ -171,7 +171,7 @@
   },
   {
     "name": "noninterleaved-dc-table-3-160x120.jpg",
-    "hash": 205937624091713206189866638383476466051,
+    "hash": 266357057696314836292729126892921909459,
     "colorspace": "rgb",
     "comment": "Progressive separate DC-first scans using chroma Huffman table 3; authored color grid."
   },
@@ -182,33 +182,33 @@
   },
   {
     "name": "non_interleaved_luma_last_88x88.jpg",
-    "hash": 63643014080168136669620672178463370277,
+    "hash": 157847865499627355854612220956979342305,
     "comment": "Non-interleaved scans with luma declared last"
   },
   {
     "name": "non_interleaved_marker_read_ahead_88x88.jpg",
-    "hash": 63643014080168136669620672178463370277,
+    "hash": 157847865499627355854612220956979342305,
     "comment": "Read-ahead marker must not drop the final scan row"
   },
   {
     "name": "non_interleaved_444_64x64.jpg",
-    "hash": 41839076399667866943213742144468659728
+    "hash": 87970470021093828341603937915952602457
   },
   {
     "name": "non_interleaved_422_64x64.jpg",
-    "hash": 41839076399667866943213742144468659728
+    "hash": 87970470021093828341603937915952602457
   },
   {
     "name": "non_interleaved_420_64x64.jpg",
-    "hash": 324822241890861232147151898857212069760
+    "hash": 10041198127926389430577038001117560111
   },
   {
     "name": "non_interleaved_440_64x64.jpg",
-    "hash": 324822241890861232147151898857212069760
+    "hash": 138589304138562975736620199282742498505
   },
   {
     "name": "non_interleaved_422_65x65.jpg",
-    "hash": 304225986679131999304626770521036837069,
+    "hash": 141149729604208174926763075991956972017,
     "comment": "Odd dimensions and partial final MCU"
   },
   {

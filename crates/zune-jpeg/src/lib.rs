@@ -70,6 +70,24 @@
 //! assert_eq!(scanlines.finish().unwrap(), ScanlineStatus::Complete);
 //! ```
 //!
+//! ## Reduced-IDCT output
+//!
+//! Set a [`JpegScale`] via `DecoderOptions::jpeg_set_scale` to select reduced
+//! output for [`JpegDecoder::decode`] and [`JpegDecoder::decode_into`].
+//! Query their geometry with [`JpegDecoder::output_dimensions`] and
+//! [`JpegDecoder::output_buffer_size`] after decoding headers. For a per-call
+//! scale, use [`JpegDecoder::decode_scaled_into`] with
+//! [`JpegDecoder::scaled_dimensions`] and [`JpegDecoder::scaled_output_buffer_size`].
+//! All reduced ratios `n/8`, for `n` from 1 through 7, are supported.
+//! Multiply coded dimensions by [`JpegScale::numerator`] before rounding division
+//! by [`JpegScale::denominator`]. This produces
+//! native reduced-IDCT samples, not a resized full-size image. Output dimensions
+//! are rounded up; component-specific IDCT sizes account for chroma subsampling.
+//! [`JpegDecoder`] retains reduced planes across incremental retries and publishes
+//! converted pixels only after reconstruction completes. Coded metadata,
+//! raw-plane, and scanline geometry are unchanged. Changing scale,
+//! options, or output paths discards cached scaled state and restarts decoding.
+//!
 //! ## Incremental input
 //!
 //! `JpegDecoder` can be retried on the same decoder when the underlying reader can
@@ -320,12 +338,13 @@ extern crate core;
 pub use zune_core;
 
 pub use crate::cancel::{CancelCheck, NeverCancel};
-pub use crate::components::SampleRatios;
+pub use crate::components::{ComponentID, SampleRatios};
 pub use crate::decoder::{
-    ImageInfo, JpegDecoder, PlaneInfo, RawDecodeSession, RawImcuRowStatus, ScanlineDecodeSession,
-    ScanlineReadStatus, ScanlineStatus
+    ImageInfo, JpegDecoder, PlaneInfo, QuantizationTable, RawDecodeSession, RawImcuRowStatus,
+    ScanlineDecodeSession, ScanlineReadStatus, ScanlineStatus
 };
 pub use crate::marker::Marker;
+pub use zune_core::options::JpegScale;
 mod bitstream;
 #[cfg(feature = "arith")]
 mod bitstream_arith;
@@ -344,6 +363,7 @@ mod marker;
 mod mcu;
 mod mcu_prog;
 mod misc;
+mod scaled;
 mod unsafe_utils;
 mod unsafe_utils_avx2;
 mod unsafe_utils_neon;

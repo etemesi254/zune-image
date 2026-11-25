@@ -28,7 +28,7 @@ use crate::bitstream::{BitStreamHuffman, BitstreamStateSnapshot};
 use crate::bitstream_arith::{ArithACTables, ArithDCTables, BitStreamArithmetic};
 use crate::cancel::{CancelCheck, Debounced, CANCEL_POLL_INTERVAL_MCUS};
 use crate::color_convert::choose_ycbcr_to_rgb_convert_func;
-use crate::components::{Components, SampleRatios};
+use crate::components::{ComponentID, Components, SampleRatios};
 use crate::errors::{DecodeErrors, UnsupportedSchemes};
 #[cfg(feature = "arith")]
 use crate::headers::parse_dac;
@@ -85,6 +85,22 @@ pub struct PlaneInfo {
     pub allocated_height:           usize,
     /// Required slice length for this plane: `stride * allocated_height`.
     pub byte_size:                  usize
+}
+
+/// Quantization table of one component, as returned by
+/// [`RawDecodeSession::quantization_tables`].
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct QuantizationTable {
+    /// The component's role, from its position in the SOF marker.
+    pub component:    ComponentID,
+    /// Component selector byte from the SOF marker, as
+    /// [`RawDecodeSession::component_ids`] returns it.
+    pub id:           u8,
+    /// DQT destination (`Tq`) the component's SOF entry selects.
+    pub table_number: u8,
+    /// The 64 table values in natural (row-major) coefficient order.
+    pub values:       [u16; 64]
 }
 
 /// Round `n` up to the next multiple of `align` (which must be non-zero).
@@ -207,6 +223,7 @@ pub(crate) struct ScanHeaderStateSnapshot {
     pub(crate) restart_interval: usize,
     pub(crate) input_colorspace: ColorSpace,
     pub(crate) adobe_transform:  Option<u8>,
+    pub(crate) is_jfif:          bool,
     pub(crate) is_mjpeg:         bool
 }
 
@@ -328,6 +345,8 @@ pub struct JpegDecoder<T> {
     pub(crate) input_colorspace: ColorSpace,
     /// Adobe APP14 transform, resolved with the SOF component count at SOS.
     pub(crate) adobe_transform:  Option<u8>,
+    /// Whether a JFIF APP0 segment was seen. It makes a three-component image YCbCr.
+    pub(crate) is_jfif:          bool,
     // Is the image using arithmetic coding?
     pub(crate) is_arithmetic:    bool,
     // Progressive image details
@@ -480,14 +499,16 @@ pub struct JpegDecoder<T> {
     /// Sequential raw iMCU-row progress shared across borrowing sessions.
     raw_pull_state:                         RawPullState,
     /// Sequential converted scanline progress shared across borrowing sessions.
-    scanline_state:                         ScanlineState
+    scanline_state:                         ScanlineState,
+    pub(crate) scaled_output:              Option<Box<crate::scaled::ScaledDecodeState>>
 }
 
 /// Output target for one MCU decode call.
 pub(crate) enum McuDecodeOutput<'planes, 'buf> {
     Pixels(&'planes mut [u8]),
     RawPlanes(RawPlanesSink<'planes, 'buf>),
-    Scanlines(ConvertedScanlineSink<'planes>)
+    Scanlines(ConvertedScanlineSink<'planes>),
+    Scaled(&'planes mut crate::scaled::ScaledOutput)
 }
 
 impl McuDecodeOutput<'_, '_> {
@@ -499,7 +520,7 @@ impl McuDecodeOutput<'_, '_> {
         match self {
             Self::Pixels(pixels) => Some(pixels),
             Self::Scanlines(sink) => Some(sink.pixels),
-            Self::RawPlanes(_) => None
+            Self::RawPlanes(_) | Self::Scaled(_) => None
         }
     }
 
@@ -507,21 +528,21 @@ impl McuDecodeOutput<'_, '_> {
         match self {
             Self::RawPlanes(sink) => sink.requested_stripe,
             Self::Scanlines(sink) => Some(sink.requested_stripe),
-            Self::Pixels(_) => None
+            Self::Pixels(_) | Self::Scaled(_) => None
         }
     }
 
     pub(crate) const fn requested_raw_stripe(&self) -> Option<usize> {
         match self {
             Self::RawPlanes(sink) => sink.requested_stripe,
-            Self::Pixels(_) | Self::Scanlines(_) => None
+            Self::Pixels(_) | Self::Scanlines(_) | Self::Scaled(_) => None
         }
     }
 
     pub(crate) const fn requests_raw_output(&self) -> bool {
         match self {
             Self::RawPlanes(_) => true,
-            Self::Pixels(_) | Self::Scanlines(_) => false
+            Self::Pixels(_) | Self::Scanlines(_) | Self::Scaled(_) => false
         }
     }
 
@@ -1103,7 +1124,9 @@ where
 
         let (rows_written, source_complete) = match output {
             McuDecodeOutput::Scanlines(sink) => (sink.rows_written, sink.source_complete),
-            McuDecodeOutput::Pixels(_) | McuDecodeOutput::RawPlanes(_) => unreachable!()
+            McuDecodeOutput::Pixels(_)
+            | McuDecodeOutput::RawPlanes(_)
+            | McuDecodeOutput::Scaled(_) => unreachable!()
         };
         if let Err(error) = decode_result {
             if error.is_recoverable_eof() {
@@ -1186,6 +1209,23 @@ where
     #[must_use]
     pub fn component_ids(&self) -> Option<Vec<u8>> {
         self.decoder.raw_component_ids()
+    }
+
+    /// Quantization table of each component, in SOF declaration order.
+    ///
+    /// Each entry names its component, both by role and by SOF selector, and
+    /// carries the DQT destination the component's SOF entry selects and the
+    /// table it is reconstructed with: the one that destination held when the
+    /// first scan began, in natural (row-major) coefficient order rather than
+    /// the zig-zag order it is stored in. Together with the raw planes, this
+    /// lets a caller reason about the precision the encoder kept for each
+    /// component.
+    ///
+    /// Returns `None` when headers have not been decoded yet, contain no
+    /// components, or a component selects a table that was never defined.
+    #[must_use]
+    pub fn quantization_tables(&self) -> Option<Vec<QuantizationTable>> {
+        self.decoder.raw_quantization_tables()
     }
 
     /// Per-component raw plane geometry and sampling metadata.
@@ -1346,7 +1386,9 @@ where
 
         let sink = match output {
             McuDecodeOutput::RawPlanes(sink) => sink,
-            McuDecodeOutput::Pixels(_) | McuDecodeOutput::Scanlines(_) => unreachable!()
+            McuDecodeOutput::Pixels(_)
+            | McuDecodeOutput::Scanlines(_)
+            | McuDecodeOutput::Scaled(_) => unreachable!()
         };
         if sink.source_complete {
             self.decoder.raw_pull_state.buffered_source_complete = true;
@@ -1836,6 +1878,7 @@ where
             restart_interval: self.restart_interval,
             input_colorspace: self.input_colorspace,
             adobe_transform:  self.adobe_transform,
+            is_jfif:          self.is_jfif,
             is_mjpeg:         self.is_mjpeg
         }
     }
@@ -1846,6 +1889,7 @@ where
         self.restart_interval = snapshot.restart_interval;
         self.input_colorspace = snapshot.input_colorspace;
         self.adobe_transform = snapshot.adobe_transform;
+        self.is_jfif = snapshot.is_jfif;
         self.is_mjpeg = snapshot.is_mjpeg;
     }
 
@@ -1904,6 +1948,12 @@ where
 
     pub(crate) fn is_dnl_image(&self) -> bool {
         self.dnl_image
+    }
+
+    pub(crate) fn scan_starts_with_unknown_height(&self) -> bool {
+        self.scan_state
+            .as_ref()
+            .is_some_and(|state| state.scan_start_expects_dnl)
     }
 
     fn republish_resolved_dnl_height(&mut self) {
@@ -2155,6 +2205,7 @@ where
             color_convert_16:            color_convert,
             input_colorspace:            ColorSpace::YCbCr,
             adobe_transform:             None,
+            is_jfif:                     false,
             z_order:                     [0; MAX_COMPONENTS],
             restart_interval:            0,
             todo:                        0x7fff_ffff,
@@ -2191,7 +2242,8 @@ where
             pending_dnl_height:          None,
             pending_dnl_stream_position: None,
             raw_pull_state:              RawPullState::default(),
-            scanline_state:              ScanlineState::default()
+            scanline_state:              ScanlineState::default(),
+            scaled_output:               None
         }
     }
     /// Decode a buffer already in memory
@@ -2202,6 +2254,14 @@ where
     /// # Errors
     /// See DecodeErrors for an explanation
     pub fn decode(&mut self) -> Result<Vec<u8>, DecodeErrors> {
+        if self.options.jpeg_get_scale().is_some() {
+            self.decode_headers()?;
+            let size = self.output_buffer_size().ok_or(Self::SCALED_OUTPUT_SIZE_ERROR)?;
+            let mut out = vec![0; size];
+            self.decode_into(&mut out)?;
+            return Ok(out);
+        }
+        self.abort_scaled_sequence();
         self.abort_raw_pull_sequence();
         self.decode_headers()?;
         self.ensure_supported_encoding()?;
@@ -2280,10 +2340,14 @@ where
     ///  - `None`: Indicates headers are unavailable or image dimensions overflow `usize`
     ///
     /// DNL images return a buffer size based on the configured maximum height
-    /// until their actual height is known.
+    /// until their actual height is known in full-size mode. Reduced output
+    /// requires known dimensions.
     ///
     #[must_use]
     pub fn output_buffer_size(&self) -> Option<usize> {
+        if let Some(scale) = self.options.jpeg_get_scale() {
+            return self.scaled_output_buffer_size(scale);
+        }
         let height = self.resolved_dnl_height().map_or_else(
             || {
                 if self.expects_dnl {
@@ -2426,13 +2490,13 @@ where
     #[must_use]
     pub fn decoded_scanlines(&self) -> Option<usize> {
         let decoded_output_bytes = self.decoded_output_bytes()?;
-        let row_stride = usize::from(self.width())
-            .checked_mul(self.options.jpeg_get_out_colorspace().num_components())?;
+        let (width, height) = self.output_dimensions()?;
+        let row_stride = width.checked_mul(self.options.jpeg_get_out_colorspace().num_components())?;
         if row_stride == 0 {
             return Some(0);
         }
 
-        Some((decoded_output_bytes / row_stride).min(usize::from(self.height())))
+        Some((decoded_output_bytes / row_stride).min(height))
     }
 
     /// Begin an exclusive raw component-output session.
@@ -2442,6 +2506,7 @@ where
     /// output planes. The session borrows this decoder mutably, preventing
     /// pixel output or option changes until the session is dropped.
     pub fn raw_output(&mut self) -> RawDecodeSession<'_, T> {
+        self.abort_scaled_sequence();
         self.abort_scanline_sequence();
         if self.raw_pull_state.phase == RawPullPhase::Complete {
             self.raw_pull_state = RawPullState::default();
@@ -2465,6 +2530,7 @@ where
     /// Recreating a session after input suspension preserves decoder-owned
     /// scanline state.
     pub fn scanline_output(&mut self) -> ScanlineDecodeSession<'_, T> {
+        self.abort_scaled_sequence();
         self.abort_raw_pull_sequence();
         if self.scanline_state.phase == ScanlinePhase::Complete {
             self.abort_scanline_sequence();
@@ -2721,6 +2787,7 @@ where
     /// Changes rebuild cached output and dispatch state, so the next decode
     /// replays from scan start using the new options.
     pub fn set_options(&mut self, options: DecoderOptions) {
+        self.abort_scaled_sequence();
         self.abort_raw_pull_sequence();
         self.abort_scanline_sequence();
         self.clear_scan_checkpoints();
@@ -2926,17 +2993,14 @@ where
     }
 
     fn resolve_input_colorspace(&mut self) -> Result<(), DecodeErrors> {
-        self.input_colorspace = match self.adobe_transform {
-            Some(0) if self.components.len() == 1 => ColorSpace::Luma,
-            Some(0) if self.components.len() == 3 => ColorSpace::RGB,
-            Some(0) => ColorSpace::CMYK,
-            Some(1) => ColorSpace::YCbCr,
-            Some(2) => ColorSpace::YCCK,
-            Some(_) => unreachable!("APP14 parser rejects unknown transforms"),
-            None if self.components.len() == 1 => ColorSpace::Luma,
-            None if self.components.len() == 4 => ColorSpace::CMYK,
-            None if self.components.len() == 3
-                && self
+        // The rules of libjpeg-turbo's default_decompress_parms (jdapimin.c).
+        self.input_colorspace = match (self.components.len(), self.adobe_transform) {
+            (1, _) => ColorSpace::Luma,
+            // JFIF implies YCbCr, whatever APP14 says.
+            (3, _) if self.is_jfif => ColorSpace::YCbCr,
+            (3, Some(0)) => ColorSpace::RGB,
+            (3, None)
+                if self
                     .components
                     .iter()
                     .zip(b"RGB")
@@ -2944,7 +3008,9 @@ where
             {
                 ColorSpace::RGB
             }
-            None => ColorSpace::YCbCr
+            (4, None | Some(0)) => ColorSpace::CMYK,
+            (4, Some(_)) => ColorSpace::YCCK,
+            _ => ColorSpace::YCbCr
         };
 
         if self.input_colorspace.num_components() > self.components.len() {
@@ -2956,10 +3022,7 @@ where
                 )));
             }
 
-            if self.input_colorspace == ColorSpace::YCCK && self.components.len() == 3 {
-                warn!("Treating YCCK colorspace as YCbCr because component count is 3");
-                self.input_colorspace = ColorSpace::YCbCr;
-            } else if let Some(component_count) = u32::try_from(self.components.len())
+            if let Some(component_count) = u32::try_from(self.components.len())
                 .ok()
                 .and_then(NonZeroU32::new)
             {
@@ -3078,6 +3141,11 @@ where
                 //
                 // Atomic read: full body buffered first, then inspected.
                 with_marker_body(self, |decoder, body| {
+                    // A JFIF segment makes a three-component image YCbCr. Like
+                    // libjpeg-turbo, only count one with the 14 bytes of a JFIF header.
+                    if body.body().len() >= 14 && &body.body()[..5] == b"JFIF\0" {
+                        decoder.is_jfif = true;
+                    }
                     if body.body().len() >= 5 && &body.body()[..5] == b"AVI1\0" {
                         decoder.is_mjpeg = true;
                     }
@@ -3383,22 +3451,22 @@ where
     ///
     ///
     #[allow(clippy::too_many_lines)]
-    fn prepare_for_scan_decode(&mut self) -> Result<(), DecodeErrors> {
+    pub(crate) fn prepare_for_scan_decode(&mut self) -> Result<(), DecodeErrors> {
         // Pull the scan-resume state out into owned locals so the restore
         // below can freely mutate `self`. When headers haven't completed
         // yet, `scan_plan` is `None` and we just run header decoding below.
         struct ScanPlan {
-            scan_start_position:   usize,
-            scan_start_height:     u16,
+            scan_start_position:    usize,
+            scan_start_height:      u16,
             scan_start_expects_dnl: bool,
-            outer_append_snapshot: HeaderAppendStateSnapshot,
-            outer_sos_snapshot:    SosParamsSnapshot,
-            outer_header_snapshot: ScanHeaderStateSnapshot,
+            outer_append_snapshot:  HeaderAppendStateSnapshot,
+            outer_sos_snapshot:     SosParamsSnapshot,
+            outer_header_snapshot:  ScanHeaderStateSnapshot,
             /// Snapshots taken from the checkpoint (if any) so the seek and
             /// SOS-restore steps below do not need to touch `scan_state`.
-            checkpoint_view:       Option<CheckpointView>,
-            progressive_view:      Option<ProgressiveCheckpointView>,
-            progressive_fine_view: Option<ProgressiveFineCheckpointView>
+            checkpoint_view:        Option<CheckpointView>,
+            progressive_view:       Option<ProgressiveCheckpointView>,
+            progressive_fine_view:  Option<ProgressiveFineCheckpointView>
         }
         #[derive(Clone, Copy)]
         struct CheckpointView {
@@ -3619,7 +3687,7 @@ where
         Ok(())
     }
 
-    fn decode_mcu_output_with_success_cleanup(
+    pub(crate) fn decode_mcu_output_with_success_cleanup(
         &mut self, output: &mut McuDecodeOutput<'_, '_>
     ) -> Result<(), DecodeErrors> {
         match self.decode_mcu_output(output) {
@@ -3651,6 +3719,14 @@ where
     }
 
     pub fn decode_into(&mut self, out: &mut [u8]) -> Result<(), DecodeErrors> {
+        if let Some(scale) = self.options.jpeg_get_scale() {
+            self.decode_scaled_into(scale, out)?;
+            self.pixels_decoded = self
+                .scaled_output_buffer_size(scale)
+                .ok_or(Self::SCALED_OUTPUT_SIZE_ERROR)?;
+            return Ok(());
+        }
+        self.abort_scaled_sequence();
         self.abort_raw_pull_sequence();
         self.abort_scanline_sequence();
         if self.headers_decoded {
@@ -3759,7 +3835,7 @@ where
         }
     }
 
-    fn clear_scan_checkpoints(&mut self) {
+    pub(crate) fn clear_scan_checkpoints(&mut self) {
         if let Some(state) = self.scan_state.as_deref_mut() {
             state.scan_checkpoint = None;
             state.progressive_checkpoint = None;
@@ -3767,7 +3843,7 @@ where
         }
     }
 
-    fn abort_raw_pull_sequence(&mut self) {
+    pub(crate) fn abort_raw_pull_sequence(&mut self) {
         if self.raw_pull_state.owner == RawPullOwner::None && !self.raw_pull_state.input_complete {
             return;
         }
@@ -3775,7 +3851,7 @@ where
         self.clear_scan_checkpoints();
     }
 
-    fn abort_scanline_sequence(&mut self) {
+    pub(crate) fn abort_scanline_sequence(&mut self) {
         if !self.scanline_state.started {
             return;
         }
@@ -3793,6 +3869,26 @@ where
                 .map(|component| component.id)
                 .collect()
         )
+    }
+
+    fn raw_quantization_tables(&self) -> Option<Vec<QuantizationTable>> {
+        if !self.headers_decoded || self.components.is_empty() {
+            return None;
+        }
+        let qt_tables = &self.scan_state.as_deref()?.header_snapshot.qt_tables;
+        self.components
+            .iter()
+            .map(|component| {
+                let table = qt_tables[usize::from(component.quantization_table_number)].as_ref()?;
+                Some(QuantizationTable {
+                    component:    component.component_id,
+                    id:           component.id,
+                    table_number: component.quantization_table_number,
+                    // DQT values are 8 or 16 bit, so they always fit.
+                    values:       table.map(|value| value as u16)
+                })
+            })
+            .collect()
     }
 
     /// Copy one MCU stripe (`mcu_stripe_index`) of post-IDCT samples from
@@ -3943,13 +4039,16 @@ where
         for comp in &mut self.components {
             let hs = self.h_max / comp.horizontal_sample;
             let vs = self.v_max / comp.vertical_sample;
+            // Native fancy H/HV needs three visible samples, not three padded samples.
+            let visible_width =
+                (usize::from(self.info.width) * comp.horizontal_sample).div_ceil(self.h_max);
 
             let samp_factor = match (hs, vs) {
                 (1, 1) => {
                     comp.sample_ratio = SampleRatios::None;
                     upsample_no_op
                 }
-                (2, 1) => {
+                (2, 1) if visible_width > 2 => {
                     comp.sample_ratio = SampleRatios::H;
                     choose_horizontal_samp_function(&self.options)
                 }
@@ -3957,7 +4056,7 @@ where
                     comp.sample_ratio = SampleRatios::V;
                     choose_v_samp_function(&self.options)
                 }
-                (2, 2) => {
+                (2, 2) if visible_width > 2 => {
                     comp.sample_ratio = SampleRatios::HV;
                     choose_hv_samp_function(&self.options)
                 }
@@ -3986,7 +4085,7 @@ where
         self.info.height
     }
 
-    /// Get image dimensions as a tuple of width and height
+    /// Get coded image dimensions as a tuple of width and height
     /// or `None` if the image hasn't been decoded.
     ///
     /// # Returns
@@ -3999,6 +4098,17 @@ where
         } else {
             None
         };
+    }
+
+    /// Dimensions of packed output from [`Self::decode`] or [`Self::decode_into`],
+    /// accounting for the scale in `DecoderOptions`. Raw and scanline output
+    /// still use coded dimensions. A reduced output size requires known dimensions.
+    #[must_use]
+    pub fn output_dimensions(&self) -> Option<(usize, usize)> {
+        match self.options.jpeg_get_scale() {
+            Some(scale) => self.scaled_dimensions(scale),
+            None => self.dimensions()
+        }
     }
 }
 

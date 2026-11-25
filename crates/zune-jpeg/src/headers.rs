@@ -504,6 +504,48 @@ fn validate_scan_parameters(
     Ok(())
 }
 
+/// Strict mode: check a progressive scan against the scans accepted before it
+/// (ITU-T T.81 G.1.1.1 and B.2.3).
+///
+/// libjpeg-turbo refuses scans that break the first two checks, and warns about
+/// scans that break the others, which its strict mode turns into errors. Like
+/// libjpeg-turbo, this accepts a band sent again at full precision (Ah 0 after Al 0).
+fn validate_progression(
+    components: &[Components], scan: &[usize], spec_start: u8, spec_end: u8, succ_high: u8,
+    succ_low: u8
+) -> Result<(), DecodeErrors> {
+    let dc = spec_start == 0;
+    if (dc && spec_end != 0) || (!dc && (spec_start > spec_end || scan.len() != 1)) {
+        return Err(DecodeErrors::SosError(format!(
+            "Invalid progressive scan, Ns={} Ss={spec_start} Se={spec_end}",
+            scan.len()
+        )));
+    }
+    if succ_high != 0 && succ_low + 1 != succ_high {
+        return Err(DecodeErrors::SosError(format!(
+            "Invalid successive approximation, Ah={succ_high} Al={succ_low}"
+        )));
+    }
+    for &index in scan {
+        // Al of the last scan of each coefficient, or -1 before its first scan
+        let bits = &components[index].progressive_bits;
+        if !dc && bits[0] < 0 {
+            return Err(DecodeErrors::SosError(format!(
+                "AC scan of component {index} before its first DC scan"
+            )));
+        }
+        for k in spec_start..=spec_end {
+            let expected = bits[usize::from(k)].max(0);
+            if i16::from(succ_high) != i16::from(expected) {
+                return Err(DecodeErrors::SosError(format!(
+                    "Inconsistent progression for component {index} coefficient {k}: Ah={succ_high}, expected {expected}"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Parse a start of scan data
 pub(crate) fn parse_sos<T: ZByteReaderTrait>(
     image: &mut JpegDecoder<T>
@@ -571,12 +613,38 @@ pub(crate) fn parse_sos<T: ZByteReaderTrait>(
                 )));
             }
 
+            // T.81 B.2.3: a scan lists its components in the order of the frame header.
+            if image.options.strict_mode()
+                && huff_assignments
+                    .last()
+                    .is_some_and(|&(previous, _)| usize::from(j) <= previous)
+            {
+                return Err(DecodeErrors::SosError(format!(
+                    "Component {id} is out of frame order in the scan"
+                )));
+            }
+
             huff_assignments.push((usize::from(j), y));
             z_order[i as usize] = j as usize;
 
             let component = &image.components[usize::from(j)];
             if component.vertical_sample != 1 || component.horizontal_sample != 1 {
                 scan_subsampled = true;
+            }
+        }
+
+        // T.81 B.2.3: an interleaved scan has at most 10 blocks in an MCU.
+        if image.options.strict_mode() && ns > 1 {
+            let blocks: usize = huff_assignments
+                .iter()
+                .map(|&(j, _)| {
+                    image.components[j].horizontal_sample * image.components[j].vertical_sample
+                })
+                .sum();
+            if blocks > 10 {
+                return Err(DecodeErrors::SosError(format!(
+                    "Interleaved scan with {blocks} blocks in an MCU, the limit is 10"
+                )));
             }
         }
 
@@ -595,6 +663,16 @@ pub(crate) fn parse_sos<T: ZByteReaderTrait>(
             succ_high,
             succ_low
         )?;
+        if image.is_progressive && image.options.strict_mode() {
+            validate_progression(
+                &image.components,
+                &z_order[..usize::from(ns)],
+                spec_start,
+                spec_end,
+                succ_high,
+                succ_low
+            )?;
+        }
 
         // Commit phase: all reads and validations succeeded.
         image.num_scans = ns;
@@ -615,6 +693,16 @@ pub(crate) fn parse_sos<T: ZByteReaderTrait>(
         image.spec_end = spec_end;
         image.succ_high = succ_high;
         image.succ_low = succ_low;
+
+        // A restart interval is scan-local: each scan restarts the counter, since a scan's
+        // data units are counted from its own SOS. Not resetting it here lets a scan whose
+        // data-unit count is not a multiple of the interval leak its remainder into the next
+        // component's scan, shifting every later restart boundary. In a non-interleaved file
+        // each component is its own scan (ITU-T.81 A.2.1), so the leaked remainder misplaces
+        // RST markers for the remaining components.
+        if image.restart_interval != 0 {
+            image.todo = image.restart_interval;
+        }
 
         trace!("Ss={spec_start}, Se={spec_end} Ah={succ_high} Al={succ_low}");
 
@@ -780,19 +868,10 @@ pub(crate) fn parse_app2<T: ZByteReaderTrait>(
             let seq_no = rest[0];
             let num_markers = rest[1];
 
-            // Mirrors libjpeg-turbo jdicc.c: reject num_markers == 0
-            // and seq_no out of [1, num_markers]. No artificial cap on
-            // num_markers — the field is a u8 so 255 is the natural limit.
-            if num_markers == 0 {
-                return Err(DecodeErrors::Format(format!(
-                    "ICC profile claims {num_markers} chunks (must be >= 1)"
-                )));
-            }
-            if seq_no == 0 || seq_no > num_markers {
-                return Err(DecodeErrors::Format(format!(
-                    "ICC chunk seq_no {seq_no} out of range for {num_markers} chunks"
-                )));
-            }
+            // The profile is optional metadata. libjpeg-turbo stores every chunk and
+            // decodes the image; only jpeg_read_icc_profile() (jdicc.c) refuses bad
+            // numbering, with a warning. Keep the chunk, so that `icc_profile()`
+            // returns `None` for the whole inconsistent profile.
 
             let data = rest[2..].to_vec();
             App2Payload::IccChunk(ICCChunk {
