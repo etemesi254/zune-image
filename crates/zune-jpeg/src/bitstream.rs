@@ -913,7 +913,10 @@ impl BitStream for BitStreamHuffman {
         let (mut symbol, mut r, mut fast_ac);
         // Decode AC coefficients
         let mut pos: usize = 1;
-        if self.bits_left < 1 && self.marker.is_some() {
+        if self.skip_mcu {
+            return Ok(0);
+        }
+        if self.strict && self.bits_left < 1 && self.marker.is_some() {
             return Err(DecodeErrors::Format(
                 "No more bytes left in stream before marker".to_string()
             ));
