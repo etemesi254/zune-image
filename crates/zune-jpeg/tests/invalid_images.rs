@@ -88,27 +88,23 @@ fn mul_with_overflow() {
 
 #[test]
 fn baseline_scan_count_is_limited() {
-    // Each baseline scan walks the whole image, so a few bytes per extra scan cost a
-    // full-image pass each. Like progressive images, baseline images may have at
-    // most `max_scans` scans.
-    let data = include_bytes!("../../../test-images/jpeg/tiny_non_interleaved_444.jpg");
-    let limit = zune_core::options::DecoderOptions::default().jpeg_get_max_scans();
-    let mut many = data[..data.len() - 2].to_vec();
-    for _ in 0..limit {
-        // SOS for component 1 with tables 0/0, then four bytes of entropy data
-        many.extend([0xff, 0xda, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3f, 0x00]);
-        many.extend([0x12, 0x34, 0x56, 0x78]);
-    }
-    many.extend([0xff, 0xd9]);
+    let options = DecoderOptions::default()
+        .set_strict_mode(false)
+        .jpeg_set_max_scans(3);
+    let decode = |scans: &[&[u8]]| {
+        let data = one_mcu(&[(1, 1); 3], scans);
+        JpegDecoder::new_with_options(ZCursor::new(data), options).decode()
+    };
 
-    JpegDecoder::new(ZCursor::new(data.as_slice()))
-        .decode()
-        .unwrap();
-    let err = JpegDecoder::new(ZCursor::new(many)).decode().unwrap_err();
+    // Repeats before the last components arrive count toward the budget.
+    let expected = decode(&[&[1], &[1], &[2, 3]]).unwrap();
+    let err = decode(&[&[1], &[1], &[1], &[2, 3]]).unwrap_err();
     assert!(
-        matches!(&err, zune_jpeg::errors::DecodeErrors::Format(m) if m.contains("Too many scans")),
+        matches!(&err, DecodeErrors::Format(m) if m.contains("Too many scans")),
         "unexpected error: {err:?}"
     );
+    // Once the image is complete, lenient mode ignores the extra SOS.
+    assert_eq!(decode(&[&[1], &[1], &[2, 3], &[1]]).unwrap(), expected);
 }
 
 /// Sampling factors (H, V) of a frame's components, whose ids are 1, 2 and so on.
