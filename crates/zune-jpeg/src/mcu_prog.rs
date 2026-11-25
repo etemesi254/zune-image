@@ -35,6 +35,12 @@ fn progressive_input_available<B: BitStream>(stream: &B) -> bool {
     usize::from(stream.bits_left()) >= stream.overread_by().saturating_sub(1).saturating_mul(8)
 }
 
+fn progressive_input_is_coded<B: BitStream>(stream: &B) -> bool {
+    // Sample before restart handling clears padding/corruption flags. Callers
+    // keep the publication prefix closed after the first invalid MCU.
+    !stream.consumed_past_end() && !stream.consumed_marker_padding() && !stream.has_corrupt_data()
+}
+
 /// Libjpeg's progressive block smoothing, applied only to the IDCT workspace.
 /// Estimated coefficients must never enter the scan buffers used by refinement
 /// or retry. Precision is in zigzag order; quantization is in natural order.
@@ -437,6 +443,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             }
         }
 
+        self.progressive_eoi_seen |= marker == Marker::EOI;
         self.reassemble_extended_xmp();
         self.finish_progressive_decoding(block, output, upsampler_scratch)
     }
@@ -448,6 +455,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     ) -> Result<bool, DecodeErrors> {
         self.progressive_scan_last_good_row = 0;
         let dc_seen_before = self.capture_progressive_dc_seen();
+        self.progressive_input_rows = 0;
         if !use_scratch_coefficients {
             // The default first decode attempt takes this path and updates the
             // existing progressive buffers directly without cloning them.
@@ -498,6 +506,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let accepted_dc_seen = self.capture_progressive_dc_seen();
         // DC presence commits and rolls back with the coefficient buffers.
         self.restore_progressive_dc_seen(dc_seen_before);
+        self.progressive_eoi_seen |= matches!(*stream.marker(), Some(Marker::EOI));
 
         if let Err(e) = result {
             if matches!(e, DecodeErrors::Cancelled) {
@@ -575,6 +584,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         &mut self, stream: &mut B, block: &mut [Vec<i16>; MAX_COMPONENTS], require_real_dc: bool
     ) -> Result<bool, DecodeErrors> {
         let result = self.parse_entropy_coded_data(stream, block, None, require_real_dc);
+        self.progressive_eoi_seen |= matches!(*stream.marker(), Some(Marker::EOI));
 
         if let Err(e) = result {
             if matches!(e, DecodeErrors::Cancelled) {
@@ -679,6 +689,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         self.progressive_completed_scans = 0;
         self.progressive_displayed_scans = 0;
         self.progressive_render_incomplete = false;
+        self.progressive_input_rows = 0;
         self.pixels_decoded = 0;
     }
 
@@ -848,6 +859,14 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         (mcu_width, mcu_height)
     }
 
+    fn set_progressive_input_row(&mut self, component: usize, row: usize, height: usize) {
+        self.progressive_input_rows = if row == height {
+            self.mcu_y
+        } else {
+            row / self.components[component].vertical_sample
+        };
+    }
+
     fn parse_dc_first_non_interleaved<B: BitStream>(
         &mut self, stream: &mut B, buffer: &mut [Vec<i16>; MAX_COMPONENTS], k: usize,
         resume_position: Option<(usize, usize)>, require_real_dc: bool
@@ -856,6 +875,12 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let dc_pos = self.components[k].dc_huff_table % MAX_COMPONENTS;
         let width_stride = self.components[k].width_stride / 8;
         let (resume_row, resume_col) = resume_position.unwrap_or((0, 0));
+        let mut publication_valid = progressive_input_is_coded(stream);
+        self.set_progressive_input_row(
+            k,
+            if publication_valid { resume_row } else { 0 },
+            mcu_height
+        );
 
         let mut cancel = self.cancel_debounced(mcu_width);
         for i in resume_row..mcu_height {
@@ -878,11 +903,15 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 if let Some(dc_pred) = dc_pred_opt {
                     self.decode_progressive_dc_first(stream, dc_pred, k, dc_pos, require_real_dc)?;
 
+                    publication_valid &= progressive_input_is_coded(stream);
                     self.todo -= 1;
                     self.handle_rst_main(stream)?;
                 }
             }
-            self.checkpoint_progressive_dc_first_row::<B>(stream, i + 1)?;
+            if publication_valid {
+                self.set_progressive_input_row(k, i + 1, mcu_height);
+                self.checkpoint_progressive_dc_first_row::<B>(stream, i + 1)?;
+            }
         }
         Ok(())
     }
@@ -893,6 +922,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let (mcu_width, mcu_height) = self.get_non_interleaved_dimensions(k);
         let width_stride = self.components[k].width_stride / 8;
         let component_buffer = &mut buffer[k];
+        let mut publication_valid = progressive_input_is_coded(stream);
 
         let mut cancel = self.cancel_debounced(mcu_width);
         for i in 0..mcu_height {
@@ -908,9 +938,13 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
                 if let Some(dc_pred) = dc_pred_id {
                     stream.decode_prog_dc_refine(&mut self.stream, dc_pred)?;
+                    publication_valid &= progressive_input_is_coded(stream);
                     self.todo -= 1;
                     self.handle_rst_main(stream)?;
                 }
+            }
+            if publication_valid {
+                self.set_progressive_input_row(k, i + 1, mcu_height);
             }
         }
         Ok(())
@@ -922,6 +956,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let (mcu_width, mcu_height) = self.get_non_interleaved_dimensions(k);
         let ac_pos = self.components[k].ac_huff_table;
         let component_buffer_data = &mut buffer[k];
+        let mut publication_valid = progressive_input_is_coded(stream);
 
         let mut cancel = self.cancel_debounced(mcu_width);
         for i in 0..mcu_height {
@@ -952,8 +987,12 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     }
                 }
 
+                publication_valid &= progressive_input_is_coded(stream);
                 self.todo -= 1;
                 self.handle_rst_main(stream)?;
+            }
+            if publication_valid {
+                self.set_progressive_input_row(k, i + 1, mcu_height);
             }
         }
         Ok(())
@@ -966,6 +1005,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let ac_pos = self.components[k].ac_huff_table;
         let component_buffer_data = &mut buffer[k];
         let width_stride = self.components[k].width_stride / 8;
+        let mut publication_valid = progressive_input_is_coded(stream);
 
         let mut cancel = self.cancel_debounced(mcu_width);
         for i in 0..mcu_height {
@@ -986,8 +1026,12 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 let ac_table = B::get_ac_table(&mut self.entropy_tables, ac_pos)?;
                 stream.decode_mcu_ac_refine(&mut self.stream, ac_table, data)?;
 
+                publication_valid &= progressive_input_is_coded(stream);
                 self.todo -= 1;
                 self.handle_rst_main(stream)?;
+            }
+            if publication_valid {
+                self.set_progressive_input_row(k, i + 1, mcu_height);
             }
         }
         Ok(())
@@ -999,6 +1043,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     ) -> Result<(), DecodeErrors> {
         let mut cancel = self.cancel_debounced(self.mcu_x);
         let (resume_row, resume_col) = resume_position.unwrap_or((0, 0));
+        let mut publication_valid = progressive_input_is_coded(stream);
+        self.progressive_input_rows = if publication_valid { resume_row } else { 0 };
         for i in resume_row..self.mcu_y {
             if progressive_input_available(stream) {
                 self.progressive_scan_last_good_row = i;
@@ -1037,10 +1083,14 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         }
                     }
                 }
+                publication_valid &= progressive_input_is_coded(stream);
                 self.todo -= 1;
                 self.handle_rst_main(stream)?;
             }
-            self.checkpoint_progressive_dc_first_row::<B>(stream, i + 1)?;
+            if publication_valid {
+                self.progressive_input_rows = i + 1;
+                self.checkpoint_progressive_dc_first_row::<B>(stream, i + 1)?;
+            }
         }
         Ok(())
     }
@@ -1076,6 +1126,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         &mut self, stream: &mut B, buffer: &mut [Vec<i16>; MAX_COMPONENTS]
     ) -> Result<(), DecodeErrors> {
         let mut cancel = self.cancel_debounced(self.mcu_x);
+        let mut publication_valid = progressive_input_is_coded(stream);
         for i in 0..self.mcu_y {
             if progressive_input_available(stream) {
                 self.progressive_scan_last_good_row = i;
@@ -1102,6 +1153,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         }
                     }
                 }
+                publication_valid &= progressive_input_is_coded(stream);
                 self.todo -= 1;
 
                 // Progressive does not record per-RST checkpoints —
@@ -1109,6 +1161,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 // mid-scan resume would re-apply partial deltas. On
                 // EOF the decoder falls back to scan-start replay.
                 self.handle_rst_main(stream)?;
+            }
+            if publication_valid {
+                self.progressive_input_rows = i + 1;
             }
         }
         Ok(())
@@ -1209,6 +1264,19 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let handled_restart = self.handle_rst_main_inner(stream)?;
         Ok(was_due && handled_restart)
     }
+    pub(crate) fn progressive_smoothing_enabled(&self) -> bool {
+        self.components.iter().all(|component| {
+            component.progressive_bits[0] >= 0
+                && SMOOTHING_COEFFICIENTS
+                    .iter()
+                    .all(|&index| component.quantization_table[index] != 0)
+        }) && self.components.iter().any(|component| {
+            component.progressive_bits[1..10]
+                .iter()
+                .any(|&bits| bits != 0)
+        })
+    }
+
     #[allow(clippy::too_many_lines)]
     #[allow(clippy::needless_range_loop, clippy::cast_sign_loss)]
     fn finish_progressive_decoding(
@@ -1276,16 +1344,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let mut tmp = [0_i32; DCT_BLOCK];
 
         let raw_mode = output.is_raw();
-        let smoothing_enabled = self.components.iter().all(|component| {
-            component.progressive_bits[0] >= 0
-                && SMOOTHING_COEFFICIENTS
-                    .iter()
-                    .all(|&index| component.quantization_table[index] != 0)
-        }) && self.components.iter().any(|component| {
-            component.progressive_bits[1..10]
-                .iter()
-                .any(|&bits| bits != 0)
-        });
+        let smoothing_enabled = self.progressive_smoothing_enabled();
 
         for (pos, comp) in self.components.iter_mut().enumerate() {
             // Allocate only needed components.
@@ -1512,26 +1571,40 @@ pub fn get_marker<T, B: BitStream>(
 where
     T: ZByteReaderTrait
 {
+    get_marker_with_discarded(reader, stream).map(|(marker, _)| marker)
+}
+
+pub(crate) fn get_marker_with_discarded<T, B: BitStream>(
+    reader: &mut ZReader<T>, stream: &mut B
+) -> Result<(Marker, usize), DecodeErrors>
+where
+    T: ZByteReaderTrait
+{
     if let Some(marker) = stream.marker().take() {
-        return Ok(marker);
+        return Ok((marker, 0));
     }
 
-    // read until we get a marker
-
+    let mut discarded = 0;
     while !reader.eof()? {
         let marker = reader.read_u8_err()?;
 
         if marker == 255 {
             let mut r = reader.read_u8_err()?;
+            let mut prefix_bytes = 1;
             // 0xFF 0XFF(some images may be like that)
             while r == 0xFF {
+                prefix_bytes += 1;
                 r = reader.read_u8_err()?;
             }
 
             if r != 0 {
                 return Marker::from_u8(r)
+                    .map(|marker| (marker, discarded))
                     .ok_or_else(|| DecodeErrors::Format(format!("Unknown marker 0xFF{r:X}")));
             }
+            discarded += prefix_bytes + 1;
+        } else {
+            discarded += 1;
         }
     }
     return Err(DecodeErrors::ExhaustedData);
@@ -2181,6 +2254,10 @@ mod tests {
                 .jpeg_set_out_colorspace(ColorSpace::RGB);
             let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&data), options);
             let pixels = decoder.decode().unwrap();
+            assert_eq!(
+                decoder.buffered_output_rows(),
+                Some(if eoi { 8 } else { 0 })
+            );
             assert_eq!(decoder.progressive_mcus_buffer[0][0], 128);
             assert_eq!(decoder.progressive_mcus_buffer[1][0], 128);
             assert_eq!(
@@ -2189,6 +2266,337 @@ mod tests {
             );
             let expected = if eoi { [166, 127, 172] } else { [144, 138, 172] };
             assert!(pixels.chunks_exact(3).all(|pixel| pixel == expected));
+        }
+    }
+
+    #[test]
+    fn buffered_progressive_publication_requires_every_dc_component() {
+        for (truncated, eoi) in [(false, true), (false, false), (true, false)] {
+            let data = noninterleaved_dc_jpeg(1, truncated, eoi);
+            let options = DecoderOptions::default().set_strict_mode(false);
+            let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&data), options);
+            assert_eq!(decoder.decode().unwrap().len(), 8 * 8 * 3);
+            assert_eq!(decoder.buffered_output_rows(), Some(0));
+        }
+    }
+
+    fn publication_scan_jpeg(
+        components: u8, spectral_start: u8, refine: bool, entropy: &[u8], eoi: bool
+    ) -> Vec<u8> {
+        fn scan(data: &mut Vec<u8>, components: u8, start: u8, refine: bool, entropy: &[u8]) {
+            data.extend_from_slice(&[0xff, 0xda, 0, 6 + 2 * components, components]);
+            for component in 1..=components {
+                data.extend_from_slice(&[component, 0]);
+            }
+            data.extend_from_slice(&[
+                start,
+                if start == 0 { 0 } else { 63 },
+                if refine { 0x10 } else { 1 }
+            ]);
+            for &byte in entropy {
+                data.push(byte);
+                if byte == 0xff {
+                    data.push(0);
+                }
+            }
+        }
+
+        let mut data = vec![0xff, 0xd8, 0xff, 0xdb, 0, 67, 0];
+        data.extend_from_slice(&[8; 64]);
+        data.extend_from_slice(&[0xff, 0xc2, 0, 8 + 3 * components, 8, 1, 0, 0, 8, components]);
+        for component in 1..=components {
+            data.extend_from_slice(&[component, 0x11, 0]);
+        }
+        data.extend_from_slice(&[0xff, 0xc4, 0, 38]);
+        for table in [0, 0x10] {
+            data.extend_from_slice(&[table, 1]);
+            data.extend_from_slice(&[0; 16]);
+        }
+        scan(
+            &mut data,
+            components,
+            0,
+            false,
+            &vec![0; 4 * usize::from(components)]
+        );
+        if spectral_start != 0 && refine {
+            scan(&mut data, 1, spectral_start, false, &[0; 4]);
+        }
+        scan(
+            &mut data,
+            if spectral_start == 0 { components } else { 1 },
+            spectral_start,
+            refine,
+            entropy
+        );
+        if eoi {
+            data.extend_from_slice(&[0xff, 0xd9]);
+        }
+        data
+    }
+
+    #[test]
+    fn progressive_publication_excludes_synthetic_eof_bits() {
+        for components in [1, 3] {
+            for (spectral_start, refine) in [(0, true), (1, false), (1, true)] {
+                let scan_components = if spectral_start == 0 { components } else { 1 };
+                let lengths: &[usize] =
+                    if scan_components == 3 { &[0, 1, 3, 9, 12] } else { &[0, 1, 3, 4] };
+                for &bytes in lengths {
+                    let input_rows = bytes * 8 / usize::from(scan_components);
+                    let entropy = vec![if spectral_start == 0 { 0xff } else { 0 }; bytes];
+                    for eoi in [false, true] {
+                        let data = publication_scan_jpeg(
+                            components,
+                            spectral_start,
+                            refine,
+                            &entropy,
+                            eoi
+                        );
+                        let expected_rows = if eoi {
+                            256
+                        } else {
+                            input_rows.saturating_sub(if spectral_start == 0 { 2 } else { 0 }) * 8
+                        };
+                        for use_simd in [false, true] {
+                            let options = DecoderOptions::default()
+                                .set_strict_mode(false)
+                                .set_use_unsafe(use_simd);
+                            let mut decoder =
+                                JpegDecoder::new_with_options(ZCursor::new(&data), options);
+                            decoder.decode_headers().unwrap();
+                            let size = decoder.output_buffer_size().unwrap();
+                            let mut output = vec![0xa5; size + 7];
+                            decoder.decode_into(&mut output).unwrap();
+                            assert_eq!(
+                                decoder.buffered_output_rows(),
+                                Some(expected_rows),
+                                "components={components} start={spectral_start} refine={refine} \
+                                 bytes={bytes} eoi={eoi} simd={use_simd}"
+                            );
+                            assert_eq!(decoder.progressive_input_rows, input_rows);
+                            assert_eq!(&output[size..], &[0xa5; 7]);
+                            for (component, coefficients) in decoder.progressive_mcus_buffer
+                                [..usize::from(components)]
+                                .iter()
+                                .enumerate()
+                            {
+                                for (row, block) in coefficients.chunks_exact(64).enumerate() {
+                                    let expected = i16::from(
+                                        spectral_start == 0
+                                            && row * usize::from(components) + component
+                                                < bytes * 8
+                                    );
+                                    assert_eq!(block[0], expected);
+                                    assert!(block[1..].iter().all(|&coefficient| coefficient == 0));
+                                }
+                            }
+                            let mut scaled = JpegDecoder::new_with_options(
+                                ZCursor::new(&data), options.jpeg_set_scale(crate::JpegScale::Half)
+                            );
+                            scaled.decode_headers().unwrap();
+                            let mut reduced = vec![0; scaled.output_buffer_size().unwrap()];
+                            scaled.decode_into(&mut reduced).unwrap();
+                            assert_eq!(scaled.buffered_output_rows(), Some(expected_rows));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn progressive_publication_preserves_real_eob_runs_at_eof() {
+        let mut data = publication_scan_jpeg(1, 1, false, &[3], false);
+        let dht = data
+            .windows(2)
+            .position(|marker| marker == [0xff, 0xc4])
+            .unwrap();
+        let length = usize::from(u16::from_be_bytes([data[dht + 2], data[dht + 3]]));
+        // The one-bit code plus five zero bits covers all 32 blocks.
+        data[dht + 2 + length - 1] = 0x50;
+        let mut decoder = JpegDecoder::new_with_options(
+            ZCursor::new(&data),
+            DecoderOptions::default().set_strict_mode(false)
+        );
+        assert!(decoder.decode().unwrap().iter().all(|&pixel| pixel == 128));
+        assert_eq!(decoder.progressive_input_rows, 32);
+        assert_eq!(decoder.buffered_output_rows(), Some(256));
+    }
+
+    #[test]
+    fn progressive_publication_does_not_resume_after_padded_restart() {
+        for padded_first_interval in [false, true] {
+            let mut data = publication_scan_jpeg(1, 0, true, &[], false);
+            let sof = data
+                .windows(2)
+                .position(|marker| marker == [0xff, 0xc2])
+                .unwrap();
+            data[sof + 5..sof + 7].copy_from_slice(&248_u16.to_be_bytes());
+            let sos = data
+                .windows(2)
+                .rposition(|marker| marker == [0xff, 0xda])
+                .unwrap();
+            data.splice(sos..sos, [0xff, 0xdd, 0, 4, 0, 16]);
+            data.extend_from_slice(&[0xff, 0]);
+            if !padded_first_interval {
+                data.extend_from_slice(&[0xff, 0]);
+            }
+            data.extend_from_slice(&[0xff, 0xd0, 0xff, 0, 0xff, 0]);
+            let mut decoder = JpegDecoder::new_with_options(
+                ZCursor::new(&data),
+                DecoderOptions::default().set_strict_mode(false)
+            );
+            decoder.decode().unwrap();
+            assert_eq!(
+                decoder.progressive_input_rows,
+                if padded_first_interval { 8 } else { 31 }
+            );
+            assert_eq!(
+                decoder.buffered_output_rows(),
+                Some(if padded_first_interval { 48 } else { 232 })
+            );
+            for (row, block) in decoder.progressive_mcus_buffer[0]
+                .chunks_exact(64)
+                .take(31)
+                .enumerate()
+            {
+                assert_eq!(
+                    block[0],
+                    i16::from(!(8..16).contains(&row) || !padded_first_interval),
+                    "row={row} padded_first_interval={padded_first_interval}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "arith")]
+    fn progressive_publication_keeps_arithmetic_marker_zero_extension() {
+        use crate::bitstream::BitStream;
+        use crate::bitstream_arith::BitStreamArithmetic;
+
+        let mut reader = zune_core::bytestream::ZReader::new(ZCursor::new([0xff, 0xd9]));
+        let mut stream = BitStreamArithmetic::new_progressive(0, 0, 0);
+        let mut coefficient = 0;
+        for _ in 0..64 {
+            stream
+                .decode_prog_dc_refine(&mut reader, &mut coefficient)
+                .unwrap();
+            assert!(super::progressive_input_is_coded(&stream));
+        }
+        assert_eq!(*stream.marker(), Some(crate::marker::Marker::EOI));
+    }
+
+    #[test]
+    #[cfg(feature = "std")]
+    fn progressive_publication_retries_empty_refinement_without_losing_preview() {
+        let data = publication_scan_jpeg(1, 0, true, &[0xff; 4], true);
+        let len = data.len();
+        let sos = data
+            .windows(2)
+            .rposition(|marker| marker == [0xff, 0xda])
+            .unwrap();
+        let visible = Rc::new(Cell::new(sos + 10));
+        let input = GrowingInput::new(data, Rc::clone(&visible));
+        let mut decoder =
+            JpegDecoder::new_with_options(input, DecoderOptions::default().set_strict_mode(false));
+        decoder.set_incremental_mode(true);
+        decoder.decode_headers().unwrap();
+        let size = decoder.output_buffer_size().unwrap();
+        let mut output = vec![0xa5; size + 7];
+        let error = decoder.decode_into(&mut output).unwrap_err();
+        assert!(error.is_recoverable_eof(), "{error:?}");
+        assert_eq!(decoder.buffered_output_rows(), Some(0));
+        assert_eq!(decoder.decoded_scanlines(), Some(0));
+        assert_eq!(decoder.decoded_preview_scanlines(), Some(256));
+        assert!(output[..size].iter().all(|&pixel| pixel == 128));
+        visible.set(len);
+        decoder.decode_into(&mut output).unwrap();
+        assert_eq!(decoder.buffered_output_rows(), Some(256));
+        assert_eq!(decoder.decoded_scans(), Some(2));
+        assert!(output[..size].iter().all(|&pixel| pixel == 129));
+        assert_eq!(&output[size..], &[0xa5; 7]);
+    }
+
+    #[test]
+    fn progressive_publication_preserves_best_effort_raw_pixels() {
+        for (start, refine) in [(0, true), (1, false), (1, true)] {
+            let data = publication_scan_jpeg(1, start, refine, &[], false);
+            let mut decoder = JpegDecoder::new_with_options(
+                ZCursor::new(&data),
+                DecoderOptions::default().set_strict_mode(false)
+            );
+            decoder.decode_headers().unwrap();
+            let mut plane = vec![0xa5; 13 * 256];
+            {
+                let mut raw = decoder.raw_output();
+                raw.set_input_complete();
+                raw.decode_into_planes_strided(&mut [&mut plane], &[13])
+                    .unwrap();
+            }
+            assert_eq!(decoder.buffered_output_rows(), Some(0));
+            for row in plane.chunks_exact(13) {
+                assert_eq!(&row[..8], &[128; 8]);
+                assert_eq!(&row[8..], &[0xa5; 5]);
+            }
+        }
+    }
+
+    #[test]
+    fn progressive_output_rows_track_sampling_and_partial_bottom_mcus() {
+        for eoi in [false, true] {
+            let mut data = noninterleaved_dc_jpeg(0, false, false);
+            let sof = data
+                .windows(2)
+                .position(|marker| marker == [0xff, 0xc2])
+                .unwrap();
+            data[sof + 5..sof + 7].copy_from_slice(&113_u16.to_be_bytes());
+            data[sof + 11] = 0x12;
+            for component in 1..=3 {
+                data.extend_from_slice(&[0xff, 0xda, 0, 8, 1, component, 0, 0, 0, 0]);
+                let blocks = if component == 1 { 15 } else { 8 };
+                let mut bits = Vec::new();
+                for _ in 0..blocks {
+                    bits.extend_from_slice(&[0, 1, 0, 0, 0, 0, 0, 0, 0]);
+                }
+                while bits.len() % 8 != 0 {
+                    bits.push(1);
+                }
+                for chunk in bits.chunks_exact(8) {
+                    let byte = chunk.iter().fold(0, |value, bit| (value << 1) | bit);
+                    data.push(byte);
+                    if byte == 0xff {
+                        data.push(0);
+                    }
+                }
+            }
+            if eoi {
+                data.extend_from_slice(&[0xff, 0xd9]);
+            }
+            let options = DecoderOptions::default().set_strict_mode(false);
+            let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&data), options);
+            assert_eq!(decoder.buffered_output_rows(), None);
+            let pixels = decoder.decode().unwrap();
+            assert_eq!(pixels.len(), 8 * 113 * 3);
+            assert_eq!(decoder.progressive_input_rows, if eoi { 8 } else { 7 });
+            assert_eq!(
+                decoder.buffered_output_rows(),
+                Some(if eoi { 113 } else { 80 })
+            );
+
+            let options = DecoderOptions::default().set_strict_mode(false);
+            let mut scaled = JpegDecoder::new_with_options(
+                ZCursor::new(&data), options.jpeg_set_scale(crate::JpegScale::Half)
+            );
+            scaled.decode_headers().unwrap();
+            let mut reduced = vec![0; scaled.output_buffer_size().unwrap()];
+            scaled.decode_into(&mut reduced).unwrap();
+            assert_eq!(scaled.output_dimensions(), Some((4, 57)));
+            assert_eq!(
+                scaled.buffered_output_rows(),
+                Some(if eoi { 113 } else { 80 })
+            );
         }
     }
 
@@ -2221,6 +2629,7 @@ mod tests {
             decoder
                 .decode_into(&mut packed)
                 .unwrap_or_else(|error| panic!("incremental={incremental}: {error:?}"));
+            assert_eq!(decoder.buffered_output_rows(), None);
 
             let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&data), options);
             decoder.set_incremental_mode(incremental);
