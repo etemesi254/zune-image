@@ -333,10 +333,13 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         return Err(DecodeErrors::ExhaustedData);
                     }
                     if all_components_in_first_scan {
-                        if let Some(remaining) =
-                            output.pixels_mut().and_then(|pixels| pixels.get_mut(pixels_written..))
-                        {
-                            remaining.fill(128);
+                        if let McuDecodeOutput::Pixels(pixels) = output {
+                            if let Some(remaining) = pixels.get_mut(pixels_written..) {
+                                remaining.fill(128);
+                            }
+                        }
+                        if let McuDecodeOutput::Scanlines(scanlines) = output {
+                            scanlines.source_complete = true;
                         }
                         return Ok(());
                     }
@@ -462,10 +465,26 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                                 McuDecodeOutput::RawPlanes(raw_planes) => {
                                     self.copy_raw_planes_for_mcu_stripe(i, raw_planes)?;
                                 }
-                                McuDecodeOutput::Scanlines(_) => return Err(e),
+                                McuDecodeOutput::Scanlines(scanlines) => {
+                                    if !stream.consumed_past_end() {
+                                        let mut stripe_written = 0;
+                                        self.post_process(
+                                            scanlines.pixels,
+                                            scanlines.stride,
+                                            i,
+                                            mcu_height,
+                                            width,
+                                            padded_width,
+                                            &mut stripe_written,
+                                            upsampler_scratch_space,
+                                        )?;
+                                        scanlines.rows_written = stripe_written / scanlines.stride;
+                                    }
+                                    scanlines.source_complete = true;
+                                }
                                 McuDecodeOutput::Scaled(_) => {},
                             }
-                        } else if let Some(pixels) = output.pixels_mut() {
+                        } else if let McuDecodeOutput::Pixels(pixels) = output {
                             pixels.fill(128);
                         }
                         return Ok(());
@@ -499,24 +518,32 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         return Err(DecodeErrors::ExhaustedData);
                     }
                     if all_components_in_first_scan {
-                        if let Some(remaining) =
-                            output.pixels_mut().and_then(|pixels| pixels.get_mut(pixels_written..))
-                        {
-                            remaining.fill(128);
+                        if let McuDecodeOutput::Pixels(pixels) = output {
+                            if let Some(remaining) = pixels.get_mut(pixels_written..) {
+                                remaining.fill(128);
+                            }
+                        }
+                        if let McuDecodeOutput::Scanlines(scanlines) = output {
+                            scanlines.source_complete = true;
                         }
                         return Ok(());
                     }
                     break 'sos;
                 }
 
-                // A pull request must not publish a row assembled after the
-                // entropy reader exhausted visible input.
-                if output.requested_output_stripe().is_some() && stream.overread_by() > 0 {
+                // Growing pull requests must not publish a row assembled after
+                // the entropy reader exhausted visible input.
+                if output.requested_output_stripe().is_some()
+                    && stream.overread_by() > 0
+                    && (self.scan_eof_is_error() || !self.scanline_input_complete())
+                {
                     return Err(DecodeErrors::ExhaustedData);
                 }
                 if output.requested_output_stripe().is_some() {
                     if let McuContinuation::Terminate(reason) = &terminate {
-                        return Err(reason.raw_error());
+                        if self.scan_eof_is_error() || !self.scanline_input_complete() {
+                            return Err(reason.raw_error());
+                        }
                     }
                 }
 
@@ -607,6 +634,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                                 upsampler_scratch_space,
                             )?;
                             scanlines.rows_written = stripe_written / scanlines.stride;
+                            if matches!(terminate, McuContinuation::Terminate(_)) {
+                                scanlines.source_complete = true;
+                            }
                         }
                     }
                     if pull_row_ready && !final_pull_row {
@@ -647,7 +677,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             // (this header used to be parsed during the row decode).
                             Err(e) if e.is_recoverable_eof() && !self.scan_eof_is_error() => {
                                 error!("{e}");
-                                if let Some(pixels) = output.pixels_mut() {
+                                if let McuDecodeOutput::Pixels(pixels) = output {
                                     pixels.fill(128);
                                 }
                                 return Ok(());
