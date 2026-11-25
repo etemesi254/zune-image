@@ -100,7 +100,7 @@ and returns an error before writing output.
 
 Color frames must use 1x1 sampling and one scan containing all three components.
 Split/non-interleaved scans, sampled color, lossless CMYK/YCCK, other
-precisions, DNL height discovery, raw planar output and scanline output remain
+precisions, DNL height discovery, reduced-IDCT output, raw planar output and scanline output remain
 unsupported and return errors. Existing grayscale frame-sampling behavior and
 header-only inspection are unchanged. Ordinary DCT interfaces are unaffected.
 

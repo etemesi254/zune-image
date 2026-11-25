@@ -65,16 +65,17 @@ fn adobe_rgb_rejects_unsupported_conversions_without_writing_output() {
 }
 
 fn check(data: &[u8], color: ColorSpace, expected: &[u8], vector: bool) {
-    check_image(data, color, expected, vector, (32, 32));
+    check_image(data, color, expected, vector, (32, 32), true);
 }
 
 fn check_image(
-    data: &[u8], color: ColorSpace, expected: &[u8], vector: bool, dimensions: (usize, usize)
+    data: &[u8], color: ColorSpace, expected: &[u8], vector: bool, dimensions: (usize, usize),
+    strict: bool
 ) {
     let (width, height) = dimensions;
     let options = DecoderOptions::default()
         .set_use_unsafe(vector)
-        .set_strict_mode(true)
+        .set_strict_mode(strict)
         .jpeg_set_out_colorspace(color);
     let mut decoder = JpegDecoder::new_with_options(ZCursor::new(data), options);
     decoder.decode_headers().unwrap();
@@ -193,17 +194,26 @@ fn rgb_contract(components: &[u8]) -> Vec<u8> {
 fn check_source(data: &[u8], source: &[u8], dimensions: (usize, usize), pt: u8, count: usize) {
     let expected: Vec<_> = source.iter().map(|&sample| (sample >> pt) << pt).collect();
     let color = if count == 1 { ColorSpace::Luma } else { ColorSpace::YCbCr };
-    check_image(data, color, &expected, false, dimensions);
+    // Generated three-component fixtures deliberately list scan components out of frame order.
+    let strict = count == 1;
+    check_image(data, color, &expected, false, dimensions, strict);
     if count == 3 {
         let rgb = rgb_contract(&expected);
         for vector in [false, true] {
-            check_image(data, ColorSpace::RGB, &rgb, vector, dimensions);
+            check_image(data, ColorSpace::RGB, &rgb, vector, dimensions, strict);
         }
     }
 }
 
 #[test]
 fn huffman_component_order_tables_predictors_and_point_transforms() {
+    let strict = DecoderOptions::default().set_strict_mode(true);
+    let error = JpegDecoder::new_with_options(ZCursor::new(generated!("huffman-3-p1.jpg")), strict)
+        .decode_headers()
+        .unwrap_err();
+    assert!(matches!(error, zune_jpeg::errors::DecodeErrors::SosError(message)
+        if message.contains("out of frame order")));
+
     let cases = [
         generated!("huffman-3-p1.jpg"),
         generated!("huffman-3-p2.jpg"),

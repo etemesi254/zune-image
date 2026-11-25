@@ -35,11 +35,13 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     /// Reduced width and height, each rounded up from the coded dimensions.
     ///
     /// Returns `None` if headers or nonzero dimensions are unavailable at
-    /// scan start, including images whose height is declared after SOS.
+    /// scan start, including images whose height is declared after SOS, or
+    /// if the frame uses predictive lossless coding instead of the DCT.
     /// This does not select an output mode or change coded metadata.
     #[must_use]
     pub fn scaled_dimensions(&self, scale: JpegScale) -> Option<(usize, usize)> {
         if !self.headers_decoded
+            || self.info.sof.is_lossless()
             || self.info.width == 0
             || self.info.height == 0
             || self.scan_starts_with_unknown_height()
@@ -83,6 +85,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         self.pixels_decoded = 0;
         self.progressive_displayed_scans = 0;
         self.decode_headers()?;
+        self.ensure_scaled_encoding()?;
         let length = self
             .scaled_output_buffer_size(scale)
             .ok_or(Self::SCALED_OUTPUT_SIZE_ERROR)?;
@@ -120,6 +123,16 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
     pub(crate) const SCALED_OUTPUT_SIZE_ERROR: DecodeErrors =
         DecodeErrors::FormatStatic("scaled output size overflow or unknown image dimensions");
+
+    pub(crate) const LOSSLESS_SCALE_ERROR: DecodeErrors =
+        DecodeErrors::FormatStatic("Reduced-IDCT output is not supported for lossless JPEG");
+
+    pub(crate) fn ensure_scaled_encoding(&self) -> Result<(), DecodeErrors> {
+        if self.info.sof.is_lossless() {
+            return Err(Self::LOSSLESS_SCALE_ERROR);
+        }
+        Ok(())
+    }
 
     pub(crate) fn abort_scaled_sequence(&mut self) {
         if self.scaled_output.take().is_some() {

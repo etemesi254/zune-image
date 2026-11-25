@@ -285,6 +285,27 @@ fn invalid_scans_and_tables_return_clear_errors() {
 }
 
 #[test]
+fn reduced_idct_rejects_lossless_without_writing_output() {
+    use zune_jpeg::JpegScale;
+
+    let data = include_bytes!("../../../test-images/jpeg/lossless/32x32x8_grayscale.jpg");
+    let scale = JpegScale::Half;
+    let options = DecoderOptions::default().jpeg_set_scale(scale);
+    let mut decoder = JpegDecoder::new_with_options(ZCursor::new(data.as_slice()), options);
+    decoder.decode_headers().unwrap();
+    assert_eq!(decoder.output_dimensions(), None);
+    assert_eq!(decoder.output_buffer_size(), None);
+    let mut output = [0xa5; 16 * 16 * 3];
+    let message = "Reduced-IDCT output is not supported for lossless JPEG";
+    assert!(matches!(decoder.decode(), Err(DecodeErrors::FormatStatic(error)) if error == message));
+    assert!(matches!(decoder.decode_into(&mut output),
+        Err(DecodeErrors::FormatStatic(error)) if error == message));
+    assert!(matches!(decoder.decode_scaled_into(scale, &mut output),
+        Err(DecodeErrors::FormatStatic(error)) if error == message));
+    assert!(output.iter().all(|&byte| byte == 0xa5));
+}
+
+#[test]
 fn unsupported_lossless_combinations_stay_explicit() {
     let valid = image(1, 1, 1, 0, 0, &[0]);
     for precision in [2, 12, 16] {
