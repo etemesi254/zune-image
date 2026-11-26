@@ -341,7 +341,7 @@ pub use crate::cancel::{CancelCheck, NeverCancel};
 pub use crate::components::{ComponentID, SampleRatios};
 pub use crate::decoder::{
     ImageInfo, JpegDecoder, PlaneInfo, QuantizationTable, RawDecodeSession, RawImcuRowStatus,
-    ScanlineDecodeSession, ScanlineReadStatus, ScanlineStatus
+    ScanlineDecodeSession, ScanlineReadStatus, ScanlineResumePoint, ScanlineStatus
 };
 pub use crate::marker::Marker;
 pub use zune_core::options::JpegScale;
